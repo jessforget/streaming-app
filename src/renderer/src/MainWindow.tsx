@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats } from '../../shared/state'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
@@ -171,20 +171,60 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
 
 /**
  * Drag a scene card to change the order (mouse or touch). A short press is
- * still a click; the drag starts after the pointer moves a few pixels.
+ * still a click; the drag starts after the pointer moves a few pixels. While
+ * dragging, the card floats under the pointer and the others slide aside to
+ * show where it will land.
  */
-function useSceneDrag(run: Run) {
-  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
-  const start = useRef<{ id: string; x: number; y: number; pointer: number } | null>(null)
+interface SceneDrag {
+  id: string
+  over: number
+  /** Pointer position, and where on the card it was grabbed. */
+  x: number
+  y: number
+  dx: number
+  dy: number
+  w: number
+  h: number
+  /** Dropped: waiting for the app to save the new order. */
+  dropped?: boolean
+}
+
+function useSceneDrag(run: Run, scenes: AppState['scenes'], grid: RefObject<HTMLElement | null>) {
+  const [drag, setDrag] = useState<SceneDrag | null>(null)
+  const start = useRef<{ id: string; x: number; y: number; pointer: number; rect: DOMRect } | null>(null)
   const moved = useRef(false)
+  // Once the app has the new order, stop showing the dragged order.
+  const order = scenes.map((x) => x.id).join('|')
+  useEffect(() => {
+    setDrag((d) => (d?.dropped ? null : d))
+  }, [order])
+  useEffect(() => {
+    if (!drag?.dropped) return
+    const t = setTimeout(() => setDrag(null), 1500)
+    return () => clearTimeout(t)
+  }, [drag?.dropped])
+  // The slot nearest the pointer, from where the cards sit (not where they are mid-slide).
   const indexAt = (x: number, y: number) => {
-    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-scene-index]')
-    return el ? Number(el.dataset.sceneIndex) : null
+    const g = grid.current
+    if (!g) return null
+    const box = g.getBoundingClientRect()
+    let best: number | null = null
+    let bestD = Infinity
+    for (const card of g.querySelectorAll<HTMLElement>('[data-scene-index]')) {
+      const cx = box.left + card.offsetLeft + card.offsetWidth / 2
+      const cy = box.top + card.offsetTop + card.offsetHeight / 2
+      const d = Math.hypot((x - cx) / card.offsetWidth, (y - cy) / card.offsetHeight)
+      if (d < bestD) {
+        bestD = d
+        best = Number(card.dataset.sceneIndex)
+      }
+    }
+    return best
   }
   const props = (id: string) => ({
     onPointerDown: (e: ReactPointerEvent) => {
       if (e.button !== 0) return
-      start.current = { id, x: e.clientX, y: e.clientY, pointer: e.pointerId }
+      start.current = { id, x: e.clientX, y: e.clientY, pointer: e.pointerId, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() }
       moved.current = false
     },
     onPointerMove: (e: ReactPointerEvent) => {
@@ -196,15 +236,26 @@ function useSceneDrag(run: Run) {
         ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       }
       const over = indexAt(e.clientX, e.clientY)
-      if (over !== null) setDrag({ id: s.id, over })
+      setDrag((d) => ({
+        id: s.id,
+        over: over ?? d?.over ?? scenes.findIndex((x) => x.id === s.id),
+        x: e.clientX,
+        y: e.clientY,
+        dx: s.x - s.rect.left,
+        dy: s.y - s.rect.top,
+        w: s.rect.width,
+        h: s.rect.height
+      }))
     },
-    onPointerUp: (e: ReactPointerEvent) => {
+    onPointerUp: () => {
       const s = start.current
       start.current = null
       if (!s || !moved.current) return
-      const over = indexAt(e.clientX, e.clientY)
-      setDrag(null)
-      if (over !== null) void run('scene.move', { sceneId: s.id, index: over })
+      setDrag((d) => {
+        if (!d) return null
+        void run('scene.move', { sceneId: s.id, index: d.over })
+        return { ...d, dropped: true }
+      })
     },
     onPointerCancel: () => {
       start.current = null
@@ -223,15 +274,55 @@ function useSceneDrag(run: Run) {
   return { drag, props }
 }
 
+/** Cards that changed place glide to their new spot instead of jumping. */
+function useSlide(container: RefObject<HTMLElement | null>, key: string) {
+  const rects = useRef(new Map<string, DOMRect>())
+  useLayoutEffect(() => {
+    const el = container.current
+    if (!el) return
+    const next = new Map<string, DOMRect>()
+    for (const card of el.querySelectorAll<HTMLElement>('[data-scene-id]')) {
+      const id = card.dataset.sceneId!
+      const now = card.getBoundingClientRect()
+      next.set(id, now)
+      const before = rects.current.get(id)
+      if (before && (before.left !== now.left || before.top !== now.top) && !card.classList.contains('dragging')) {
+        card.animate([{ transform: `translate(${before.left - now.left}px, ${before.top - now.top}px)` }, { transform: 'none' }], {
+          duration: 180,
+          easing: 'cubic-bezier(.2,.7,.3,1)'
+        })
+      }
+    }
+    rects.current = next
+  }, [key, container])
+}
+
+function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppState; live: boolean; next: boolean }) {
+  return (
+    <>
+      <ScenePicture scene={scene} state={state} />
+      <span className="scene-name">
+        <span>{scene.name}</span>
+        {live && <em className="tag live">ON AIR</em>}
+        {next && <em className="tag next">PREVIEW</em>}
+      </span>
+    </>
+  )
+}
+
 function SceneStrip({ state, run }: { state: AppState; run: Run }) {
   const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
-  const { drag, props } = useSceneDrag(run)
+  const grid = useRef<HTMLDivElement>(null)
+  const { drag, props } = useSceneDrag(run, state.scenes, grid)
   // While dragging, show the order it will have when dropped.
   const scenes = [...state.scenes]
   if (drag) {
     const from = scenes.findIndex((s) => s.id === drag.id)
     if (from >= 0) scenes.splice(drag.over, 0, ...scenes.splice(from, 1))
   }
+  useSlide(grid, scenes.map((s) => s.id).join('|'))
+  const dragged = drag && !drag.dropped ? state.scenes.find((s) => s.id === drag.id) : undefined
+  const tally = (s: Scene) => ({ live: s.id === state.programSceneId, next: s.id === state.previewSceneId && s.id !== state.programSceneId })
   return (
     <section className="scenes" aria-label="Scenes">
       <div className="section-head">
@@ -240,31 +331,35 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
           Click to put in Preview, double-click to put it on air, drag to change the order. Cameras are switched on the ATEM.
         </span>
       </div>
-      <div className="scene-grid">
+      <div className={`scene-grid ${dragged ? 'sorting' : ''}`} ref={grid}>
         {scenes.map((s, i) => {
-          const live = s.id === state.programSceneId
-          const next = s.id === state.previewSceneId && !live
+          const { live, next } = tally(s)
           return (
             <button
               key={s.id}
               data-scene-index={i}
-              className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${drag?.id === s.id ? 'dragging' : ''}`}
+              data-scene-id={s.id}
+              className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
               aria-pressed={next}
               title="Drag to change the order"
               {...props(s.id)}
               onClick={() => run('scene.preview', { sceneId: s.id })}
               onDoubleClick={() => run('scene.program', { sceneId: s.id })}
             >
-              <ScenePicture scene={s} state={state} />
-              <span className="scene-name">
-                <span>{s.name}</span>
-                {live && <em className="tag live">ON AIR</em>}
-                {next && <em className="tag next">PREVIEW</em>}
-              </span>
+              <SceneCardBody scene={s} state={state} live={live} next={next} />
             </button>
           )
         })}
       </div>
+      {dragged && drag && (
+        <div
+          className={`scene-card floating ${tally(dragged).live ? 'tally-live' : ''} ${tally(dragged).next ? 'tally-next' : ''}`}
+          style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h }}
+          aria-hidden="true"
+        >
+          <SceneCardBody scene={dragged} state={state} {...tally(dragged)} />
+        </div>
+      )}
       <SceneTools state={state} run={run} scene={preview} />
     </section>
   )
