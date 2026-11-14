@@ -17,11 +17,27 @@ import { Mixer } from './mixer'
 import { Output } from './output'
 import { PhoneCams } from './phones'
 
-/** A clock in a worker: it keeps ticking when the window is in the background, unlike animation frames. */
+/**
+ * A clock in a worker: it keeps ticking when the window is in the background, unlike animation frames.
+ *
+ * Only one tick is ever waiting. If drawing a frame takes longer than a frame lasts (a slow PC,
+ * many cameras, 60 fps), the late ticks are skipped instead of piling up. Piled-up ticks used to
+ * fill the window's queue, so clicks never got a turn and the whole window froze once live.
+ */
 function workerClock(fps: number, tick: () => void): { setFps(f: number): void; stop(): void } {
-  const code = `let t=null;onmessage=e=>{clearInterval(t);t=setInterval(()=>postMessage(0),1000/e.data)}`
+  const code = `let ms=33,busy=false,next=0,t=null;
+function run(){const now=performance.now();if(!busy){busy=true;postMessage(0)}
+next=Math.max(next+ms,now+1);t=setTimeout(run,next-now)}
+onmessage=e=>{if(e.data==='done'){busy=false;return}ms=1000/e.data;clearTimeout(t);next=performance.now();run()}`
   const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })))
-  w.onmessage = tick
+  w.onmessage = () => {
+    try {
+      tick()
+    } finally {
+      // Let the drawing reach the screen and any clicks run before the next frame is asked for.
+      setTimeout(() => w.postMessage('done'), 0)
+    }
+  }
   w.postMessage(fps)
   return { setFps: (f) => w.postMessage(f), stop: () => w.terminate() }
 }
@@ -125,6 +141,28 @@ export class Studio {
       this.measured = Math.round((this.frames * 1000) / (now - this.lastMeasure))
       this.frames = 0
       this.lastMeasure = now
+      this.checkKeepingUp()
+    }
+  }
+
+  /** Seconds in a row the PC drew too few frames while live, and whether the person was told. */
+  private slowFor = 0
+  private toldSlow = false
+
+  /** Live, but this PC cannot draw the chosen frame rate: say so once, with what to change. */
+  private checkKeepingUp() {
+    if (!this.outputs.stream && !this.outputs.record) {
+      this.slowFor = 0
+      this.toldSlow = false
+      return
+    }
+    this.slowFor = this.measured < this.fps * 0.75 ? this.slowFor + 1 : 0
+    if (this.slowFor >= 5 && !this.toldSlow) {
+      this.toldSlow = true
+      this.notice(
+        `This PC is making only ${this.measured} of ${this.fps} frames a second, so the stream may stutter or drop. ` +
+          'Pick a lower quality in Settings (720p, 30 fps is the lightest), close other programs, and keep this window in front.'
+      )
     }
   }
 

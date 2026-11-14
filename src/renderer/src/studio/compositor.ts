@@ -47,6 +47,9 @@ export class Compositor {
   }
 
   constructor() {
+    // No see-through: the browser can skip blending the canvases, which is cheaper for every frame.
+    this.program.getContext('2d', { alpha: false })
+    this.preview.getContext('2d', { alpha: false })
     this.setSize(1920, 1080)
   }
 
