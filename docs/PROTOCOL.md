@@ -44,7 +44,7 @@ An unknown or removed key closes the connection with code `4004` (unknown) or `4
 | Role | Can do | Typical device |
 | --- | --- | --- |
 | `remote` | Everything except settings | Tablet remote |
-| `buttons` | Press buttons (scenes, cameras, audio, stream, record); no data, no settings | Stream deck |
+| `buttons` | Press buttons (scenes, sources on/off, audio, stream, record); no data, no settings | Stream deck |
 | `data` | Send and clear data fields only | Companion app |
 | `viewer` | Read state and events only | Producer's phone, a tally light |
 
@@ -65,6 +65,8 @@ Reply (the `id` comes back so you can match it):
 
 Errors are plain words you can show to a person.
 
+There are no camera switching commands: cameras are switched on the ATEM itself. The app takes the ATEM's (or a HyperDeck's) video and audio in as sources, like OBS.
+
 | Action | Params | Role needed |
 | --- | --- | --- |
 | `state.get` | none | any |
@@ -78,12 +80,25 @@ Errors are plain words you can show to a person.
 | `audio.muteAll` | none | remote, buttons |
 | `stream.start` / `stream.stop` | none | remote, buttons |
 | `record.start` / `record.stop` | none | remote, buttons |
-| `atem.preview` | `{ "input": 3 }` | remote, buttons |
-| `atem.program` | `{ "input": 3 }` (on air now) | remote, buttons |
-| `atem.cut` | none | remote, buttons |
-| `atem.auto` | none (starts the ATEM's auto transition) | remote, buttons |
 | `data.set` | `{ "values": { "team1.score": 3 } }` | remote, data |
 | `data.clear` | `{ "keys": ["team1.score"] }`, or `{}` for all | remote, data |
+
+Changing the setup (scenes, sources, audio channels) is for the streaming PC only, like settings:
+
+| Action | Params |
+| --- | --- |
+| `scene.add` | `{ "name": "Interview" }` → `{ "sceneId" }` |
+| `scene.rename` | `{ "sceneId", "name" }` |
+| `scene.remove` | `{ "sceneId" }` (not the scene on air, not the last one) |
+| `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "text" \| "browser" \| "media" \| "screen" \| "window", "name"?, "device"?, "text"?, "url"? }` → `{ "layerId" }`. New sources go on top. |
+| `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"? }` |
+| `layer.move` | `{ "sceneId", "layerId", "direction": "up" \| "down" }` |
+| `layer.remove` | `{ "sceneId", "layerId" }` |
+| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"? }` → `{ "sourceId" }` |
+| `audio.remove` | `{ "sourceId" }` |
+| `inputs.refresh` | none (look for capture and audio devices again) |
+
+`device` ids come from `state.inputs.video` and `state.inputs.audio`.
 
 ## 5. Data fields (companion app)
 
@@ -116,7 +131,7 @@ Health once a second while the app runs:
 Useful parts of `state` for a stream deck's button lights:
 
 - `programSceneId` / `previewSceneId`: which scene is on air / next.
-- `atem.program` / `atem.preview` / `atem.inTransition`: camera tally.
+- `scenes[].layers[].visible`: which sources are showing.
 - `stream.live`, `recording.active`.
 - `audio[].muted`.
 

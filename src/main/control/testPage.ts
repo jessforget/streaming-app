@@ -41,7 +41,7 @@ export const TEST_PAGE = `<!doctype html>
     <div class="row">
       <button data-ex='{"type":"command","id":"1","action":"state.get"}'>state.get</button>
       <button data-ex='{"type":"data","set":{"team1.score":3,"guest.name":"Sam"}}'>data</button>
-      <button data-ex='{"type":"command","id":"2","action":"atem.cut"}'>atem.cut</button>
+      <button data-ex='{"type":"command","id":"2","action":"layer.setVisible","params":{"sceneId":"live","layerId":"live-score","visible":true}}'>layer.setVisible</button>
       <button data-ex='{"type":"command","id":"3","action":"scene.preview","params":{"sceneId":"brb"}}'>scene.preview</button>
       <button data-ex='{"type":"command","id":"4","action":"scene.goLive"}'>scene.goLive</button>
     </div>

@@ -1,9 +1,9 @@
 /**
  * The pieces the controller drives. Each has a real version (in src/main) and
  * a simulated one (in src/core/sim) so the app, the tablet remote and the
- * tests all run without OBS's engine or an ATEM attached.
+ * tests all run without OBS's engine or capture hardware attached.
  */
-import type { AppState, AtemState, Platform } from '../shared/state'
+import type { AppState, AudioSource, InputDevice, Platform, Scene } from '../shared/state'
 import type { QualityPreset } from '../shared/presets'
 import type { Role } from '../shared/protocol'
 
@@ -27,6 +27,13 @@ export interface EngineStats {
 export interface Engine {
   readonly name: string
   init(state: AppState): Promise<void>
+  /** Capture and audio devices the PC can see (ATEM Mini, capture cards, mics). */
+  listDevices(): Promise<{ video: InputDevice[]; audio: InputDevice[] }>
+  /** Create or rebuild a scene from its definition (after any edit to its sources). */
+  setScene(scene: Scene): Promise<void>
+  removeScene(sceneId: string): Promise<void>
+  /** Make the mixer match this list of channels. */
+  setAudioSources(sources: AudioSource[]): Promise<void>
   setPreviewScene(sceneId: string): Promise<void>
   setProgramScene(sceneId: string, transition: AppState['transition']): Promise<void>
   setLayerVisible(sceneId: string, layerId: string, visible: boolean): Promise<void>
@@ -39,19 +46,6 @@ export interface Engine {
   stopRecording(): Promise<void>
   readStats(): EngineStats
   shutdown(): Promise<void>
-}
-
-export type AtemSnapshot = Omit<AtemState, 'host'>
-
-/** Network link to a Blackmagic ATEM switcher. */
-export interface AtemLink {
-  connect(host: string): Promise<void>
-  disconnect(): Promise<void>
-  setPreview(input: number): Promise<void>
-  setProgram(input: number): Promise<void>
-  cut(): Promise<void>
-  auto(): Promise<void>
-  onChange(fn: (snapshot: AtemSnapshot) => void): void
 }
 
 /** Stream keys. Kept out of AppState so they are never sent to devices. */

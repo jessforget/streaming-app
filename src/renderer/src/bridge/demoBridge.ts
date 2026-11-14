@@ -1,12 +1,13 @@
 /**
- * The whole app running in the browser with the simulated engine and ATEM.
+ * The whole app running in the browser with the simulated engine (pretend ATEM Mini
+ * and HyperDeck inputs).
  * Used by the interactive mockup: the main window and the tablet remote share
  * one controller, so pressing a button on one updates the other.
  */
 import { Controller, errorText } from '../../../core/controller'
 import { defaultState } from '../../../core/defaults'
 import { MemoryKeyStore, type DeviceAdmin } from '../../../core/ports'
-import { SimAtem, SimEngine } from '../../../core/sim'
+import { SimEngine } from '../../../core/sim'
 import { CommandError, type Action, type Caller, type CommandMap, type Role } from '../../../shared/protocol'
 import type { AppState, HealthStats, PairedDevice } from '../../../shared/state'
 import type { Bridge, CommandResult } from './bridge'
@@ -48,10 +49,9 @@ export class DemoApp {
     const initial: AppState = defaultState()
     initial.engine = { mode: 'simulated', note: 'Mockup: nothing is captured or sent' }
     initial.setupName = 'Friday show'
-    initial.atem.host = '192.168.1.240'
-    initial.scenes[1].layers[2].visible = true
-    const atem = new SimAtem()
-    this.controller = new Controller({ engine: new SimEngine(), atem, keys, initial })
+    const score = initial.scenes.find((s) => s.id === 'live')?.layers.find((l) => l.id === 'live-score')
+    if (score) score.visible = true
+    this.controller = new Controller({ engine: new SimEngine(), keys, initial })
     this.devices = new DemoDevices(() =>
       this.controller.updateDevices({
         pairingOpen: this.devices.open,

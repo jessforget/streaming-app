@@ -8,7 +8,7 @@
  *
  * See docs/PROTOCOL.md for the human-readable version.
  */
-import type { AppState, HealthStats } from './state'
+import type { AppState, AudioKind, HealthStats, LayerKind } from './state'
 
 export const PROTOCOL_VERSION = 1
 export const DEFAULT_CONTROL_PORT = 7420
@@ -45,10 +45,6 @@ export interface CommandMap {
   'stream.stop': Record<string, never>
   'record.start': Record<string, never>
   'record.stop': Record<string, never>
-  'atem.preview': { input: number }
-  'atem.program': { input: number }
-  'atem.cut': Record<string, never>
-  'atem.auto': Record<string, never>
   'data.set': { values: Record<string, DataValue> }
   'data.clear': { keys?: string[] }
   // Settings: only the on-screen interface may call these.
@@ -60,7 +56,24 @@ export interface CommandMap {
     streamKey?: string
   }
   'settings.setRecordFolder': { folder: string }
-  'settings.setAtemHost': { host: string }
+  // Editing scenes, sources and audio, like OBS. On-screen only, so a tap on a tablet can't break the layout.
+  'scene.add': { name: string }
+  'scene.remove': { sceneId: string }
+  'scene.rename': { sceneId: string; name: string }
+  'layer.add': {
+    sceneId: string
+    kind: LayerKind
+    name?: string
+    device?: string
+    text?: string
+    url?: string
+  }
+  'layer.remove': { sceneId: string; layerId: string }
+  'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }
+  'layer.update': { sceneId: string; layerId: string; name?: string; device?: string; text?: string; url?: string }
+  'audio.add': { name: string; kind: AudioKind; device?: string }
+  'audio.remove': { sourceId: string }
+  'inputs.refresh': Record<string, never>
   'devices.setPairingOpen': { open: boolean }
   'devices.newPairingCode': Record<string, never>
   'devices.remove': { deviceId: string }
@@ -86,16 +99,21 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'stream.stop': 'operate',
   'record.start': 'operate',
   'record.stop': 'operate',
-  'atem.preview': 'operate',
-  'atem.program': 'operate',
-  'atem.cut': 'operate',
-  'atem.auto': 'operate',
   'data.set': 'data',
   'data.clear': 'data',
   'settings.setQuality': 'admin',
   'settings.setDestination': 'admin',
   'settings.setRecordFolder': 'admin',
-  'settings.setAtemHost': 'admin',
+  'scene.add': 'admin',
+  'scene.remove': 'admin',
+  'scene.rename': 'admin',
+  'layer.add': 'admin',
+  'layer.remove': 'admin',
+  'layer.move': 'admin',
+  'layer.update': 'admin',
+  'audio.add': 'admin',
+  'audio.remove': 'admin',
+  'inputs.refresh': 'admin',
   'devices.setPairingOpen': 'admin',
   'devices.newPairingCode': 'admin',
   'devices.remove': 'admin',

@@ -1,8 +1,9 @@
 /**
  * The controller owns the app's state and runs every command, whoever sends
  * it: the on-screen interface, the tablet remote, the companion app or a
- * stream deck. It checks permissions, drives the engine and the ATEM, and
- * announces each change.
+ * stream deck. It checks permissions, drives the engine, and announces each
+ * change. Camera switching is not here: the ATEM does that, and this app
+ * takes its output in as a source, like OBS.
  */
 import {
   ACTION_PERMISSION,
@@ -16,16 +17,15 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import type { AppState, Health, HealthStats, Layer, Scene } from '../shared/state'
+import { LAYER_KINDS, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
 import { IDLE_STATS } from './defaults'
-import type { AtemLink, DeviceAdmin, Engine, KeyStore, StreamTarget } from './ports'
+import type { DeviceAdmin, Engine, KeyStore, StreamTarget } from './ports'
 
 export interface ControllerOptions {
   engine: Engine
-  atem: AtemLink
   keys: KeyStore
   initial: AppState
   devices?: DeviceAdmin
@@ -40,7 +40,6 @@ const MAX_DATA_VALUE_LENGTH = 2000
 export class Controller extends Emitter<Events> {
   private s: AppState
   private readonly engine: Engine
-  private readonly atem: AtemLink
   private readonly keys: KeyStore
   private devices?: DeviceAdmin
   private readonly now: () => number
@@ -51,16 +50,11 @@ export class Controller extends Emitter<Events> {
   constructor(opts: ControllerOptions) {
     super()
     this.engine = opts.engine
-    this.atem = opts.atem
     this.keys = opts.keys
     this.devices = opts.devices
     this.now = opts.now ?? (() => Date.now())
     this.s = structuredClone(opts.initial)
     for (const d of this.s.stream.destinations) d.hasKey = this.keys.has(d.id)
-    this.atem.onChange((snap) => {
-      this.s.atem = { ...snap, host: this.s.atem.host }
-      this.changed()
-    })
   }
 
   get state(): AppState {
@@ -80,7 +74,7 @@ export class Controller extends Emitter<Events> {
   async start(options: { statsIntervalMs?: number } = {}) {
     await this.engine.init(this.s)
     await this.refreshAllTexts()
-    if (this.s.atem.host) this.connectAtem(this.s.atem.host)
+    await this.refreshInputs()
     const ms = options.statsIntervalMs ?? 1000
     if (ms > 0) this.statsTimer = setInterval(() => this.tickStats(), ms)
   }
@@ -88,7 +82,6 @@ export class Controller extends Emitter<Events> {
   async stop() {
     if (this.statsTimer) clearInterval(this.statsTimer)
     this.statsTimer = null
-    await this.atem.disconnect().catch(() => {})
     await this.engine.shutdown()
   }
 
@@ -193,24 +186,6 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
 
-      case 'atem.preview':
-        this.requireAtem()
-        await this.atem.setPreview(this.atemInput(P))
-        return null
-      case 'atem.program':
-        this.requireAtem()
-        await this.atem.setProgram(this.atemInput(P))
-        return null
-      case 'atem.cut':
-        this.requireAtem()
-        await this.atem.cut()
-        return null
-      case 'atem.auto':
-        this.requireAtem()
-        // Don't wait: an auto transition takes a while and the caller only needs to know it started.
-        this.atem.auto().catch((e) => this.emit('error', `ATEM: ${errorText(e)}`))
-        return null
-
       case 'data.set':
         return this.setData(P.values, source)
       case 'data.clear': {
@@ -237,13 +212,87 @@ export class Controller extends Emitter<Events> {
         this.s.recording.folder = str(P, 'folder')
         return this.changed()
       }
-      case 'settings.setAtemHost': {
-        const host = typeof P.host === 'string' ? P.host.trim() : ''
-        this.s.atem.host = host
-        await this.atem.disconnect().catch(() => {})
-        if (host) this.connectAtem(host)
+
+      case 'scene.add': {
+        const scene: Scene = { id: this.newId('scene'), name: name(P, 'name'), layers: [] }
+        this.s.scenes.push(scene)
+        await this.engine.setScene(scene)
+        this.changed()
+        return { sceneId: scene.id }
+      }
+      case 'scene.remove': {
+        const scene = this.scene(str(P, 'sceneId'))
+        if (this.s.scenes.length === 1) throw new CommandError('Keep at least one scene')
+        if (scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
+        this.s.scenes = this.s.scenes.filter((x) => x !== scene)
+        if (this.s.previewSceneId === scene.id) this.s.previewSceneId = this.s.programSceneId
+        await this.engine.removeScene(scene.id)
         return this.changed()
       }
+      case 'scene.rename': {
+        this.scene(str(P, 'sceneId')).name = name(P, 'name')
+        return this.changed()
+      }
+      case 'layer.add': {
+        const scene = this.scene(str(P, 'sceneId'))
+        const kind = P.kind as LayerKind
+        if (!LAYER_KINDS.includes(kind)) throw new CommandError(`kind must be one of ${LAYER_KINDS.join(', ')}`)
+        const layer: Layer = { id: this.newId('layer'), name: '', kind, visible: true }
+        this.applyLayerFields(layer, P)
+        if (!layer.name) layer.name = this.defaultLayerName(layer)
+        scene.layers.unshift(layer) // new sources go on top, like OBS
+        await this.engine.setScene(scene)
+        if (layer.kind === 'text') await this.pushText(scene, layer)
+        this.changed()
+        return { layerId: layer.id }
+      }
+      case 'layer.remove': {
+        const scene = this.scene(str(P, 'sceneId'))
+        const layer = this.layer(scene, str(P, 'layerId'))
+        scene.layers = scene.layers.filter((x) => x !== layer)
+        await this.engine.setScene(scene)
+        return this.changed()
+      }
+      case 'layer.move': {
+        const scene = this.scene(str(P, 'sceneId'))
+        const layer = this.layer(scene, str(P, 'layerId'))
+        const dir = P.direction
+        if (dir !== 'up' && dir !== 'down') throw new CommandError('direction must be "up" or "down"')
+        const i = scene.layers.indexOf(layer)
+        const j = dir === 'up' ? i - 1 : i + 1
+        if (j < 0 || j >= scene.layers.length) return this.s
+        scene.layers.splice(i, 1)
+        scene.layers.splice(j, 0, layer)
+        await this.engine.setScene(scene)
+        return this.changed()
+      }
+      case 'layer.update': {
+        const scene = this.scene(str(P, 'sceneId'))
+        const layer = this.layer(scene, str(P, 'layerId'))
+        this.applyLayerFields(layer, P)
+        await this.engine.setScene(scene)
+        if (layer.kind === 'text') await this.pushText(scene, layer)
+        return this.changed()
+      }
+      case 'audio.add': {
+        const kind = P.kind as AudioKind
+        if (!['device', 'desktop', 'video'].includes(kind)) throw new CommandError('kind must be device, desktop or video')
+        const device = kind === 'desktop' ? undefined : this.device(kind === 'video' ? 'video' : 'audio', P.device)
+        const id = this.newId('audio')
+        this.s.audio.push({ id, name: name(P, 'name'), kind, device, volume: 0.8, muted: false, level: 0 })
+        await this.engine.setAudioSources(this.s.audio)
+        this.changed()
+        return { sourceId: id }
+      }
+      case 'audio.remove': {
+        const src = this.audio(str(P, 'sourceId'))
+        this.s.audio = this.s.audio.filter((x) => x !== src)
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'inputs.refresh':
+        await this.refreshInputs()
+        return this.changed()
 
       case 'devices.setPairingOpen':
         this.deviceAdmin().setPairingOpen(bool(P, 'open'))
@@ -318,9 +367,6 @@ export class Controller extends Emitter<Events> {
   private async takeLive(scene: Scene) {
     this.s.programSceneId = scene.id
     await this.engine.setProgramScene(scene.id, this.s.transition)
-    if (scene.atemInput !== undefined && this.s.atem.connected) {
-      await this.atem.setProgram(scene.atemInput).catch((e) => this.emit('error', `ATEM: ${errorText(e)}`))
-    }
   }
 
   // ---------- Data fields ----------
@@ -421,8 +467,62 @@ export class Controller extends Emitter<Events> {
 
   // ---------- Helpers ----------
 
-  private connectAtem(host: string) {
-    this.atem.connect(host).catch((e) => this.emit('error', `Could not reach the ATEM at ${host}: ${errorText(e)}`))
+  private async refreshInputs() {
+    try {
+      this.s.inputs = await this.engine.listDevices()
+    } catch (e) {
+      this.emit('error', `Could not list capture devices: ${errorText(e)}`)
+    }
+  }
+
+  private applyLayerFields(layer: Layer, P: Record<string, unknown>) {
+    if (P.name !== undefined) layer.name = name(P, 'name')
+    if (P.device !== undefined) {
+      if (layer.kind !== 'video') throw new CommandError('Only video sources have a device')
+      layer.device = this.device('video', P.device)
+    }
+    if (P.text !== undefined) {
+      if (typeof P.text !== 'string' || P.text.length > 500) throw new CommandError('text must be up to 500 characters')
+      layer.text = P.text
+    }
+    if (P.url !== undefined) {
+      if (typeof P.url !== 'string' || P.url.length > 2000) throw new CommandError('url must be text')
+      layer.url = P.url.trim() || undefined
+    }
+  }
+
+  private defaultLayerName(layer: Layer): string {
+    if (layer.kind === 'video') {
+      const dev = this.s.inputs.video.find((d) => d.id === layer.device)
+      return dev ? dev.name.replace(/\s*\(.*\)$/, '') : 'Video input'
+    }
+    const names: Record<LayerKind, string> = {
+      video: 'Video input',
+      screen: 'Screen',
+      window: 'Window',
+      image: 'Image',
+      text: 'Text',
+      browser: 'Browser overlay',
+      media: 'Media file'
+    }
+    return names[layer.kind]
+  }
+
+  /** A device id the PC can see. An empty id is allowed (pick one later). */
+  private device(type: 'video' | 'audio', value: unknown): string | undefined {
+    if (value === undefined || value === '') return undefined
+    if (typeof value !== 'string') throw new CommandError('device must be text')
+    if (!this.s.inputs[type].some((d) => d.id === value)) throw new CommandError(`This PC has no ${type} device ${value}`)
+    return value
+  }
+
+  private newId(prefix: string): string {
+    const taken = new Set([
+      ...this.s.scenes.map((x) => x.id),
+      ...this.s.scenes.flatMap((x) => x.layers.map((l) => l.id)),
+      ...this.s.audio.map((x) => x.id)
+    ])
+    for (let i = 1; ; i++) if (!taken.has(`${prefix}-${i}`)) return `${prefix}-${i}`
   }
 
   private changed(): AppState {
@@ -448,16 +548,6 @@ export class Controller extends Emitter<Events> {
     return src
   }
 
-  private requireAtem() {
-    if (!this.s.atem.connected) throw new CommandError('The ATEM is not connected')
-  }
-
-  private atemInput(P: Record<string, unknown>): number {
-    const input = num(P, 'input', 0, 65535)
-    if (!this.s.atem.inputs.some((i) => i.id === input)) throw new CommandError(`The ATEM has no input ${input}`)
-    return input
-  }
-
   private deviceAdmin(): DeviceAdmin {
     if (!this.devices) throw new CommandError('Device pairing is not available')
     return this.devices
@@ -475,6 +565,12 @@ function num(P: Record<string, unknown>, key: string, min: number, max: number):
   if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
     throw new CommandError(`${key} must be a number from ${min} to ${max}`)
   }
+  return v
+}
+
+function name(P: Record<string, unknown>, key: string): string {
+  const v = typeof P[key] === 'string' ? (P[key] as string).trim() : ''
+  if (!v || v.length > 60) throw new CommandError(`${key} must be 1 to 60 characters`)
   return v
 }
 

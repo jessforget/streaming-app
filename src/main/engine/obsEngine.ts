@@ -12,7 +12,7 @@
  * it with `npm install <path-or-url-to-tarball>`. See docs/ENGINE.md.
  */
 import { join } from 'node:path'
-import type { AppState, Layer, Scene } from '../../shared/state'
+import type { AppState, AudioSource, InputDevice, Layer, Scene } from '../../shared/state'
 import type { QualityPreset } from '../../shared/presets'
 import type { Engine, EngineStats, StreamTarget } from '../../core/ports'
 
@@ -21,8 +21,7 @@ type Osn = any
 
 /** libobs source type for each layer kind (Windows). */
 const SOURCE_TYPE: Record<Layer['kind'], string> = {
-  atem: 'dshow_input',
-  webcam: 'dshow_input',
+  video: 'dshow_input',
   screen: 'monitor_capture',
   window: 'window_capture',
   image: 'image_source',
@@ -31,8 +30,15 @@ const SOURCE_TYPE: Record<Layer['kind'], string> = {
   media: 'ffmpeg_source'
 }
 
-/** The ATEM Mini shows up in Windows as a webcam with this name. */
-const ATEM_WEBCAM_NAME = 'Blackmagic Design'
+/**
+ * Device ids: `dshow:<id>` for anything Windows sees as a webcam (the ATEM
+ * Mini over USB-C, USB HDMI capture sticks), `decklink:<hash>` for Blackmagic
+ * DeckLink and UltraStudio capture (a HyperDeck or a larger ATEM over SDI or
+ * HDMI), `wasapi:<id>` for audio inputs (mics, the ATEM Mini's USB audio).
+ */
+const DSHOW = 'dshow:'
+const DECKLINK = 'decklink:'
+const WASAPI = 'wasapi:'
 
 export class ObsEngine implements Engine {
   readonly name = 'obs'
@@ -41,6 +47,9 @@ export class ObsEngine implements Engine {
   private items = new Map<string, any>()
   private inputs = new Map<string, any>()
   private audio = new Map<string, any>()
+  /** One input per capture device, shared by every scene that shows it (like OBS). */
+  private deviceInputs = new Map<string, any>()
+  private nextChannel = 1
   private transition: any
   private streams: any[] = []
   private recording: any = null
@@ -72,8 +81,8 @@ export class ObsEngine implements Engine {
     const preset = { width: 1920, height: 1080, fps: 30 }
     this.applyVideo(preset)
 
-    for (const scene of state.scenes) this.buildScene(scene)
-    for (const a of state.audio) this.buildAudio(a.id, a.name, a.volume, a.muted)
+    for (const scene of state.scenes) await this.setScene(scene)
+    await this.setAudioSources(state.audio)
 
     this.transition = osn.TransitionFactory.create('fade_transition', 'Fade', {})
     osn.Global.setOutputSource(0, this.transition)
@@ -97,24 +106,79 @@ export class ObsEngine implements Engine {
     }
   }
 
-  private buildScene(scene: Scene) {
-    const osnScene = this.osn.SceneFactory.create(scene.name)
-    this.scenes.set(scene.id, osnScene)
+  async listDevices(): Promise<{ video: InputDevice[]; audio: InputDevice[] }> {
+    const items = (type: string, prop: string): { name: string; value: string }[] => {
+      try {
+        const probe = this.osn.InputFactory.create(type, `probe-${type}`, {})
+        const list = probe.properties.get(prop)?.details?.items ?? []
+        probe.release()
+        return list.filter((x: { value: string }) => x.value)
+      } catch {
+        return []
+      }
+    }
+    return {
+      video: [
+        ...items('dshow_input', 'video_device_id').map((x) => ({ id: DSHOW + x.value, name: x.name })),
+        ...items('decklink-input', 'device_hash').map((x) => ({ id: DECKLINK + x.value, name: x.name }))
+      ],
+      audio: items('wasapi_input_capture', 'device_id').map((x) => ({ id: WASAPI + x.value, name: x.name }))
+    }
+  }
+
+  async setScene(scene: Scene) {
+    const old = this.scenes.get(scene.id)
+    const osnScene = this.osn.SceneFactory.create(`${scene.name} ${scene.id}`)
     // libobs draws the last-added item on top; our list has the top layer first.
     for (const layer of [...scene.layers].reverse()) {
-      const input = this.osn.InputFactory.create(SOURCE_TYPE[layer.kind], `${scene.id}/${layer.id}`, this.settingsFor(layer))
-      this.inputs.set(`${scene.id}/${layer.id}`, input)
+      const key = `${scene.id}/${layer.id}`
+      const input = layer.kind === 'video' ? this.deviceInput(layer.device) : this.layerInput(key, layer)
+      if (!input) continue
       const item = osnScene.add(input)
       item.visible = layer.visible
-      this.items.set(`${scene.id}/${layer.id}`, item)
+      this.items.set(key, item)
     }
+    this.scenes.set(scene.id, osnScene)
+    if (old) {
+      if (this.transition?.getActiveSource?.() === old) this.transition.set(osnScene)
+      old.release()
+    }
+  }
+
+  async removeScene(sceneId: string) {
+    this.scenes.get(sceneId)?.release()
+    this.scenes.delete(sceneId)
+  }
+
+  /** Text, image, browser, media, screen and window sources: one per layer. */
+  private layerInput(key: string, layer: Layer) {
+    this.inputs.get(key)?.release()
+    const input = this.osn.InputFactory.create(SOURCE_TYPE[layer.kind], key, this.settingsFor(layer))
+    this.inputs.set(key, input)
+    return input
+  }
+
+  /** Capture devices: one shared input per device, so its audio is one mixer channel. */
+  private deviceInput(device: string | undefined) {
+    if (!device) return null
+    let input = this.deviceInputs.get(device)
+    if (!input) {
+      input = device.startsWith(DECKLINK)
+        ? this.osn.InputFactory.create('decklink-input', device, { device_hash: device.slice(DECKLINK.length) })
+        : // ATEM Mini: its sound arrives as a separate USB audio device, so the webcam source carries video only.
+          this.osn.InputFactory.create('dshow_input', device, {
+            video_device_id: device.slice(DSHOW.length),
+            res_type: 1,
+            resolution: '1920x1080',
+            audio_output_mode: 0
+          })
+      this.deviceInputs.set(device, input)
+    }
+    return input
   }
 
   private settingsFor(layer: Layer): Record<string, unknown> {
     switch (layer.kind) {
-      case 'atem':
-        // Pick the ATEM's USB webcam by name; the user can change it in Advanced options.
-        return { video_device_id: ATEM_WEBCAM_NAME, res_type: 1, resolution: '1920x1080' }
       case 'text':
         return { text: layer.text ?? '', font: { face: 'Arial', size: 72 } }
       case 'image':
@@ -128,13 +192,29 @@ export class ObsEngine implements Engine {
     }
   }
 
-  private buildAudio(id: string, name: string, volume: number, muted: boolean) {
-    const type = id === 'desktop' ? 'wasapi_output_capture' : id === 'atem-audio' ? 'wasapi_input_capture' : 'wasapi_input_capture'
-    const input = this.osn.InputFactory.create(type, name, {})
-    input.volume = volume
-    input.muted = muted
-    this.osn.Global.setOutputSource(this.audio.size + 1, input)
-    this.audio.set(id, input)
+  async setAudioSources(sources: AudioSource[]) {
+    for (const [id, input] of this.audio) {
+      if (!sources.some((s) => s.id === id) && !this.deviceInputs.has(input.name)) input.release()
+    }
+    this.audio.clear()
+    for (const a of sources) {
+      let input: any
+      if (a.kind === 'video') {
+        // Sound embedded in a capture card's signal (HyperDeck, larger ATEMs) belongs to the video input.
+        input = this.deviceInput(a.device)
+      } else if (a.kind === 'desktop') {
+        input = this.osn.InputFactory.create('wasapi_output_capture', `audio-${a.id}`, {})
+      } else {
+        input = this.osn.InputFactory.create('wasapi_input_capture', `audio-${a.id}`, {
+          device_id: a.device?.startsWith(WASAPI) ? a.device.slice(WASAPI.length) : 'default'
+        })
+      }
+      if (!input) continue
+      input.volume = a.volume
+      input.muted = a.muted
+      if (a.kind !== 'video') this.osn.Global.setOutputSource(this.nextChannel++, input)
+      this.audio.set(a.id, input)
+    }
   }
 
   async setPreviewScene() {

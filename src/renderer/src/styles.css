@@ -162,7 +162,8 @@ input, select {
 }
 .picture.is-live { border-color: var(--live); box-shadow: 0 0 0 1px var(--live); }
 .picture.has-camera { background: linear-gradient(135deg, #2b3440, #1b2027); }
-.picture-camera { position: absolute; inset: 0; display: grid; place-items: center; color: #c9d3df; font-size: 1em; }
+.picture-camera { position: absolute; inset: 0; display: grid; place-items: center; color: #c9d3df; font-size: 1em; text-align: center; padding: 6px; }
+.picture-camera.corner { inset: auto auto 6% 4%; padding: 0.1em 0.5em; font-size: 0.85em; background: rgba(0, 0, 0, 0.45); border-radius: 3px; }
 .picture-title { position: absolute; inset: 0; display: grid; place-items: center; font-size: 1.6em; font-weight: 700; text-align: center; padding: 8px; }
 .picture-score {
   position: absolute; top: 6%; left: 50%; transform: translateX(-50%);
@@ -187,13 +188,31 @@ input, select {
 .segmented small { color: var(--muted); font-size: 11px; }
 
 .layers ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.layers li {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center;
-  border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--panel);
-}
+.layers li { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--panel); display: grid; gap: 8px; }
+.layer-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px 10px; align-items: center; }
 .layers li.hidden-layer .layer-name { color: var(--muted); text-decoration: line-through; }
 .layer-kind { font-size: 12px; color: var(--muted); }
-.layer-text { grid-column: 2 / -1; color: var(--muted); }
+.layer-text { grid-column: 2 / -1; grid-row: 2; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.warn-text { color: var(--warn, #e0a030); }
+.layer-tools { display: flex; gap: 2px; }
+button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 1; }
+.tool-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.inline-form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.inline-form input { flex: 1; min-width: 120px; }
+.source-form { display: grid; gap: 8px; border: 1px dashed var(--accent); border-radius: var(--radius); padding: 10px; margin: 0 0 8px; background: var(--panel-2, var(--panel)); }
+.source-form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.source-form p { margin: 0; }
+.kind-picker { display: flex; flex-wrap: wrap; gap: 4px; }
+.kind-picker button { padding: 4px 9px; min-height: 28px; font-size: 12px; }
+.kind-picker button.on { background: var(--accent-bg); border-color: var(--accent); }
+.add-audio { margin-top: 10px; width: 100%; }
+.fader { position: relative; }
+.fader-remove { position: absolute; top: -6px; right: -4px; opacity: 0; font-size: 11px !important; }
+.fader:hover .fader-remove, .fader-remove:focus-visible { opacity: 1; }
+.remote-sources { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.remote-sources button { min-height: 60px; font-size: 15px; font-weight: 600; display: grid; place-content: center; gap: 2px; background: var(--panel); }
+.remote-sources button.on { background: var(--accent-bg); border-color: var(--accent); }
+.remote-sources small { font-size: 12px; font-weight: 500; color: var(--muted); }
 
 .switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
 .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
@@ -206,25 +225,14 @@ input, select {
 .switch input:checked + span::after { transform: translateX(16px); background: #fff; }
 .switch input:disabled + span { opacity: 0.4; }
 
-.right { display: grid; gap: 16px; align-content: start; }
+.right { display: grid; gap: 16px; align-content: start; grid-template-columns: minmax(0, 1fr); }
 .panel { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--panel); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }
 .panel-head h2 { margin: 0; }
 .panel-head small { text-transform: none; letter-spacing: 0; }
 
-.cameras { display: grid; gap: 8px; }
-.cam-row { display: grid; grid-template-columns: 44px repeat(4, 1fr); gap: 6px; align-items: center; }
-.row-label { font-size: 11px; color: var(--muted); }
-.cam { display: grid; padding: 6px 4px; gap: 0; text-align: center; white-space: nowrap; }
-.cam small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cam-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: 50px; }
-.cameras.big .cam { min-height: 64px; font-size: 16px; }
-.cameras.big .cam-row { grid-template-columns: 56px repeat(4, 1fr); gap: 10px; }
-.cameras.big .cam-actions { margin-left: 66px; gap: 10px; }
-.cameras.big .cam-actions button { min-height: 56px; font-size: 16px; font-weight: 600; }
-
-.mixer { display: flex; gap: 12px; justify-content: space-around; }
-.fader { display: grid; justify-items: center; gap: 6px; width: 64px; }
+.mixer { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 12px 6px; justify-items: center; }
+.fader { display: grid; justify-items: center; gap: 6px; width: 100%; max-width: 72px; position: relative; }
 .fader-track { position: relative; height: 150px; width: 36px; display: grid; place-items: center; }
 .meter {
   position: absolute; bottom: 0; left: 2px; width: 6px; border-radius: 3px;
@@ -236,7 +244,7 @@ input, select {
   writing-mode: vertical-lr; direction: rtl; height: 150px; width: 24px; padding: 0; background: transparent; border: 0;
   accent-color: var(--accent);
 }
-.fader-name { font-size: 12px; }
+.fader-name { font-size: 11px; text-align: center; line-height: 1.25; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .data-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 4px; border-bottom: 1px solid var(--line); }
@@ -330,6 +338,4 @@ input, select {
   .pairing { grid-template-columns: 1fr; }
   .qr { max-width: 200px; }
   .demo-tablet { border-width: 0; border-radius: 0; margin: 0; }
-  .cam-row, .cameras.big .cam-row { grid-template-columns: 44px repeat(4, 1fr); }
-  .cam-actions, .cameras.big .cam-actions { margin-left: 0; }
 }

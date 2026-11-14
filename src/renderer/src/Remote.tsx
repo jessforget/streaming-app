@@ -1,8 +1,8 @@
-/** Tablet remote: big touch targets for scenes, cameras, audio and going live. */
+/** Tablet remote: big touch targets for scenes, sources, audio and going live. */
 import { useEffect, useMemo, useState } from 'react'
 import type { Bridge } from './bridge/bridge'
 import { WsBridge } from './bridge/wsBridge'
-import { CameraButtons, HealthPill, Notice } from './parts'
+import { HealthPill, Notice } from './parts'
 import { useApp, useElapsed } from './useApp'
 
 export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onForget?: () => void; confirmStop?: () => boolean }) {
@@ -62,8 +62,24 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
           >
             Go Live Scene{preview ? `: ${preview.name}` : ''}
           </button>
-          <h2>Cameras</h2>
-          <CameraButtons state={state} run={run} big />
+          {preview && preview.layers.length > 0 && (
+            <>
+              <h2>Sources in {preview.name}</h2>
+              <div className="remote-sources">
+                {preview.layers.map((l) => (
+                  <button
+                    key={l.id}
+                    className={l.visible ? 'on' : ''}
+                    aria-pressed={l.visible}
+                    onClick={() => run('layer.setVisible', { sceneId: preview.id, layerId: l.id, visible: !l.visible })}
+                  >
+                    {l.name}
+                    <small>{l.visible ? 'Showing' : 'Hidden'}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </section>
         <section>
           <h2>Audio</h2>
@@ -91,8 +107,8 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
           <h2>Quick actions</h2>
           <div className="quick">
             <button onClick={() => run('audio.muteAll')}>Mute all</button>
-            <button onClick={() => run('atem.cut')} disabled={!state.atem.connected}>
-              ATEM Cut
+            <button onClick={() => run('transition.set', { kind: state.transition.kind === 'cut' ? 'fade' : 'cut' })}>
+              Transition: {state.transition.kind === 'cut' ? 'Cut' : 'Fade'}
             </button>
           </div>
           <p className="muted small remote-foot">

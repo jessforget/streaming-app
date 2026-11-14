@@ -38,7 +38,15 @@ export function defaultState(): AppState {
             visible: false,
             text: '{team1.name} {team1.score} - {team2.score} {team2.name}'
           },
-          { id: 'live-atem', name: 'ATEM program feed', kind: 'atem', visible: true }
+          { id: 'live-atem', name: 'ATEM Mini', kind: 'video', visible: true, device: 'atem-mini' }
+        ]
+      },
+      {
+        id: 'playback',
+        name: 'HyperDeck playback',
+        layers: [
+          { id: 'playback-title', name: 'Replay label', kind: 'text', visible: true, text: 'Replay' },
+          { id: 'playback-hyperdeck', name: 'HyperDeck', kind: 'video', visible: true, device: 'decklink-1' }
         ]
       },
       {
@@ -62,10 +70,10 @@ export function defaultState(): AppState {
     programSceneId: 'starting',
     transition: { kind: 'fade', durationMs: 300 },
     audio: [
-      { id: 'atem-audio', name: 'ATEM', volume: 0.8, muted: false, level: 0 },
-      { id: 'mic', name: 'Mic', volume: 0.8, muted: false, level: 0 },
-      { id: 'desktop', name: 'Desktop', volume: 0.6, muted: false, level: 0 },
-      { id: 'music', name: 'Music', volume: 0.4, muted: true, level: 0 }
+      { id: 'atem-audio', name: 'ATEM Mini', kind: 'device', device: 'atem-mini-audio', volume: 0.8, muted: false, level: 0 },
+      { id: 'hyperdeck-audio', name: 'HyperDeck', kind: 'video', device: 'decklink-1', volume: 0.8, muted: false, level: 0 },
+      { id: 'mic', name: 'Mic', kind: 'device', device: 'usb-mic', volume: 0.8, muted: false, level: 0 },
+      { id: 'desktop', name: 'Desktop', kind: 'desktop', volume: 0.5, muted: false, level: 0 }
     ],
     stream: {
       live: false,
@@ -81,15 +89,7 @@ export function defaultState(): AppState {
       ]
     },
     recording: { active: false, startedAt: null, folder: 'Videos/Streams', format: 'mkv' },
-    atem: {
-      connected: false,
-      host: '',
-      model: '',
-      inputs: [],
-      program: null,
-      preview: null,
-      inTransition: false
-    },
+    inputs: { video: [], audio: [] },
     data: {},
     devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [] },
     stats: { ...IDLE_STATS }

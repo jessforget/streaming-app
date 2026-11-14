@@ -3,7 +3,7 @@ import WebSocket from 'ws'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore } from '../src/core/ports'
-import { SimAtem, SimEngine } from '../src/core/sim'
+import { SimEngine } from '../src/core/sim'
 import { ControlServer } from '../src/main/control/server'
 import { MemoryDeviceStore, PairingManager } from '../src/main/control/pairing'
 
@@ -64,9 +64,7 @@ async function pairedClient(role = 'remote') {
 }
 
 beforeEach(async () => {
-  const atem = new SimAtem()
-  atem.autoMs = 5
-  controller = new Controller({ engine: new SimEngine(), atem, keys: new MemoryKeyStore(), initial: defaultState() })
+  controller = new Controller({ engine: new SimEngine(), keys: new MemoryKeyStore(), initial: defaultState() })
   pairing = new PairingManager(new MemoryDeviceStore())
   controller.setDeviceAdmin(pairing)
   pairing.onChange((s) => controller.updateDevices(s))
@@ -89,7 +87,7 @@ describe('pairing', () => {
     again.send({ type: 'hello', token })
     const welcome = await again.next((m) => m.type === 'welcome')
     expect(welcome).toMatchObject({ v: 1, name: 'Test remote', role: 'remote' })
-    expect(welcome.state.scenes.length).toBe(4)
+    expect(welcome.state.scenes.length).toBe(5)
   })
 
   it('never sends the pairing code to devices', async () => {
@@ -115,7 +113,7 @@ describe('pairing', () => {
 
   it('refuses commands before pairing and unknown keys', async () => {
     const c = await client()
-    c.send({ type: 'command', action: 'atem.cut' })
+    c.send({ type: 'command', action: 'scene.goLive' })
     expect(await c.next((m) => m.type === 'error')).toMatchObject({ error: 'Pair or say hello first' })
     c.send({ type: 'hello', token: 'f'.repeat(64) })
     expect((await c.closed).code).toBe(4004)

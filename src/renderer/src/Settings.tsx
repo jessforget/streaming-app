@@ -5,11 +5,11 @@ import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS } from '../../shared/prese
 import { ROLES, ROLE_LABELS, type Role } from '../../shared/protocol'
 import type { Run } from './useApp'
 
-export type SettingsTab = 'golive' | 'atem' | 'devices'
+export type SettingsTab = 'golive' | 'inputs' | 'devices'
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'golive', label: 'Go Live' },
-  { id: 'atem', label: 'ATEM' },
+  { id: 'inputs', label: 'Video and audio inputs' },
   { id: 'devices', label: 'Remote and devices' }
 ]
 
@@ -37,7 +37,7 @@ export function Settings(props: { state: AppState; run: Run; tab: SettingsTab; o
         </header>
         <div className="modal-body">
           {tab === 'golive' && <GoLive state={state} run={run} />}
-          {tab === 'atem' && <AtemSettings state={state} run={run} />}
+          {tab === 'inputs' && <Inputs state={state} run={run} />}
           {tab === 'devices' && <Devices state={state} run={run} />}
         </div>
       </div>
@@ -157,28 +157,61 @@ function FolderField({ value, onSave }: { value: string; onSave: (v: string) => 
   )
 }
 
-function AtemSettings({ state, run }: { state: AppState; run: Run }) {
-  const [host, setHost] = useState(state.atem.host)
-  const a = state.atem
+function Inputs({ state, run }: { state: AppState; run: Run }) {
+  const { video, audio } = state.inputs
   return (
     <div className="stack">
       <section>
-        <h3>ATEM switcher</h3>
+        <h3>Video and audio coming into this PC</h3>
         <p className="muted">
-          Cameras plug into the ATEM. Its program picture reaches this PC over the USB-C cable (it shows up as a webcam). Camera
-          switching goes over the network, so plug the ATEM into the same router.
+          Like OBS, this app does not switch cameras. Your ATEM does that. The app takes in what the ATEM or HyperDeck sends and
+          adds scenes, graphics and audio on top.
         </p>
-        <div className="row">
-          <input placeholder="ATEM IP address, e.g. 192.168.1.240" value={host} onChange={(e) => setHost(e.target.value)} />
-          <button onClick={() => run('settings.setAtemHost', { host })}>{a.host ? 'Reconnect' : 'Connect'}</button>
+        <ul className="muted small">
+          <li>
+            <strong>ATEM Mini:</strong> plug its USB-C port into this PC. Its picture shows up as a webcam and its sound as a USB
+            audio input.
+          </li>
+          <li>
+            <strong>HyperDeck or a larger ATEM:</strong> connect its HDMI or SDI out to a capture card (Blackmagic DeckLink or
+            UltraStudio, or a USB HDMI capture). The sound comes in with the picture.
+          </li>
+        </ul>
+      </section>
+      <section>
+        <div className="panel-head">
+          <h3>Devices this PC can see</h3>
+          <button className="small" onClick={() => run('inputs.refresh')}>
+            Look again
+          </button>
         </div>
-        <p className={a.connected ? 'ok-text' : 'muted'}>
-          {a.connected ? `Connected to ${a.model} with ${a.inputs.length} cameras.` : a.host ? `Not connected to ${a.host} yet.` : 'Not set up.'}
-        </p>
-        <p className="muted small">
-          Find the address in ATEM Setup, Configure, Network. Larger ATEM models connect their video through a Blackmagic capture
-          card instead of USB.
-        </p>
+        <h4>Video</h4>
+        {video.length === 0 ? (
+          <p className="muted">None found. Check the cable, then press Look again.</p>
+        ) : (
+          <ul className="device-list">
+            {video.map((d) => (
+              <li key={d.id}>
+                <span className="dot on" />
+                <strong>{d.name}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+        <h4>Audio</h4>
+        {audio.length === 0 ? (
+          <p className="muted">None found.</p>
+        ) : (
+          <ul className="device-list">
+            {audio.map((d) => (
+              <li key={d.id}>
+                <span className="dot on" />
+                <strong>{d.name}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="muted small">Add one to a scene with "+ Add source", or to the mixer with "+ Add audio".</p>
       </section>
     </div>
   )

@@ -31,7 +31,6 @@ type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'
   destinations: AppState['stream']['destinations']
   recordFolder: string
   recordFormat: AppState['recording']['format']
-  atemHost: string
 }
 
 export class SetupFile {
@@ -62,7 +61,6 @@ export class SetupFile {
         folder: saved.recordFolder ?? base.recording.folder,
         format: saved.recordFormat ?? base.recording.format
       },
-      atem: { ...base.atem, host: saved.atemHost ?? '' }
     }
   }
 
@@ -75,8 +73,7 @@ export class SetupFile {
       quality: s.stream.quality,
       destinations: s.stream.destinations,
       recordFolder: s.recording.folder,
-      recordFormat: s.recording.format,
-      atemHost: s.atem.host
+      recordFormat: s.recording.format
     }
     writeJson(this.file, setup)
   }

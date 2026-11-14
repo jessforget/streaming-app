@@ -2,16 +2,14 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore } from '../src/core/ports'
-import { SimAtem, SimEngine } from '../src/core/sim'
+import { SimEngine } from '../src/core/sim'
 import { CommandError } from '../src/shared/protocol'
 
 function setup() {
   const engine = new SimEngine()
-  const atem = new SimAtem()
-  atem.autoMs = 5
   const keys = new MemoryKeyStore()
-  const c = new Controller({ engine, atem, keys, initial: defaultState(), now: () => 1000 })
-  return { engine, atem, keys, c }
+  const c = new Controller({ engine, keys, initial: defaultState(), now: () => 1000 })
+  return { engine, keys, c }
 }
 
 describe('scenes', () => {
@@ -157,36 +155,66 @@ describe('streaming', () => {
   })
 })
 
-describe('ATEM', () => {
-  it('says plainly when the ATEM is not connected', async () => {
-    const { c } = setup()
-    await c.start({ statsIntervalMs: 0 })
-    await expect(c.run('remote', 'atem.cut')).rejects.toThrow('The ATEM is not connected')
+describe('video and audio inputs (no camera switching, like OBS)', () => {
+  let t: ReturnType<typeof setup>
+  beforeEach(async () => {
+    t = setup()
+    await t.c.start({ statsIntervalMs: 0 })
   })
 
-  it('switches cameras, and mirrors the ATEM state', async () => {
-    const { c } = setup()
-    await c.start({ statsIntervalMs: 0 })
-    await c.run('local', 'settings.setAtemHost', { host: '192.168.1.240' })
-    await new Promise((r) => setTimeout(r, 0))
-    expect(c.state.atem).toMatchObject({ connected: true, host: '192.168.1.240', program: 1, preview: 2 })
-    await c.run('remote', 'atem.preview', { input: 3 })
-    await c.run('remote', 'atem.cut')
-    expect(c.state.atem).toMatchObject({ program: 3, preview: 1 })
-    await expect(c.run('remote', 'atem.program', { input: 9 })).rejects.toThrow('no input 9')
-    await c.run('remote', 'atem.auto')
-    expect(c.state.atem.inTransition).toBe(true)
-    await new Promise((r) => setTimeout(r, 20))
-    expect(c.state.atem).toMatchObject({ program: 1, preview: 3, inTransition: false })
+  it('lists the capture and audio devices the PC can see', () => {
+    expect(t.c.state.inputs.video.map((d) => d.id)).toEqual(['atem-mini', 'decklink-1', 'usb-capture'])
+    expect(t.c.state.inputs.audio.map((d) => d.id)).toContain('atem-mini-audio')
   })
 
-  it('can put a camera on air when a scene goes live', async () => {
-    const { c } = setup()
-    c.state.scenes[1].atemInput = 4
-    await c.start({ statsIntervalMs: 0 })
-    await c.run('local', 'settings.setAtemHost', { host: 'atem.local' })
-    await new Promise((r) => setTimeout(r, 0))
-    await c.run('local', 'scene.program', { sceneId: 'live' })
-    expect(c.state.atem.program).toBe(4)
+  it('has no camera switching commands', async () => {
+    await expect(t.c.run('local', 'atem.cut' as never)).rejects.toBeInstanceOf(CommandError)
+  })
+
+  it('adds an ATEM or HyperDeck as a video source, on top, with a name from the device', async () => {
+    const r = (await t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'video', device: 'decklink-1' })) as { layerId: string }
+    const brb = t.c.state.scenes.find((s) => s.id === 'brb')!
+    expect(brb.layers[0]).toMatchObject({ id: r.layerId, kind: 'video', device: 'decklink-1', name: 'DeckLink Mini Recorder' })
+    expect(t.engine.scenes.get('brb')!.layers[0].id).toBe(r.layerId)
+    await expect(t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'video', device: 'nope' })).rejects.toThrow()
+    await expect(t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'atem' as never })).rejects.toThrow('kind must be')
+  })
+
+  it('edits, reorders and removes sources', async () => {
+    const r = (await t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'text', text: '{guest.name}' })) as { layerId: string }
+    await t.c.run('local', 'layer.update', { sceneId: 'brb', layerId: r.layerId, name: 'Guest', text: 'Hello' })
+    const brb = () => t.c.state.scenes.find((s) => s.id === 'brb')!
+    expect(brb().layers[0]).toMatchObject({ name: 'Guest', text: 'Hello' })
+    await t.c.run('local', 'layer.move', { sceneId: 'brb', layerId: r.layerId, direction: 'down' })
+    expect(brb().layers[1].id).toBe(r.layerId)
+    await t.c.run('local', 'layer.remove', { sceneId: 'brb', layerId: r.layerId })
+    expect(brb().layers.find((l) => l.id === r.layerId)).toBeUndefined()
+    await expect(
+      t.c.run('local', 'layer.update', { sceneId: 'brb', layerId: 'brb-title', device: 'atem-mini' })
+    ).rejects.toThrow('Only video sources')
+  })
+
+  it('adds, renames and removes scenes, but never the one on air', async () => {
+    const r = (await t.c.run('local', 'scene.add', { name: 'Interview' })) as { sceneId: string }
+    await t.c.run('local', 'scene.rename', { sceneId: r.sceneId, name: 'Two-shot' })
+    expect(t.c.state.scenes.at(-1)).toMatchObject({ id: r.sceneId, name: 'Two-shot', layers: [] })
+    await expect(t.c.run('local', 'scene.remove', { sceneId: t.c.state.programSceneId })).rejects.toThrow('on air')
+    await t.c.run('local', 'scene.remove', { sceneId: r.sceneId })
+    expect(t.c.state.scenes.find((s) => s.id === r.sceneId)).toBeUndefined()
+    await expect(t.c.run('local', 'scene.add', { name: '' })).rejects.toThrow()
+  })
+
+  it('adds and removes audio channels, including a capture card’s sound', async () => {
+    const r = (await t.c.run('local', 'audio.add', { name: 'Capture', kind: 'video', device: 'usb-capture' })) as { sourceId: string }
+    expect(t.c.state.audio.at(-1)).toMatchObject({ id: r.sourceId, kind: 'video', device: 'usb-capture' })
+    await expect(t.c.run('local', 'audio.add', { name: 'X', kind: 'device', device: 'atem-mini' })).rejects.toThrow()
+    await t.c.run('local', 'audio.remove', { sourceId: r.sourceId })
+    expect(t.c.state.audio.find((a) => a.id === r.sourceId)).toBeUndefined()
+  })
+
+  it('only lets admin callers change the setup', async () => {
+    await expect(t.c.run('remote', 'scene.add', { name: 'Nope' })).rejects.toBeInstanceOf(CommandError)
+    await expect(t.c.run('remote', 'layer.remove', { sceneId: 'brb', layerId: 'brb-title' })).rejects.toBeInstanceOf(CommandError)
+    await t.c.run('remote', 'layer.setVisible', { sceneId: 'brb', layerId: 'brb-title', visible: false })
   })
 })

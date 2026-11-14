@@ -27,7 +27,7 @@ function Demo() {
       <header className="demo-bar">
         <div>
           <strong>Streaming App: interactive mockup</strong>
-          <span className="muted"> Simulated ATEM and video. Nothing is captured or sent.</span>
+          <span className="muted"> Pretend ATEM Mini and HyperDeck inputs. Nothing is captured or sent.</span>
         </div>
         <nav className="tabs">
           <button className={view === 'main' ? 'on' : ''} onClick={() => setView('main')}>

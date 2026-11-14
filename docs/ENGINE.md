@@ -1,16 +1,22 @@
-# Video engine and ATEM
+# Video engine and inputs
 
-## How the video gets in
+## How the video and audio get in
 
-The ATEM switches cameras. On an ATEM Mini, Mini Pro or Mini Extreme, the program picture reaches the streaming PC over the USB-C cable, where Windows sees it as a webcam named "Blackmagic Design". The app's **ATEM program feed** layer picks that webcam up.
+Like OBS, this app does not switch cameras. Cameras plug into the ATEM and are switched there. The app takes in what the ATEM or HyperDeck sends, as sources you can put in scenes.
 
-Larger ATEM models (Television Studio, Constellation) have no USB webcam output. Their program SDI or HDMI output goes into a Blackmagic DeckLink card or UltraStudio box instead; the layer then uses libobs's DeckLink source (Phase 2).
+| Device | How it connects | Video source | Audio |
+| --- | --- | --- | --- |
+| ATEM Mini, Mini Pro, Mini Extreme | USB-C to the PC | Shows up as a webcam named "Blackmagic Design" (libobs `dshow_input`) | Shows up as a USB audio input (`wasapi_input_capture`) |
+| HyperDeck, or a larger ATEM (Television Studio, Constellation) | HDMI or SDI out into a Blackmagic DeckLink card or UltraStudio box | libobs `decklink-input` | Comes in with the picture, on the same device |
+| Either one, through a USB HDMI capture stick | USB | Webcam (`dshow_input`) | Comes in with the picture |
 
-## How camera switching works
+In the app:
 
-Camera buttons in the app, on the tablet and on a stream deck all go through [`NetworkAtemLink`](../src/main/atem/atemLink.ts). It uses [atem-connection](https://github.com/nrkno/sofie-atem-connection), an open-source Node.js implementation of the ATEM network protocol (UDP port 9910). The ATEM and the PC must be on the same network: plug the ATEM's Ethernet port into the same router.
+- **+ Add source → Video input** picks one of the devices the PC can see. One device can appear in many scenes; the engine opens it once and shares it.
+- **+ Add audio** adds a mixer channel: an audio input (a mic, the ATEM Mini's USB audio), the sound from a video input (HyperDeck or capture card), or the PC's desktop sound.
+- **Settings → Video and audio inputs** lists what the PC can see, with a "Look again" button after plugging something in.
 
-Set the ATEM's IP address in **Settings → ATEM**. Find it in ATEM Setup under Configure, Network.
+Device ids are prefixed by type (`dshow:`, `decklink:`, `wasapi:`) so the engine knows which libobs source to make.
 
 ## The video engine (libobs)
 
@@ -38,8 +44,8 @@ Up to 3 platforms can be on at once. Each gets its own RTMP or RTMPS output. You
 
 ## Remaining engine work (Phase 1 and 2)
 
-- First run on Windows with obs-studio-node and an ATEM Mini; fix whatever the API differs on.
+- First run on Windows with obs-studio-node, an ATEM Mini over USB-C and a HyperDeck through a DeckLink card; fix whatever the API differs on (device property names in particular).
 - Real video in the Preview and Live monitors (`OBS_content_createSourcePreviewDisplay`). Today the monitors show a drawing of each scene.
 - Audio peak meters from libobs volmeters (today: simulated levels).
 - A vertical scene layout for Instagram.
-- DeckLink input for larger ATEM models.
+- Position and size of each source on the canvas (today every source fills the picture).

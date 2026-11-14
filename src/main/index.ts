@@ -1,14 +1,13 @@
 /**
- * Electron main process: starts the engine, the ATEM link, the controller
- * and the control server, then opens the main window.
+ * Electron main process: starts the engine, the controller and the control
+ * server, then opens the main window.
  */
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
 import { join } from 'node:path'
 import { Controller, errorText } from '../core/controller'
-import { SimAtem, SimEngine } from '../core/sim'
-import type { AtemLink, Engine } from '../core/ports'
+import { SimEngine } from '../core/sim'
+import type { Engine } from '../core/ports'
 import { CommandError, DEFAULT_CONTROL_PORT } from '../shared/protocol'
-import { NetworkAtemLink } from './atem/atemLink'
 import { ObsEngine } from './engine/obsEngine'
 import { ControlServer } from './control/server'
 import { PairingManager } from './control/pairing'
@@ -36,11 +35,10 @@ async function boot() {
   const setup = new SetupFile(f.setup)
   const initial = setup.load()
   let picked = pickEngine(join(dir, 'obs'))
-  const atem: AtemLink = process.env.STREAMING_ATEM === 'simulated' ? new SimAtem() : new NetworkAtemLink()
   const keys = new EncryptedKeyStore(f.keys, safeStorage)
   const pairing = new PairingManager(new DeviceFile(f.devices))
 
-  const make = (engine: Engine) => new Controller({ engine, atem, keys, initial, devices: pairing })
+  const make = (engine: Engine) => new Controller({ engine, keys, initial, devices: pairing })
   controller = make(picked.engine)
   try {
     await controller.start()
@@ -52,7 +50,6 @@ async function boot() {
   }
   const c = controller
   c.state.engine = { mode: picked.mode, note: picked.note }
-  if (process.env.STREAMING_ATEM === 'simulated') await atem.connect('simulated')
 
   pairing.onChange((s) => c.updateDevices(s))
   server = new ControlServer({

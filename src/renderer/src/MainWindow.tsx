@@ -1,21 +1,11 @@
 import { useState } from 'react'
-import type { AppState, AudioSource, HealthStats, Layer } from '../../shared/state'
+import type { AppState, AudioSource, HealthStats } from '../../shared/state'
 import { PLATFORMS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
-import { CameraButtons, HealthPill, Notice, ScenePicture } from './parts'
+import { AddAudioForm, SceneTools, SourceList } from './Editors'
+import { HealthPill, Notice, ScenePicture, deviceName } from './parts'
 import { Settings, type SettingsTab } from './Settings'
 import { useApp, useElapsed, type Run } from './useApp'
-
-const KIND_LABEL: Record<Layer['kind'], string> = {
-  atem: 'ATEM',
-  webcam: 'Webcam',
-  screen: 'Screen',
-  window: 'Window',
-  image: 'Image',
-  text: 'Text',
-  browser: 'Browser',
-  media: 'Media'
-}
 
 export function MainWindow({ bridge }: { bridge: Bridge }) {
   const { state, stats, run, notice, clearNotice } = useApp(bridge)
@@ -106,6 +96,7 @@ function ScenesColumn({ state, run }: { state: AppState; run: Run }) {
           )
         })}
       </div>
+      <SceneTools state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
       <p className="hint">Click to queue a scene. Double-click to put it on air right away.</p>
     </section>
   )
@@ -142,56 +133,40 @@ function CenterColumn({ state, run }: { state: AppState; run: Run }) {
           Go Live Scene: {preview.name}
         </button>
       </div>
-      <div className="layers">
-        <h2>Layers in {preview.name}</h2>
-        <ul>
-          {preview.layers.map((l) => (
-            <li key={l.id} className={l.visible ? '' : 'hidden-layer'}>
-              <label className="switch" title={l.visible ? 'Hide' : 'Show'}>
-                <input
-                  type="checkbox"
-                  checked={l.visible}
-                  onChange={(e) => run('layer.setVisible', { sceneId: preview.id, layerId: l.id, visible: e.target.checked })}
-                />
-                <span />
-              </label>
-              <span className="layer-name">{l.name}</span>
-              <span className="layer-kind">{KIND_LABEL[l.kind]}</span>
-              {l.text && <code className="layer-text">{l.text}</code>}
-            </li>
-          ))}
-        </ul>
-        <p className="hint">Top of the list shows in front. Text in braces, like {'{guest.name}'}, comes from the companion app.</p>
-      </div>
+      <SourceList state={state} run={run} scene={preview} />
     </section>
   )
 }
 
 function RightColumn(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
   const { state, stats, run, openSettings } = props
+  const [addingAudio, setAddingAudio] = useState(false)
   return (
     <section className="col right">
       <div className="panel">
         <div className="panel-head">
-          <h2>Cameras {state.atem.model ? <small>({state.atem.model})</small> : null}</h2>
-          <button className="ghost small" onClick={() => openSettings('atem')}>
-            ATEM settings
-          </button>
-        </div>
-        <CameraButtons state={state} run={run} />
-      </div>
-      <div className="panel">
-        <div className="panel-head">
           <h2>Audio</h2>
-          <button className="ghost small" onClick={() => run('audio.muteAll')}>
-            Mute all
-          </button>
+          <span className="row">
+            <button className="ghost small" onClick={() => openSettings('inputs')}>
+              Inputs
+            </button>
+            <button className="ghost small" onClick={() => run('audio.muteAll')}>
+              Mute all
+            </button>
+          </span>
         </div>
         <div className="mixer">
           {state.audio.map((a) => (
-            <Fader key={a.id} a={a} level={stats?.audioLevels[a.id] ?? 0} run={run} />
+            <Fader key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} run={run} />
           ))}
         </div>
+        {addingAudio ? (
+          <AddAudioForm state={state} run={run} onDone={() => setAddingAudio(false)} />
+        ) : (
+          <button className="small add-audio" onClick={() => setAddingAudio(true)}>
+            + Add audio
+          </button>
+        )}
       </div>
       <div className="panel">
         <div className="panel-head">
@@ -206,9 +181,13 @@ function RightColumn(props: { state: AppState; stats: HealthStats | null; run: R
   )
 }
 
-function Fader({ a, level, run }: { a: AudioSource; level: number; run: Run }) {
+function Fader({ a, state, level, run }: { a: AudioSource; state: AppState; level: number; run: Run }) {
+  const from = a.kind === 'desktop' ? 'Desktop sound' : (deviceName(state, a.device) ?? 'Device not found')
   return (
-    <div className={`fader ${a.muted ? 'muted' : ''}`}>
+    <div className={`fader ${a.muted ? 'muted' : ''}`} title={from}>
+      <button className="ghost icon fader-remove" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
+        ✕
+      </button>
       <div className="fader-track">
         <div className="meter" style={{ height: `${Math.round(level * 100)}%` }} />
         <input

@@ -1,20 +1,20 @@
 import type { DataValue, Role } from './protocol'
 
-export type LayerKind =
-  | 'atem'
-  | 'webcam'
-  | 'screen'
-  | 'window'
-  | 'image'
-  | 'text'
-  | 'browser'
-  | 'media'
+/**
+ * Source types, like OBS's. 'video' is a capture device: the ATEM Mini over
+ * USB-C, a HyperDeck through a capture card, or any camera or HDMI capture.
+ */
+export type LayerKind = 'video' | 'screen' | 'window' | 'image' | 'text' | 'browser' | 'media'
+
+export const LAYER_KINDS: LayerKind[] = ['video', 'image', 'text', 'browser', 'media', 'screen', 'window']
 
 export interface Layer {
   id: string
   name: string
   kind: LayerKind
   visible: boolean
+  /** Video layers: which capture device (an id from state.inputs.video). */
+  device?: string
   /** Text layers: shown text. `{field.name}` is replaced by that data field's value. */
   text?: string
   /** Image, media and browser layers: file path or URL. */
@@ -26,18 +26,32 @@ export interface Scene {
   name: string
   /** Top of the list is drawn in front. */
   layers: Layer[]
-  /** Optional: switching this scene live also puts this ATEM input on air. */
-  atemInput?: number
 }
+
+/**
+ * A mixer channel. 'device' is an audio input (a mic, or the ATEM Mini's USB
+ * audio); 'desktop' is the PC's own sound; 'video' is the sound that comes in
+ * with a capture device (a HyperDeck or ATEM through a capture card).
+ */
+export type AudioKind = 'device' | 'desktop' | 'video'
 
 export interface AudioSource {
   id: string
   name: string
+  kind: AudioKind
+  /** For 'device' and 'video': which device (an id from state.inputs). */
+  device?: string
   /** 0 to 1 */
   volume: number
   muted: boolean
   /** Latest peak level, 0 to 1. Updated with stats. */
   level: number
+}
+
+/** A capture or audio device the PC can see. */
+export interface InputDevice {
+  id: string
+  name: string
 }
 
 export type Platform = 'youtube' | 'facebook' | 'instagram' | 'twitch' | 'kick' | 'custom'
@@ -55,22 +69,6 @@ export interface Destination {
 }
 
 export type Quality = 'low' | 'medium' | 'high'
-
-export interface AtemInput {
-  id: number
-  shortName: string
-  longName: string
-}
-
-export interface AtemState {
-  connected: boolean
-  host: string
-  model: string
-  inputs: AtemInput[]
-  program: number | null
-  preview: number | null
-  inTransition: boolean
-}
 
 export interface DataField {
   value: DataValue
@@ -119,7 +117,8 @@ export interface AppState {
   audio: AudioSource[]
   stream: { live: boolean; startedAt: number | null; quality: Quality; destinations: Destination[] }
   recording: { active: boolean; startedAt: number | null; folder: string; format: 'mp4' | 'mkv' }
-  atem: AtemState
+  /** Devices the PC can see, for the source and audio pickers. */
+  inputs: { video: InputDevice[]; audio: InputDevice[] }
   data: Record<string, DataField>
   devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[] }
   stats: HealthStats
