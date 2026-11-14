@@ -1,7 +1,7 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
 import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
-import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf } from '../../shared/state'
+import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, scenesOnAir } from '../../shared/state'
 import { deviceName } from './parts'
 import type { Run } from './useApp'
 
@@ -10,9 +10,13 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   image: 'Image',
   text: 'Text',
   browser: 'Browser',
-  media: 'Media file',
+  media: 'Video file',
   screen: 'Screen',
-  window: 'Window'
+  window: 'Window',
+  color: 'Color',
+  countdown: 'Countdown',
+  slideshow: 'Slideshow',
+  scene: 'Scene'
 }
 
 const KIND_HELP: Record<LayerKind, string> = {
@@ -20,12 +24,17 @@ const KIND_HELP: Record<LayerKind, string> = {
   image: 'A picture or logo from a file',
   text: 'Words on screen. {field} shows data from the companion app',
   browser: 'A web page, such as an alerts overlay (needs the desktop version: the web version can’t draw web pages into the video)',
-  media: 'A video or sound file',
+  media: 'A video file, such as an intro or a promo. It can loop, and its sound can play while its scene is on air',
   screen: 'Everything on one of this PC’s screens',
-  window: 'One app window on this PC'
+  window: 'One app window on this PC',
+  color: 'A solid color, as a background or a box behind text',
+  countdown: 'Counts down to a time (like 19:30) or for some minutes after the scene goes on air',
+  slideshow: 'Every picture in a folder, one after another',
+  scene: 'Another scene shown inside this one, such as a logo-and-title scene used on every slide'
 }
 
 const AUDIO_KIND_LABEL: Record<AudioKind, string> = {
+  file: 'Music or sound file (background music, loops)',
   device: 'Audio input (mic, USB interface like Zoom L-12 or Focusrite, ATEM Mini USB audio)',
   video: 'Sound from a video input (HyperDeck, capture card)',
   desktop: 'Desktop sound (this PC)'
@@ -184,18 +193,28 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
     const name = deviceName(state, layer.device)
     return <span className={`layer-text ${name ? '' : 'warn-text'}`}>{`${kind} · ${name ?? 'device not found'}`}</span>
   }
-  const extra = layer.text ?? layer.url
+  if (layer.kind === 'scene') {
+    const inner = state.scenes.find((x) => x.id === layer.sceneId)
+    return <span className={`layer-text ${inner ? '' : 'warn-text'}`}>{`${kind} · ${inner?.name ?? 'scene not found'}`}</span>
+  }
+  const extra =
+    layer.kind === 'countdown'
+      ? layer.until
+        ? `to ${layer.until}`
+        : `${layer.minutes ?? 5} min`
+      : layer.kind === 'color'
+        ? layer.color
+        : layer.kind === 'media'
+          ? `${layer.url ?? ''}${layer.loop === false ? ' · plays once' : ' · loops'}${layer.sound ? ' · with sound' : ''}`
+          : (layer.text ?? layer.url)
   return <span className="layer-text">{extra ? `${kind} · ${extra}` : kind}</span>
 }
 
 /** Fields shared by "Add source" and "Edit". */
-function SourceFields(props: {
-  state: AppState
-  kind: LayerKind
-  v: Fields
-  set: (k: keyof Fields, value: string) => void
-}) {
-  const { state, kind, v, set } = props
+function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v: Fields; set: SetField }) {
+  const { state, kind, scene, v, set } = props
+  // A scene can show any other scene that doesn't already show this one.
+  const nestable = state.scenes.filter((x) => x.id !== scene.id && !scenesOnAir(state, x.id).has(scene.id))
   return (
     <>
       <label>
@@ -221,14 +240,83 @@ function SourceFields(props: {
           <input value={v.text} maxLength={500} placeholder="e.g. {guest.name}" onChange={(e) => set('text', e.target.value)} />
         </label>
       )}
-      {(kind === 'image' || kind === 'media' || kind === 'browser') && (
+      {(kind === 'image' || kind === 'media' || kind === 'browser' || kind === 'slideshow') && (
         <label>
-          {kind === 'browser' ? 'Web address' : 'File'}
+          {kind === 'browser' ? 'Web address' : kind === 'slideshow' ? 'Folder with the pictures' : 'File'}
           <input
             value={v.url}
-            placeholder={kind === 'browser' ? 'https://…' : 'C:\\Videos\\intro.mp4'}
+            placeholder={kind === 'browser' ? 'https://…' : kind === 'slideshow' ? 'C:\\Pictures\\Sponsors' : kind === 'media' ? 'C:\\Videos\\intro.mp4' : 'C:\\Pictures\\logo.png'}
             onChange={(e) => set('url', e.target.value)}
           />
+          <small className="muted">Right-click the file in File Explorer, then "Copy as path", and paste it here.</small>
+        </label>
+      )}
+      {kind === 'media' && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={v.loop} onChange={(e) => set('loop', e.target.checked)} /> Loop (otherwise it plays once, from the start, each time its scene goes on air)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play its sound while this scene is on air
+          </label>
+          {v.sound && (
+            <label>
+              Volume
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
+        </>
+      )}
+      {kind === 'slideshow' && (
+        <label>
+          Seconds per picture
+          <input type="number" min={1} max={3600} value={v.seconds} onChange={(e) => set('seconds', e.target.value)} />
+        </label>
+      )}
+      {kind === 'color' && (
+        <label>
+          Color
+          <input type="color" value={v.color} onChange={(e) => set('color', e.target.value)} />
+        </label>
+      )}
+      {kind === 'countdown' && (
+        <>
+          <label>
+            Count down
+            <select value={v.countMode} onChange={(e) => set('countMode', e.target.value)}>
+              <option value="minutes">For some minutes, from when this scene goes on air</option>
+              <option value="until">To a time of day</option>
+            </select>
+          </label>
+          {v.countMode === 'until' ? (
+            <label>
+              Time
+              <input type="time" value={v.until} onChange={(e) => set('until', e.target.value)} />
+            </label>
+          ) : (
+            <label>
+              Minutes
+              <input type="number" min={0} max={1440} value={v.minutes} onChange={(e) => set('minutes', e.target.value)} />
+            </label>
+          )}
+          <label>
+            Text
+            <input value={v.text} maxLength={200} placeholder="Starting in {time}" onChange={(e) => set('text', e.target.value)} />
+            <small className="muted">{'{time}'} is where the minutes and seconds go.</small>
+          </label>
+        </>
+      )}
+      {kind === 'scene' && (
+        <label>
+          Scene to show
+          <select value={v.showScene} onChange={(e) => set('showScene', e.target.value)}>
+            <option value="">Pick a scene…</option>
+            {nestable.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
         </label>
       )}
       <label>
@@ -251,11 +339,67 @@ interface Fields {
   text: string
   url: string
   placement: Placement
+  loop: boolean
+  sound: boolean
+  /** 0 to 100 */
+  volume: string
+  color: string
+  countMode: 'minutes' | 'until'
+  until: string
+  minutes: string
+  seconds: string
+  showScene: string
+}
+type SetField = <K extends keyof Fields>(k: K, value: Fields[K] | string | boolean) => void
+
+function useFields(layer: Partial<Layer> & { placement: Placement }) {
+  const [v, setV] = useState<Fields>({
+    name: layer.name ?? '',
+    device: layer.device ?? '',
+    text: layer.text ?? '',
+    url: layer.url ?? '',
+    placement: layer.placement,
+    loop: layer.loop !== false,
+    sound: layer.sound === true,
+    volume: String(Math.round((layer.volume ?? 1) * 100)),
+    color: layer.color ?? '#1e3a8a',
+    countMode: layer.until ? 'until' : 'minutes',
+    until: layer.until ?? '19:30',
+    minutes: String(layer.minutes ?? 5),
+    seconds: String(layer.seconds ?? 5),
+    showScene: layer.sceneId ?? ''
+  })
+  // "Copy as path" in File Explorer adds quotes.
+  const set: SetField = (k, value) => setV((old) => ({ ...old, [k]: k === 'url' && typeof value === 'string' ? value.replace(/^\s*"|"\s*$/g, '') : value }))
+  return [v, set] as const
 }
 
-function useFields(init: { name?: string; device?: string; text?: string; url?: string; placement: Placement }) {
-  const [v, setV] = useState<Fields>({ name: init.name ?? '', device: init.device ?? '', text: init.text ?? '', url: init.url ?? '', placement: init.placement })
-  return [v, (k: keyof Fields, value: string) => setV((old) => ({ ...old, [k]: value }))] as const
+/** The fields a source of this kind sends with layer.add and layer.update. */
+function kindFields(kind: LayerKind, v: Fields) {
+  switch (kind) {
+    case 'video':
+      return { device: v.device }
+    case 'text':
+      return { text: v.text }
+    case 'image':
+    case 'browser':
+      return v.url ? { url: v.url } : {}
+    case 'media':
+      return { ...(v.url && { url: v.url }), loop: v.loop, sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
+    case 'slideshow':
+      return { ...(v.url && { url: v.url }), seconds: Math.max(1, Number(v.seconds) || 5) }
+    case 'color':
+      return { color: v.color }
+    case 'countdown':
+      return {
+        text: v.text || 'Starting in {time}',
+        ...(v.countMode === 'until' ? { until: v.until } : { until: '', minutes: Math.max(0, Number(v.minutes) || 0) })
+      }
+    case 'scene':
+      return v.showScene ? { showScene: v.showScene } : {}
+    default:
+      return {}
+  }
 }
 
 function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
@@ -263,17 +407,15 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
   const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
   const pick = (k: LayerKind) => {
     setKind(k)
-    set('placement', k === 'text' ? 'lower-third' : 'full')
+    set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
   }
-  const needsDevice = kind === 'video' && !v.device
+  const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene)
   const add = async () => {
     const ok = await run('layer.add', {
       sceneId: scene.id,
       kind,
       ...(v.name.trim() && { name: v.name.trim() }),
-      ...(kind === 'video' && { device: v.device }),
-      ...(kind === 'text' && { text: v.text }),
-      ...((kind === 'image' || kind === 'media' || kind === 'browser') && v.url && { url: v.url }),
+      ...kindFields(kind, v),
       placement: v.placement
     })
     if (ok) onDone()
@@ -302,7 +444,7 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
         ))}
       </div>
       <p className="muted small">{KIND_HELP[kind]}.</p>
-      <SourceFields state={state} kind={kind} v={v} set={set} />
+      <SourceFields state={state} kind={kind} scene={scene} v={v} set={set} />
       {kind === 'video' && state.inputs.video.length === 0 && (
         <p className="muted small">No video devices found. Plug in the ATEM or capture card, then use Settings, Video and audio inputs.</p>
       )}
@@ -322,12 +464,14 @@ function SourceEditor(props: { state: AppState; run: Run; scene: Scene; layer: L
   const { state, run, scene, layer, onDone } = props
   const [v, set] = useFields({ ...layer, placement: placementOf(layer) })
   const save = async () => {
+    const fields: Record<string, unknown> = kindFields(layer.kind, v)
+    if (layer.kind === 'video' && (!v.device || v.device === layer.device)) delete fields.device
+    if (layer.kind === 'scene' && v.showScene === layer.sceneId) delete fields.showScene
     const ok = await run('layer.update', {
       sceneId: scene.id,
       layerId: layer.id,
       ...(v.name.trim() && v.name.trim() !== layer.name && { name: v.name.trim() }),
-      ...(layer.kind === 'video' && v.device && v.device !== layer.device && { device: v.device }),
-      ...(layer.kind === 'text' && v.text !== (layer.text ?? '') && { text: v.text }),
+      ...fields,
       ...(v.url !== (layer.url ?? '') && { url: v.url }),
       ...(v.placement !== placementOf(layer) && { placement: v.placement })
     })
@@ -341,7 +485,7 @@ function SourceEditor(props: { state: AppState; run: Run; scene: Scene; layer: L
         save()
       }}
     >
-      <SourceFields state={state} kind={layer.kind} v={v} set={set} />
+      <SourceFields state={state} kind={layer.kind} scene={scene} v={v} set={set} />
       <div className="row">
         <button type="submit" className="accent small">
           Save
@@ -386,9 +530,66 @@ function SyncField({ value, onChange }: { value: string; onChange: (v: string) =
   )
 }
 
+/**
+ * Which scenes a sound plays in. Sound follows the scene: it is heard only
+ * while one of its scenes is on air, unless it is set to every scene.
+ */
+function ScenePicker({ state, value, onChange }: { state: AppState; value: string[] | undefined; onChange: (v: string[] | undefined) => void }) {
+  const all = value === undefined
+  const toggle = (id: string, on: boolean) => {
+    const next = new Set(value ?? [])
+    if (on) next.add(id)
+    else next.delete(id)
+    onChange(state.scenes.map((x) => x.id).filter((x) => next.has(x)))
+  }
+  return (
+    <fieldset className="scene-picker">
+      <legend>Plays in</legend>
+      <label className="check">
+        <input type="radio" checked={all} onChange={() => onChange(undefined)} /> Every scene (like a presenter's mic)
+      </label>
+      <label className="check">
+        <input type="radio" checked={!all} onChange={() => onChange([state.previewSceneId])} /> Only these scenes:
+      </label>
+      {!all && (
+        <div className="scene-checks">
+          {state.scenes.map((x) => (
+            <label key={x.id} className="check">
+              <input type="checkbox" checked={value.includes(x.id)} onChange={(e) => toggle(x.id, e.target.checked)} /> {x.name}
+            </label>
+          ))}
+        </div>
+      )}
+      {!all && value.length === 0 && <small className="warn-text">Pick at least one scene, or it won't be heard.</small>}
+    </fieldset>
+  )
+}
+
+/** File path field for a music or sound file. */
+function MusicFields(props: { url: string; setUrl: (v: string) => void; loop: boolean; setLoop: (v: boolean) => void }) {
+  return (
+    <>
+      <label>
+        File
+        <input value={props.url} placeholder="C:\\Music\\holding.mp3" onChange={(e) => props.setUrl(e.target.value)} />
+        <small className="muted">MP3, WAV, M4A, OGG or FLAC. Right-click it in File Explorer, "Copy as path", and paste it here.</small>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={props.loop} onChange={(e) => props.setLoop(e.target.checked)} /> Loop. It starts from the
+        beginning each time its scene goes on air.
+      </label>
+    </>
+  )
+}
+
+const fileName = (path: string) => path.replace(/^"|"$/g, '').split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? ''
+
 /** "+ Add audio": a mic, a USB audio interface (Zoom L-12, Focusrite), the ATEM Mini's USB audio, a capture card's sound, or desktop sound. */
 export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run; onDone: () => void }) {
   const [kind, setKind] = useState<AudioKind>('device')
+  const [scenes, setScenes] = useState<string[] | undefined>([state.previewSceneId])
+  const [url, setUrl] = useState('')
+  const [loop, setLoop] = useState(true)
   const list = kind === 'video' ? state.inputs.video : kind === 'device' ? state.inputs.audio : []
   const [device, setDevice] = useState(state.inputs.audio[0]?.id ?? '')
   const [channels, setChannels] = useState('')
@@ -400,7 +601,9 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
   const autoName =
     kind === 'desktop'
       ? 'Desktop'
-      : picked
+      : kind === 'file'
+        ? fileName(url)
+        : picked
         ? chs
           ? `${shortName(picked)} ${chs.map((c) => channelName(picked, c)).join(' + ')}`
           : shortName(picked)
@@ -411,8 +614,10 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
       name: (name.trim() || autoName).slice(0, 60),
       kind,
       syncOffsetMs: syncMs,
-      ...(kind !== 'desktop' && { device }),
-      ...(chs && { channels: chs })
+      ...((kind === 'device' || kind === 'video') && { device }),
+      ...(chs && { channels: chs }),
+      ...(kind === 'file' && { url: url.replace(/^"|"$/g, ''), loop }),
+      ...(scenes && { scenes })
     })
     if (ok) onDone()
   }
@@ -424,7 +629,8 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
         kind,
         device,
         channels: [c],
-        syncOffsetMs: syncMs
+        syncOffsetMs: syncMs,
+        ...(scenes && { scenes })
       })
       if (!ok) return
     }
@@ -456,7 +662,8 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
           ))}
         </select>
       </label>
-      {kind !== 'desktop' && (
+      {kind === 'file' && <MusicFields url={url} setUrl={setUrl} loop={loop} setLoop={setLoop} />}
+      {(kind === 'device' || kind === 'video') && (
         <label>
           Device
           <select
@@ -492,9 +699,16 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
         Name
         <input value={name} maxLength={60} placeholder={autoName || 'Channel name'} onChange={(e) => setName(e.target.value)} />
       </label>
-      <SyncField value={sync} onChange={setSync} />
+      <ScenePicker state={state} value={scenes} onChange={setScenes} />
+      {kind !== 'file' && <SyncField value={sync} onChange={setSync} />}
       <div className="row">
-        <button type="submit" className="accent small" disabled={(kind !== 'desktop' && !picked) || !(name.trim() || autoName)}>
+        <button
+          type="submit"
+          className="accent small"
+          disabled={
+            ((kind === 'device' || kind === 'video') && !picked) || (kind === 'file' && !url.trim()) || !(name.trim() || autoName) || scenes?.length === 0
+          }
+        >
           Add channel
         </button>
         {options.length > 0 && (
@@ -519,6 +733,9 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
   const [name, setName] = useState(source.name)
   const [channels, setChannels] = useState(source.channels?.join(',') ?? '')
   const [sync, setSync] = useState(String(source.syncOffsetMs ?? 0))
+  const [scenes, setScenes] = useState<string[] | undefined>(source.scenes)
+  const [url, setUrl] = useState(source.url ?? '')
+  const [loop, setLoop] = useState(source.loop !== false)
   const save = async () => {
     const chs = parseChannels(channels)
     const ok = await run('audio.update', {
@@ -526,6 +743,8 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
       ...(name.trim() && name.trim() !== source.name && { name: name.trim() }),
       ...(device && device !== source.device && { device }),
       ...(options.length > 0 && chs && channels !== (source.channels?.join(',') ?? '') && { channels: chs }),
+      ...(source.kind === 'file' && { url: url.replace(/^"|"$/g, ''), loop }),
+      scenes: scenes ?? [],
       syncOffsetMs: Number(sync) || 0
     })
     if (ok) onDone()
@@ -544,7 +763,8 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
         Name
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
       </label>
-      {source.kind !== 'desktop' && (
+      {source.kind === 'file' && <MusicFields url={url} setUrl={setUrl} loop={loop} setLoop={setLoop} />}
+      {(source.kind === 'device' || source.kind === 'video') && (
         <label>
           Device
           <select
@@ -578,9 +798,10 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
           </select>
         </label>
       )}
-      <SyncField value={sync} onChange={setSync} />
+      <ScenePicker state={state} value={scenes} onChange={setScenes} />
+      {source.kind !== 'file' && <SyncField value={sync} onChange={setSync} />}
       <div className="row">
-        <button type="submit" className="accent small">
+        <button type="submit" className="accent small" disabled={(source.kind === 'file' && !url.trim()) || scenes?.length === 0}>
           Save
         </button>
         <button type="button" className="ghost small" onClick={onDone}>

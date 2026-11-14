@@ -6,17 +6,29 @@
  * One device is opened once and shared, so an L-12 can feed one channel per
  * mic. The program mix goes into the stream and the recording.
  */
-import type { AppState, AudioSource, InputDevice } from '../../../shared/state'
+import { audible, scenesOnAir, type AppState, type AudioSource, type InputDevice } from '../../../shared/state'
+import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
 
-/** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
+/** Close a device input: stop a device, pause a file. A phone's tracks belong to its connection, so they stay. */
 const stopTracks = (id: string, d: DeviceInput | null) => {
-  if (!id.startsWith(PHONE_PREFIX)) d?.stream.getTracks().forEach((t) => t.stop())
+  if (d?.el) {
+    d.el.pause()
+    d.node.disconnect()
+    return
+  }
+  if (d && !d.stream) d.node.disconnect()
+  if (!id.startsWith(PHONE_PREFIX)) d?.stream?.getTracks().forEach((t) => t.stop())
 }
 
+/** Sound from a video file in a scene ("media" source with sound on), keyed by layer id. */
+const LAYER_PREFIX = 'mediasound-'
+
 interface DeviceInput {
-  stream: MediaStream
-  node: MediaStreamAudioSourceNode
+  stream?: MediaStream
+  /** A music or sound file plays through this element. */
+  el?: HTMLAudioElement
+  node: AudioNode
   splitter: ChannelSplitterNode
   channels: number
 }
@@ -26,6 +38,9 @@ interface Chain {
   merger: ChannelMergerNode
   delay: DelayNode
   gain: GainNode
+  /** Opens while the channel's scene is on air; fades with the transition. */
+  gate: GainNode
+  open: boolean
   analyser: AnalyserNode
   buf: Float32Array<ArrayBuffer>
   /** Unhooks it from the shared device input. */
@@ -43,6 +58,11 @@ export class Mixer {
   readonly problems = new Map<string, string>()
   /** Where phone microphones come from (set by the studio). */
   phoneStream: (id: string) => MediaStream | null = () => null
+  /** The playing element of a video file in a scene (set by the studio). */
+  mediaElement: (url: string) => HTMLVideoElement | null = () => null
+  /** A media element can feed Web Audio only once: keep its node. */
+  private mediaNodes = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>()
+  private onAir = new Set<string>()
 
   constructor() {
     this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' })
@@ -72,9 +92,16 @@ export class Mixer {
 
   /** Make the mixer match the app's channels. Cheap to call on every state change. */
   update(state: AppState) {
-    const wanted = new Set(state.audio.map((a) => a.id))
+    const onAir = scenesOnAir(state)
+    const sceneChanged = [...onAir].some((id) => !this.onAir.has(id)) || [...this.onAir].some((id) => !onAir.has(id))
+    this.onAir = onAir
+    // Sound follows the picture: a fade takes as long as the video fade; a cut is quick but not a click.
+    const fadeS = state.transition.kind === 'fade' ? Math.max(0.03, state.transition.durationMs / 1000) : 0.03
+
+    const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir)]
+    const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
-    for (const a of state.audio) {
+    for (const { a, on } of channels) {
       const device = this.deviceFor(a, state.inputs)
       const key = `${a.kind}|${device ?? ''}|${a.channels?.join(',') ?? ''}`
       let chain = this.chains.get(a.id)
@@ -82,19 +109,63 @@ export class Mixer {
         this.drop(a.id)
         chain = undefined
       }
+      const fresh = !chain
       if (!chain) chain = this.build(a, key, device)
       const t = this.ctx.currentTime
       chain.gain.gain.setTargetAtTime(a.muted ? 0 : a.volume, t, 0.02)
       chain.delay.delayTime.setTargetAtTime(Math.max(0, a.syncOffsetMs ?? 0) / 1000, t, 0.05)
+      if (fresh || chain.open !== on || sceneChanged) {
+        const opening = on && !chain.open
+        chain.open = on
+        chain.gate.gain.cancelScheduledValues(t)
+        if (fresh) chain.gate.gain.setValueAtTime(on ? 1 : 0, t)
+        else chain.gate.gain.setTargetAtTime(on ? 1 : 0, t, fadeS / 3)
+        if (a.kind === 'file' && device) this.playFile(device, a, on, opening || fresh, fadeS)
+      }
+      if (a.kind === 'file' && device) void this.devices.get(device)?.then((d) => d?.el && (d.el.loop = a.loop !== false))
     }
     // Close devices nobody uses any more (frees the L-12 for other apps).
-    const used = new Set(state.audio.map((a) => this.deviceFor(a, state.inputs) ?? ''))
+    const used = new Set(channels.map(({ a }) => this.deviceFor(a, state.inputs) ?? ''))
     for (const id of [...this.devices.keys()]) {
       if (!used.has(id) && id !== 'desktop') {
         void this.devices.get(id)?.then((d) => stopTracks(id, d))
         this.devices.delete(id)
       }
     }
+  }
+
+  /** Video files with their sound on, in any scene: each is a channel that is heard while its scene is on air. */
+  private mediaChannels(state: AppState, onAir: Set<string>): { a: AudioSource; on: boolean }[] {
+    const out: { a: AudioSource; on: boolean }[] = []
+    for (const scene of state.scenes) {
+      for (const l of scene.layers) {
+        if (l.kind !== 'media' || !l.sound || !l.url) continue
+        out.push({
+          a: { id: LAYER_PREFIX + l.id, name: l.name, kind: 'file', url: l.url, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
+          on: l.visible && onAir.has(scene.id)
+        })
+      }
+    }
+    return out
+  }
+
+  /** A music file starts from the top when its scene goes on air, and pauses once it has faded out. */
+  private playFile(device: string, a: AudioSource, on: boolean, restart: boolean, fadeS: number) {
+    if (a.id.startsWith(LAYER_PREFIX)) return // a video file plays with its picture
+    void this.devices.get(device)?.then((d) => {
+      const el = d?.el
+      if (!el) return
+      clearTimeout((el as HTMLAudioElement & { pauseTimer?: number }).pauseTimer)
+      if (on) {
+        if (restart) el.currentTime = 0
+        el.play().then(
+          () => this.problems.delete(a.id),
+          () => this.problems.set(a.id, 'Click the page once to let sound play')
+        )
+      } else {
+        ;(el as HTMLAudioElement & { pauseTimer?: number }).pauseTimer = window.setTimeout(() => el.pause(), fadeS * 1000 + 300)
+      }
+    })
   }
 
   /** Peak level per channel, 0 to 1, for the meters. */
@@ -111,6 +182,7 @@ export class Mixer {
 
   private deviceFor(a: AudioSource, inputs: AppState['inputs']): string | undefined {
     if (a.kind === 'desktop') return 'desktop'
+    if (a.kind === 'file') return a.url ? `file:${a.id}:${a.url}` : undefined
     if (a.kind === 'video') {
       // A capture device's sound is the audio input from the same box (same group).
       const v = inputs.video.find((d) => d.id === a.device)
@@ -124,6 +196,7 @@ export class Mixer {
     if (p) return p
     p = (async () => {
       let stream: MediaStream
+      if (id.startsWith('file:')) return this.openFile(id)
       if (id === 'desktop') {
         if (!this.desktop) return null
         stream = this.desktop
@@ -157,19 +230,48 @@ export class Mixer {
     return p
   }
 
+  /** A music file (an audio element), or the sound of a video file in a scene (its video element). */
+  private async openFile(id: string): Promise<DeviceInput | null> {
+    const rest = id.slice('file:'.length)
+    const sourceId = rest.slice(0, rest.indexOf(':'))
+    const url = rest.slice(rest.indexOf(':') + 1)
+    let el: HTMLMediaElement | null
+    if (sourceId.startsWith(LAYER_PREFIX)) {
+      el = this.mediaElement(url)
+      if (!el) return null
+      el.muted = false
+    } else {
+      const audio = new Audio()
+      audio.preload = 'auto'
+      audio.src = fileUrl(url)
+      el = audio
+    }
+    let node = this.mediaNodes.get(el)
+    if (!node) {
+      node = this.ctx.createMediaElementSource(el)
+      this.mediaNodes.set(el, node)
+    }
+    const splitter = this.ctx.createChannelSplitter(2)
+    node.channelCountMode = 'explicit'
+    node.channelCount = 2
+    node.connect(splitter)
+    return { el: el instanceof HTMLAudioElement ? el : undefined, node, splitter, channels: 2 }
+  }
+
   private build(a: AudioSource, key: string, device: string | undefined): Chain {
     const merger = this.ctx.createChannelMerger(2)
     const delay = this.ctx.createDelay(5)
     const gain = this.ctx.createGain()
+    const gate = this.ctx.createGain()
     const analyser = this.ctx.createAnalyser()
     analyser.fftSize = 1024
     merger.connect(delay).connect(gain).connect(analyser)
-    gain.connect(this.output)
-    const chain: Chain = { key, merger, delay, gain, analyser, buf: new Float32Array(analyser.fftSize) }
+    gain.connect(gate).connect(this.output)
+    const chain: Chain = { key, merger, delay, gain, gate, open: false, analyser, buf: new Float32Array(analyser.fftSize) }
     this.chains.set(a.id, chain)
     this.problems.delete(a.id)
     if (!device) {
-      this.problems.set(a.id, a.kind === 'video' ? 'No sound found for this video input' : 'Pick a device')
+      this.problems.set(a.id, a.kind === 'video' ? 'No sound found for this video input' : a.kind === 'file' ? 'Pick a file' : 'Pick a device')
       return chain
     }
     void this.openDevice(device).then((d) => {
@@ -177,7 +279,13 @@ export class Mixer {
       if (!d) {
         this.problems.set(
           a.id,
-          device === 'desktop' ? 'Needs a click to share desktop sound' : device.startsWith(PHONE_PREFIX) ? 'Phone not connected' : 'Could not open the device'
+          device === 'desktop'
+            ? 'Needs a click to share desktop sound'
+            : device.startsWith(PHONE_PREFIX)
+              ? 'Phone not connected'
+              : device.startsWith('file:')
+                ? 'Could not play the file'
+                : 'Could not open the device'
         )
         return
       }
@@ -202,6 +310,7 @@ export class Mixer {
     c.unlink?.()
     c.merger.disconnect()
     c.gain.disconnect()
+    c.gate.disconnect()
     this.chains.delete(id)
     this.problems.delete(id)
   }

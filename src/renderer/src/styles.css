@@ -419,3 +419,11 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 .studio-bar.warn { background: var(--warn-bg); border-bottom-color: var(--warn); }
 .studio-ask { display: inline-flex; align-items: center; gap: 8px; }
 .offline-bar { padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); }
+
+/* Sound that follows the scene: dimmed while its scene is not on air. */
+.strip.off-air { opacity: .55; }
+.strip.off-air:hover, .strip.off-air:focus-within { opacity: 1; }
+.scene-picker { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; margin: 0; }
+.scene-picker legend { padding: 0 4px; font-size: 13px; color: var(--muted); }
+.scene-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 12px; padding-left: 22px; }
+label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; }

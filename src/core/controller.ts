@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -249,6 +249,13 @@ export class Controller extends Emitter<Events> {
         if (scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
         this.s.scenes = this.s.scenes.filter((x) => x !== scene)
         if (this.s.previewSceneId === scene.id) this.s.previewSceneId = this.s.programSceneId
+        // Forget it in sounds that played in it, and in scenes that showed it.
+        for (const a of this.s.audio) {
+          if (!a.scenes) continue
+          a.scenes = a.scenes.filter((id) => id !== scene.id)
+          if (!a.scenes.length) delete a.scenes
+        }
+        for (const other of this.s.scenes) other.layers = other.layers.filter((l) => !(l.kind === 'scene' && l.sceneId === scene.id))
         await this.engine.removeScene(scene.id)
         return this.changed()
       }
@@ -275,6 +282,8 @@ export class Controller extends Emitter<Events> {
         if (!LAYER_KINDS.includes(kind)) throw new CommandError(`kind must be one of ${LAYER_KINDS.join(', ')}`)
         const layer: Layer = { id: this.newId('layer'), name: '', kind, visible: true }
         this.applyLayerFields(layer, P)
+        this.checkNesting(scene, layer)
+        if (layer.kind === 'color' && !layer.color) layer.color = '#1e3a8a'
         if (!layer.name) layer.name = this.defaultLayerName(layer)
         scene.layers.unshift(layer) // new sources go on top, like OBS
         await this.engine.setScene(scene)
@@ -305,19 +314,34 @@ export class Controller extends Emitter<Events> {
       case 'layer.update': {
         const scene = this.scene(str(P, 'sceneId'))
         const layer = this.layer(scene, str(P, 'layerId'))
+        const before = structuredClone(layer)
         this.applyLayerFields(layer, P)
+        try {
+          this.checkNesting(scene, layer)
+        } catch (e) {
+          Object.assign(layer, before)
+          throw e
+        }
         await this.engine.setScene(scene)
         if (layer.kind === 'text') await this.pushText(scene, layer)
         return this.changed()
       }
       case 'audio.add': {
         const kind = P.kind as AudioKind
-        if (!['device', 'desktop', 'video'].includes(kind)) throw new CommandError('kind must be device, desktop or video')
-        const device = kind === 'desktop' ? undefined : this.device(kind === 'video' ? 'video' : 'audio', P.device)
+        if (!['device', 'desktop', 'video', 'file'].includes(kind)) throw new CommandError('kind must be device, desktop, video or file')
+        const hasDevice = kind === 'device' || kind === 'video'
+        const device = hasDevice ? this.device(kind === 'video' ? 'video' : 'audio', P.device) : undefined
         const id = this.newId('audio')
-        const channels = kind === 'desktop' ? undefined : this.channels(kind, device, P.channels)
+        const channels = hasDevice ? this.channels(kind, device, P.channels) : undefined
         const syncOffsetMs = P.syncOffsetMs === undefined ? 0 : syncOffset(P)
-        this.s.audio.push({ id, name: name(P, 'name'), kind, device, channels, syncOffsetMs, volume: 0.8, muted: false, level: 0 })
+        const src: AudioSource = { id, name: name(P, 'name'), kind, device, channels, syncOffsetMs, volume: 0.8, muted: false, level: 0 }
+        if (kind === 'file') {
+          src.url = this.fileUrl(P.url)
+          src.loop = P.loop === undefined ? true : bool(P, 'loop')
+        }
+        const scenes = this.sceneList(P.scenes)
+        if (scenes) src.scenes = scenes
+        this.s.audio.push(src)
         await this.engine.setAudioSources(this.s.audio)
         this.changed()
         return { sourceId: id }
@@ -325,15 +349,28 @@ export class Controller extends Emitter<Events> {
       case 'audio.update': {
         const src = this.audio(str(P, 'sourceId'))
         if (P.name !== undefined) src.name = name(P, 'name')
+        if (P.scenes !== undefined) {
+          const scenes = this.sceneList(P.scenes)
+          if (scenes) src.scenes = scenes
+          else delete src.scenes
+        }
+        if (P.url !== undefined) {
+          if (src.kind !== 'file') throw new CommandError('Only music and sound files have a file')
+          src.url = this.fileUrl(P.url)
+        }
+        if (P.loop !== undefined) {
+          if (src.kind !== 'file') throw new CommandError('Only music and sound files can loop')
+          src.loop = bool(P, 'loop')
+        }
         if (P.device !== undefined) {
-          if (src.kind === 'desktop') throw new CommandError('Desktop sound has no device to pick')
+          if (src.kind === 'desktop' || src.kind === 'file') throw new CommandError('This channel has no device to pick')
           const device = this.device(src.kind === 'video' ? 'video' : 'audio', P.device)
           // Another device has other channels: start again from its first pair.
           if (device !== src.device) src.channels = undefined
           src.device = device
         }
         if (P.channels !== undefined) {
-          if (src.kind === 'desktop') throw new CommandError('Desktop sound has no channels to pick')
+          if (src.kind === 'desktop' || src.kind === 'file') throw new CommandError('This channel has no channels to pick')
           src.channels = this.channels(src.kind, src.device, P.channels)
         }
         if (P.syncOffsetMs !== undefined) src.syncOffsetMs = syncOffset(P)
@@ -641,6 +678,46 @@ export class Controller extends Emitter<Events> {
       if (!PLACEMENTS.includes(P.placement as Placement)) throw new CommandError(`placement must be one of ${PLACEMENTS.join(', ')}`)
       layer.placement = P.placement as Placement
     }
+    if (P.loop !== undefined) layer.loop = bool(P, 'loop')
+    if (P.sound !== undefined) layer.sound = bool(P, 'sound')
+    if (P.volume !== undefined) layer.volume = num(P, 'volume', 0, 1)
+    if (P.color !== undefined) {
+      if (typeof P.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(P.color)) throw new CommandError('color must look like #1e3a8a')
+      layer.color = P.color
+    }
+    if (P.until !== undefined) {
+      if (P.until === '' || P.until === null) layer.until = undefined
+      else if (typeof P.until !== 'string' || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(P.until)) throw new CommandError('until must be a time like 19:30')
+      else layer.until = P.until
+    }
+    if (P.minutes !== undefined) layer.minutes = num(P, 'minutes', 0, 24 * 60)
+    if (P.seconds !== undefined) layer.seconds = num(P, 'seconds', 1, 3600)
+    if (P.showScene !== undefined) {
+      if (layer.kind !== 'scene') throw new CommandError('Only scene sources show another scene')
+      layer.sceneId = this.scene(str(P, 'showScene')).id
+    }
+  }
+
+  /** A scene shown inside another must not end up showing itself. */
+  private checkNesting(scene: Scene, layer: Layer) {
+    if (layer.kind !== 'scene') return
+    if (!layer.sceneId) throw new CommandError('Pick which scene to show')
+    if (scenesOnAir(this.s, layer.sceneId).has(scene.id)) throw new CommandError('A scene can’t show itself, even through another scene')
+  }
+
+  /** Which scenes a sound plays in: absent or empty = every scene. */
+  private sceneList(value: unknown): string[] | undefined {
+    if (value === undefined || value === null) return undefined
+    if (!Array.isArray(value) || value.length > 100) throw new CommandError('scenes must be a list of scene ids')
+    const ids = [...new Set(value.map((v) => (typeof v === 'string' ? v : '')))]
+    for (const id of ids) this.scene(id)
+    return ids.length ? ids : undefined
+  }
+
+  /** A music or sound file for a 'file' channel. */
+  private fileUrl(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim() || value.length > 2000) throw new CommandError('Pick a music or sound file')
+    return value.trim()
   }
 
   private defaultLayerName(layer: Layer): string {
@@ -655,7 +732,11 @@ export class Controller extends Emitter<Events> {
       image: 'Image',
       text: 'Text',
       browser: 'Browser overlay',
-      media: 'Media file'
+      media: 'Media file',
+      color: 'Color',
+      countdown: 'Countdown',
+      slideshow: 'Slideshow',
+      scene: this.s.scenes.find((x) => x.id === layer.sceneId)?.name ?? 'Scene'
     }
     return names[layer.kind]
   }

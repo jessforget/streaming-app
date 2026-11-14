@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { AppState, AudioSource, HealthStats } from '../../shared/state'
+import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
@@ -306,13 +306,26 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
   const dev = [...state.inputs.audio, ...state.inputs.video].find((d) => d.id === a.device)
   // A mic channel with no device picked uses Windows' default mic.
   const usesDefault = a.kind === 'device' && !a.device
-  const unplugged = a.kind !== 'desktop' && !dev && !usesDefault
-  const from = a.kind === 'desktop' ? 'This PC' : usesDefault ? 'Windows default mic' : (dev?.name ?? 'Unplugged')
+  const unplugged = (a.kind === 'device' || a.kind === 'video') && !dev && !usesDefault
+  const from =
+    a.kind === 'desktop'
+      ? 'This PC'
+      : a.kind === 'file'
+        ? `${(a.url ?? '').split(/[\\/]/).pop()}${a.loop === false ? '' : ' · loops'}`
+        : usesDefault
+          ? 'Windows default mic'
+          : (dev?.name ?? 'Unplugged')
+  // Sound follows the scene: heard only while one of its scenes is on air.
+  const onAir = audible(a, scenesOnAir(state))
+  const where = a.scenes
+    ? a.scenes.map((id) => state.scenes.find((x) => x.id === id)?.name).filter(Boolean).join(', ')
+    : 'Every scene'
   const chs = a.channels ? (a.channels.length === 1 ? `input ${a.channels[0]}` : `inputs ${a.channels.join(' + ')}`) : ''
   return (
-    <div className={`strip ${a.muted ? 'muted' : ''}`}>
+    <div className={`strip ${a.muted ? 'muted' : ''} ${onAir ? '' : 'off-air'}`}>
       <div className="strip-head">
         <strong>{a.name}</strong>
+        {onAir && a.scenes && <em className="tag live" title="Its scene is on air">ON AIR</em>}
         {a.syncOffsetMs > 0 && <span className="muted small">+{a.syncOffsetMs} ms</span>}
         <span className="strip-tools">
           <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, device, inputs, sync offset" onClick={onEdit}>
@@ -327,6 +340,9 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
         </button>
       </div>
       <span className={`small ${unplugged ? 'warn-text' : 'muted'}`}>{[from, chs].filter(Boolean).join(' · ')}</span>
+      <span className="small muted" title="Change in ✎">
+        Plays in: {where || 'no scene'}
+      </span>
       <div className="strip-level">
         <div className="hmeter">{studio ? <LiveMeter studio={studio} id={a.id} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
         <input

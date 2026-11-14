@@ -10,7 +10,8 @@
  * server's own origin, so other websites open in the browser can't.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
@@ -44,7 +45,8 @@ export interface ControlServerOptions {
 }
 
 const MAX_MEDIA_MESSAGE_BYTES = 16 * 1024 * 1024
-const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mov', '.mkv', '.mp3', '.wav', '.ogg'])
+const PICTURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
+const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mov', '.mkv', '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'])
 
 /** True when the request comes from this PC and from a page this server served. */
 export function isLocalRequest(req: IncomingMessage, port: number): boolean {
@@ -94,6 +96,9 @@ const MIME: Record<string, string> = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
   '.json': 'application/json',
   '.woff2': 'font/woff2'
 }
@@ -368,7 +373,8 @@ export class ControlServer {
     const local = isLocalRequest(req, this.boundPort)
     // The main window is for the streaming PC itself; anyone else gets the tablet remote.
     if (path === '/' && !local) return void res.writeHead(302, { Location: '/remote' }).end()
-    if (path === '/files') return this.serveLocalFile(local, url.searchParams.get('path') ?? '', res)
+    if (path === '/files') return this.serveLocalFile(local, url.searchParams.get('path') ?? '', res, req.headers.range)
+    if (path === '/api/folder') return this.listPictures(local, url.searchParams.get('path') ?? '', res)
     if (path === '/api/phone-link') {
       // Holds the phone secret: only for the main window on this PC.
       if (!local) return void res.writeHead(403).end()
@@ -401,17 +407,53 @@ export class ControlServer {
     }
   }
 
+  /** The pictures in one folder on this PC, in name order, for a slideshow. Only for the main window on this PC. */
+  private async listPictures(local: boolean, dir: string, res: ServerResponse) {
+    if (!local) return void res.writeHead(403).end()
+    try {
+      const names = await readdir(dir)
+      const files = names
+        .filter((n) => PICTURE_EXT.has(extname(n).toLowerCase()))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .slice(0, 500)
+        .map((n) => join(dir, n))
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ files }))
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Folder not found' }))
+    }
+  }
+
   /** Pictures and video files on this PC, for image and media sources. Only for the main window on this PC. */
-  private async serveLocalFile(local: boolean, file: string, res: ServerResponse) {
+  private async serveLocalFile(local: boolean, file: string, res: ServerResponse, range?: string) {
     if (!local) return void res.writeHead(403).end()
     const ext = extname(file).toLowerCase()
     if (!file || !MEDIA_EXT.has(ext)) return void res.writeHead(404).end('Only pictures, video and sound files')
+    let size: number
     try {
-      const body = await readFile(file)
-      res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' })
-      res.end(body)
+      const info = await stat(file)
+      if (!info.isFile()) throw new Error('not a file')
+      size = info.size
     } catch {
-      res.writeHead(404).end('File not found')
+      return void res.writeHead(404).end('File not found')
     }
+    const type = MIME[ext] ?? 'application/octet-stream'
+    // Byte ranges let video and music jump back to the start (and loop) without loading the whole file again.
+    const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]))
+      let end = m[1] && m[2] ? Number(m[2]) : size - 1
+      end = Math.min(end, size - 1)
+      if (start > end || start >= size) {
+        return void res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end()
+      }
+      start = Math.max(0, start)
+      res.writeHead(206, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 })
+      createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res)
+      return
+    }
+    res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': size })
+    createReadStream(file).on('error', () => res.destroy()).pipe(res)
   }
 }

@@ -63,6 +63,7 @@ export class Studio {
     // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
     this.compositor.phoneStream = (id) => this.phones.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
+    this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
     this.phones.subscribe(() => {
       this.compositor.refreshPhones()

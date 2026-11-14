@@ -4,7 +4,7 @@
  * front: the bottom of the source list first, the top last (in front).
  */
 import { renderTemplate } from '../../../shared/template'
-import { placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { countdownText, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { PHONE_PREFIX } from './phones'
 
 /** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
@@ -35,6 +35,16 @@ export class Compositor {
   readonly problems = new Map<string, string>()
   /** Where phone cameras come from (set by the studio). */
   phoneStream: (id: string) => MediaStream | null = () => null
+  /** Slideshow folders: their pictures, once listed. */
+  private folders = new Map<string, HTMLImageElement[]>()
+  /** When each scene last went on air (for countdowns in minutes). */
+  private liveAt = new Map<string, number>()
+  private onAir = new Set<string>()
+
+  /** The playing element of a video file, for its sound. */
+  mediaElement(url: string): HTMLVideoElement | null {
+    return this.videos.get(`media:${url}`)?.el ?? null
+  }
 
   constructor() {
     this.setSize(1920, 1080)
@@ -60,6 +70,20 @@ export class Compositor {
     }
     this.shownProgram = state.programSceneId
     this.syncSources(state)
+    // Scenes that just went on air: start their countdowns, and play their one-shot videos from the top.
+    const onAir = scenesOnAir(state)
+    for (const id of onAir) {
+      if (this.onAir.has(id)) continue
+      this.liveAt.set(id, Date.now())
+      for (const l of state.scenes.find((x) => x.id === id)?.layers ?? []) {
+        const el = l.kind === 'media' && l.url && l.loop === false ? this.videos.get(`media:${l.url}`)?.el : undefined
+        if (el) {
+          el.currentTime = 0
+          void el.play().catch(() => {})
+        }
+      }
+    }
+    this.onAir = onAir
   }
 
   /** Open every capture device used in any scene; close the rest. */
@@ -71,6 +95,7 @@ export class Compositor {
       for (const l of scene.layers) {
         if (l.kind === 'video' && l.device) devices.add(l.device)
         if ((l.kind === 'image' || l.kind === 'media') && l.url) files.add(`${l.kind}:${l.url}`)
+        if (l.kind === 'slideshow' && l.url && !this.folders.has(l.url)) this.loadFolder(l.url)
         if ((l.kind === 'screen' || l.kind === 'window') && !this.displays.has(l.id)) this.waiting.add(l.id)
       }
     }
@@ -96,6 +121,37 @@ export class Compositor {
         this.videos.set(`media:${url}`, { el })
       }
     }
+    // Loop unless every source using that file says play once.
+    for (const [key, v] of this.videos) {
+      if (!key.startsWith('media:')) continue
+      const url = key.slice('media:'.length)
+      const layers = state.scenes.flatMap((x) => x.layers).filter((l) => l.kind === 'media' && l.url === url)
+      if (layers.length === 0) {
+        v.el.pause()
+        v.el.removeAttribute('src')
+        this.videos.delete(key)
+        continue
+      }
+      v.el.loop = layers.some((l) => l.loop !== false)
+    }
+  }
+
+  /** List a slideshow folder's pictures (through the app) and load them. */
+  private loadFolder(dir: string) {
+    this.folders.set(dir, [])
+    fetch(`/api/folder?path=${encodeURIComponent(dir)}`)
+      .then((r) => r.json() as Promise<{ files?: string[] }>)
+      .then((b) => {
+        this.folders.set(
+          dir,
+          (b.files ?? []).map((f) => {
+            const img = new Image()
+            img.src = fileUrl(f)
+            return img
+          })
+        )
+      })
+      .catch(() => {})
   }
 
   private openDevice(id: string, state: AppState) {
@@ -178,17 +234,36 @@ export class Compositor {
     }
   }
 
-  private drawScene(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
+  private drawScene(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number, depth = 0) {
     const alpha = ctx.globalAlpha
-    // Fill with black first so a fade reveals the new scene, not the old one through it.
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, w, h)
+    // Fill with black first so a fade reveals the new scene, not the old one through it. (Not for a scene inside a scene.)
+    if (depth === 0) {
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, w, h)
+    }
     for (let i = scene.layers.length - 1; i >= 0; i--) {
       const l = scene.layers[i]
       if (!l.visible) continue
       ctx.globalAlpha = alpha
       if (l.kind === 'text') this.drawText(ctx, l, renderTemplate(l.text ?? '', s.data), w, h)
-      else {
+      else if (l.kind === 'countdown') this.drawText(ctx, l, countdownText(l, Date.now(), this.liveAt.get(scene.id)), w, h)
+      else if (l.kind === 'color') {
+        const b = boxFor(placementOf(l), w, h)
+        ctx.fillStyle = l.color ?? '#1e3a8a'
+        ctx.fillRect(b.x, b.y, b.w, b.h)
+      } else if (l.kind === 'scene') {
+        const inner = s.scenes.find((x) => x.id === l.sceneId)
+        if (!inner || depth >= 3) continue
+        const b = boxFor(placementOf(l), w, h)
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(b.x, b.y, b.w, b.h)
+        ctx.clip()
+        ctx.translate(b.x, b.y)
+        ctx.scale(b.w / w, b.h / h)
+        this.drawScene(ctx, inner, s, w, h, depth + 1)
+        ctx.restore()
+      } else {
         const src = this.drawableFor(l)
         if (src) this.drawPicture(ctx, src, placementOf(l), w, h)
       }
@@ -204,6 +279,11 @@ export class Compositor {
       return img?.complete && img.naturalWidth > 0 ? img : null
     }
     if (l.kind === 'screen' || l.kind === 'window') return this.ready(this.displays.get(l.id))
+    if (l.kind === 'slideshow' && l.url) {
+      const pics = (this.folders.get(l.url) ?? []).filter((img) => img.complete && img.naturalWidth > 0)
+      if (!pics.length) return null
+      return pics[Math.floor(Date.now() / 1000 / Math.max(1, l.seconds ?? 5)) % pics.length]
+    }
     return null // browser sources need the desktop version
   }
 
@@ -214,17 +294,7 @@ export class Compositor {
   private drawPicture(ctx: CanvasRenderingContext2D, src: Drawable, place: Placement, w: number, h: number) {
     const sw = src instanceof HTMLVideoElement ? src.videoWidth : src.naturalWidth
     const sh = src instanceof HTMLVideoElement ? src.videoHeight : src.naturalHeight
-    const m = Math.round(h * 0.03)
-    const box =
-      place === 'full'
-        ? { x: 0, y: 0, w, h }
-        : place === 'center'
-          ? { x: w * 0.25, y: h * 0.25, w: w * 0.5, h: h * 0.5 }
-          : place === 'lower-third'
-            ? { x: m, y: h * 0.7, w: w * 0.5, h: h * 0.27 }
-            : place === 'top'
-              ? { x: w * 0.3, y: m, w: w * 0.4, h: h * 0.2 }
-              : { x: place === 'top-left' ? m : w * 0.68 - m, y: place === 'bottom-right' ? h * 0.68 - m : m, w: w * 0.32, h: h * 0.32 }
+    const box = boxFor(place, w, h)
     // Fit inside the box, keeping its shape.
     const k = Math.min(box.w / sw, box.h / sh)
     const dw = sw * k
@@ -299,4 +369,18 @@ export class Compositor {
     this.videos.clear()
     this.displays.clear()
   }
+}
+
+/** The box a placement stands for, in a w×h picture. */
+function boxFor(place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
+  const m = Math.round(h * 0.03)
+  return place === 'full'
+    ? { x: 0, y: 0, w, h }
+    : place === 'center'
+      ? { x: w * 0.25, y: h * 0.25, w: w * 0.5, h: h * 0.5 }
+      : place === 'lower-third'
+        ? { x: m, y: h * 0.7, w: w * 0.5, h: h * 0.27 }
+        : place === 'top'
+          ? { x: w * 0.3, y: m, w: w * 0.4, h: h * 0.2 }
+          : { x: place === 'top-left' ? m : w * 0.68 - m, y: place === 'bottom-right' ? h * 0.68 - m : m, w: w * 0.32, h: h * 0.32 }
 }

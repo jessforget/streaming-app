@@ -70,6 +70,15 @@ export interface CommandMap {
     text?: string
     url?: string
     placement?: Placement
+    loop?: boolean
+    sound?: boolean
+    volume?: number
+    color?: string
+    until?: string
+    minutes?: number
+    seconds?: number
+    /** Scene sources: which scene to show inside this one. */
+    showScene?: string
   }
   'layer.remove': { sceneId: string; layerId: string }
   'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }
@@ -81,9 +90,39 @@ export interface CommandMap {
     text?: string
     url?: string
     placement?: Placement
+    loop?: boolean
+    sound?: boolean
+    volume?: number
+    color?: string
+    until?: string
+    minutes?: number
+    seconds?: number
+    /** Scene sources: which scene to show inside this one. */
+    showScene?: string
   }
-  'audio.add': { name: string; kind: AudioKind; device?: string; channels?: number[]; syncOffsetMs?: number }
-  'audio.update': { sourceId: string; name?: string; device?: string; channels?: number[]; syncOffsetMs?: number }
+  'audio.add': {
+    name: string
+    kind: AudioKind
+    device?: string
+    channels?: number[]
+    syncOffsetMs?: number
+    /** Plays only while one of these scenes is on air. Absent or empty: every scene. */
+    scenes?: string[]
+    /** kind 'file': the music or sound file, and whether it loops (default yes). */
+    url?: string
+    loop?: boolean
+  }
+  'audio.update': {
+    sourceId: string
+    name?: string
+    device?: string
+    channels?: number[]
+    syncOffsetMs?: number
+    /** [] = every scene. */
+    scenes?: string[]
+    url?: string
+    loop?: boolean
+  }
   'inputs.report': { video: InputDevice[]; audio: InputDevice[] }
   'studio.report': { fps: number; audioLevels: Record<string, number> }
   'audio.remove': { sourceId: string }

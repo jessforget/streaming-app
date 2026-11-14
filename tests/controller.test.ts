@@ -205,6 +205,45 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
     await expect(t.c.run('local', 'scene.add', { name: '' })).rejects.toThrow()
   })
 
+  it('plays a sound only in the scenes it belongs to', async () => {
+    const [a, b] = t.c.state.scenes
+    const r = (await t.c.run('local', 'audio.add', { name: 'Holding music', kind: 'file', url: 'C:\\Music\\hold.mp3', scenes: [a.id] })) as {
+      sourceId: string
+    }
+    const src = () => t.c.state.audio.find((x) => x.id === r.sourceId)!
+    expect(src()).toMatchObject({ kind: 'file', url: 'C:\\Music\\hold.mp3', loop: true, scenes: [a.id] })
+    await t.c.run('local', 'audio.update', { sourceId: r.sourceId, scenes: [a.id, b.id], loop: false })
+    expect(src()).toMatchObject({ scenes: [a.id, b.id], loop: false })
+    await t.c.run('local', 'audio.update', { sourceId: r.sourceId, scenes: [] })
+    expect(src().scenes).toBeUndefined()
+    await expect(t.c.run('local', 'audio.add', { name: 'X', kind: 'file' })).rejects.toThrow('file')
+    await expect(t.c.run('local', 'audio.update', { sourceId: r.sourceId, scenes: ['nope'] })).rejects.toThrow()
+  })
+
+  it('shows a scene inside another, but never inside itself', async () => {
+    const [a, b] = t.c.state.scenes
+    const r = (await t.c.run('local', 'layer.add', { sceneId: a.id, kind: 'scene', showScene: b.id })) as { layerId: string }
+    expect(t.c.state.scenes[0].layers[0]).toMatchObject({ id: r.layerId, kind: 'scene', sceneId: b.id, name: b.name })
+    await expect(t.c.run('local', 'layer.add', { sceneId: b.id, kind: 'scene', showScene: a.id })).rejects.toThrow('itself')
+    await expect(t.c.run('local', 'layer.add', { sceneId: a.id, kind: 'scene', showScene: a.id })).rejects.toThrow('itself')
+    await expect(t.c.run('local', 'layer.add', { sceneId: a.id, kind: 'scene' })).rejects.toThrow('Pick')
+  })
+
+  it('adds color, countdown, slideshow and looping video sources', async () => {
+    const id = t.c.state.scenes[0].id
+    await t.c.run('local', 'layer.add', { sceneId: id, kind: 'color', color: '#ff0000' })
+    await t.c.run('local', 'layer.add', { sceneId: id, kind: 'countdown', until: '19:30', text: 'Back in {time}' })
+    await t.c.run('local', 'layer.add', { sceneId: id, kind: 'slideshow', url: 'C:\\Pics', seconds: 8 })
+    await t.c.run('local', 'layer.add', { sceneId: id, kind: 'media', url: 'C:\\v.mp4', loop: false, sound: true, volume: 0.5 })
+    const [media, slides, count, color] = t.c.state.scenes[0].layers
+    expect(color).toMatchObject({ kind: 'color', color: '#ff0000' })
+    expect(count).toMatchObject({ kind: 'countdown', until: '19:30', text: 'Back in {time}' })
+    expect(slides).toMatchObject({ kind: 'slideshow', url: 'C:\\Pics', seconds: 8 })
+    expect(media).toMatchObject({ kind: 'media', loop: false, sound: true, volume: 0.5 })
+    await expect(t.c.run('local', 'layer.add', { sceneId: id, kind: 'countdown', until: '25:00' })).rejects.toThrow()
+    await expect(t.c.run('local', 'layer.add', { sceneId: id, kind: 'color', color: 'red' })).rejects.toThrow()
+  })
+
   it('changes the order of the scenes', async () => {
     const ids = () => t.c.state.scenes.map((s) => s.id)
     const first = ids()[0]
@@ -278,7 +317,7 @@ describe('USB audio interfaces (Zoom L-12, Focusrite)', () => {
     expect(t.c.state.audio.find((a) => a.id === 'mic')).toMatchObject({ name: 'Host mic', syncOffsetMs: 40 })
     // Sound can only be held back, not played early.
     await expect(t.c.run('local', 'audio.update', { sourceId: 'mic', syncOffsetMs: -40 })).rejects.toThrow('from 0')
-    await expect(t.c.run('local', 'audio.update', { sourceId: 'desktop', channels: [1] })).rejects.toThrow('Desktop')
+    await expect(t.c.run('local', 'audio.update', { sourceId: 'desktop', channels: [1] })).rejects.toThrow('no channels')
     // Move the mic to the L-12: its channels start again from the first pair.
     await t.c.run('local', 'audio.update', { sourceId: 'mic', device: 'zoom-l12' })
     expect(t.c.state.audio.find((a) => a.id === 'mic')).toMatchObject({ device: 'zoom-l12', channels: undefined })

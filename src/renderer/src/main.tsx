@@ -29,6 +29,8 @@ function App() {
       if (bridge.studio && !studioRef.current) {
         const st = new Studio(bridge)
         studioRef.current = st
+        // For checks from the browser console: http://localhost:7420/#debug
+        if (location.hash === '#debug') (window as unknown as { studio: Studio }).studio = st
         setStudio(st)
         void st.start()
       } else if (!bridge.studio && studioRef.current) {

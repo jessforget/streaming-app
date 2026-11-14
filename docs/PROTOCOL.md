@@ -91,11 +91,11 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `scene.rename` | `{ "sceneId", "name" }` |
 | `scene.move` | `{ "sceneId", "index" }`: move a scene card to a new place (0 = first) |
 | `scene.remove` | `{ "sceneId" }` (not the scene on air, not the last one) |
-| `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "text" \| "browser" \| "media" \| "screen" \| "window", "name"?, "device"?, "text"?, "url"?, "placement"? }` → `{ "layerId" }`. New sources go on top. |
+| `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "media" \| "text" \| "color" \| "countdown" \| "slideshow" \| "scene" \| "screen" \| "window" \| "browser", "name"?, "device"?, "text"?, "url"?, "placement"?, "loop"?, "sound"?, "volume"?, "color"?, "until"?, "minutes"?, "seconds"?, "showScene"? }` → `{ "layerId" }`. New sources go on top. `media`: `loop` (default true), `sound` (play its sound while its scene is on air), `volume` 0–1. `color`: `"#rrggbb"`. `countdown`: `until` ("19:30") or `minutes` from when its scene goes on air; `text` with `{time}`. `slideshow`: `url` = a folder, `seconds` per picture. `scene`: `showScene` = the scene to show inside this one. |
 | `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"?, "placement"? }`. `placement`: `full`, `center`, `lower-third`, `top`, `top-left`, `top-right`, `bottom-right`. |
 | `layer.move` | `{ "sceneId", "layerId", "direction": "up" \| "down" }` |
 | `layer.remove` | `{ "sceneId", "layerId" }` |
-| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"?, "channels"?, "syncOffsetMs"? }` → `{ "sourceId" }`. `channels` = one input (`[3]`, a mic) or a pair (`[9, 10]`) of a multichannel interface, counted from 1. `syncOffsetMs` = 0 to 5000 (holds the sound back). |
+| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop" \| "file", "device"?, "channels"?, "syncOffsetMs"?, "scenes"?, "url"?, "loop"? }` → `{ "sourceId" }`. Sound follows the scene: with `scenes` (scene ids) it is heard only while one of them is on air, fading with the transition; without, in every scene. `file` = a music or sound file (`url`), looping unless `loop` is false, starting from the top each time its scene goes on air. `channels` = one input (`[3]`, a mic) or a pair (`[9, 10]`) of a multichannel interface, counted from 1. `syncOffsetMs` = 0 to 5000 (holds the sound back). |
 | `audio.update` | `{ "sourceId", "name"?, "device"?, "channels"?, "syncOffsetMs"? }`. A new device starts again from its first pair. |
 | `audio.remove` | `{ "sourceId" }` |
 | `inputs.refresh` | none (look for capture and audio devices again) |
