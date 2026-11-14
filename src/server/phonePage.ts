@@ -19,7 +19,8 @@ export const PHONE_PAGE = `<!doctype html>
   main { max-width:560px; margin:0 auto; padding:16px 16px calc(24px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:14px; }
   h1 { font-size:20px; margin:4px 0 0; }
   .preview { position:relative; background:#000; border-radius:12px; overflow:hidden; aspect-ratio:16/9; border:1px solid var(--line); }
-  video { width:100%; height:100%; object-fit:contain; display:block; background:#000; }
+  video { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+  canvas { width:100%; height:100%; display:block; background:#000; }
   .badge { position:absolute; top:10px; left:10px; padding:4px 10px; border-radius:999px; font-size:13px; font-weight:600; background:#000a; color:var(--muted); }
   .badge.on { background:var(--live); color:#fff; }
   .badge.wait { background:var(--warn); color:#111; }
@@ -43,6 +44,7 @@ export const PHONE_PAGE = `<!doctype html>
   <h1>Phone camera</h1>
   <div class="preview">
     <video id="video" playsinline muted autoplay></video>
+    <canvas id="out" width="1280" height="720"></canvas>
     <span id="badge" class="badge">Not started</span>
   </div>
   <div class="status" id="status">Name this camera, then press Start.</div>
@@ -64,7 +66,9 @@ export const PHONE_PAGE = `<!doctype html>
     </label>
   </div>
   <label class="check"><input type="checkbox" id="mic" checked> Send the phone's microphone too</label>
+  <label class="check"><input type="checkbox" id="flip"> Picture upside down? Turn it over</label>
   <button id="start">Start camera</button>
+  <p class="tip">Hold the phone sideways for a full 16:9 picture (1920 × 1080 at 1080p). It turns the right way up by itself, even with auto-rotate off. Held upright, the picture gets black bars at the sides.</p>
   <p class="tip">Keep this page open and the phone unlocked while you're live. Plug the phone into power for long shows.</p>
 </main>
 <script>
@@ -89,6 +93,8 @@ export const PHONE_PAGE = `<!doctype html>
     navigator.userAgentData.getHighEntropyValues(['model']).then(function (v) { if (v.model && !store.get('cam-name')) $('name').value = v.model; }).catch(function () {});
   }
   $('facing').value = store.get('cam-facing') || 'environment';
+  $('flip').checked = store.get('cam-flip') === '1';
+  $('flip').addEventListener('change', function () { store.set('cam-flip', $('flip').checked ? '1' : '0'); });
   $('quality').value = store.get('cam-quality') || '720';
 
   var stream = null, pc = null, running = false, retryTimer = null, wakeLock = null, attempt = 0;
@@ -114,16 +120,102 @@ export const PHONE_PAGE = `<!doctype html>
     };
   }
 
+  // ---- Always a landscape picture (16:9), the right way up ----
+  // The camera's picture follows the screen. With auto-rotate off (or on an
+  // iPhone with rotation lock), a phone held sideways still gives a tall,
+  // sideways picture. So the page draws each frame onto a 16:9 canvas,
+  // turned by how the phone is actually held (from its motion sensor), and
+  // sends the canvas.
+  var gravity = null; // {x, y} in the phone's own axes, Android sign convention
+  var isApple = isIphone || /Macintosh/.test(navigator.userAgent);
+  window.addEventListener('devicemotion', function (e) {
+    var g = e.accelerationIncludingGravity;
+    if (!g || g.x === null || g.y === null) return;
+    // iPhones report the opposite sign to Android.
+    gravity = isApple ? { x: -g.x, y: -g.y } : { x: g.x, y: g.y };
+  });
+  function askMotion() {
+    // iPhones ask before giving motion data; it must be asked from a tap.
+    if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().catch(function () {});
+    }
+  }
+  /** Degrees to turn a tall camera picture so it is upright: 0 (held upright), 90, -90 or 180. */
+  function turnFor() {
+    if (!gravity) return 0;
+    var ax = Math.abs(gravity.x), ay = Math.abs(gravity.y);
+    if (ax < 3 && ay < 3) return lastTurn; // lying flat: keep what it was
+    if (ax > ay * 1.3) return gravity.x > 0 ? -90 : 90;
+    if (ay > ax * 1.3) return gravity.y > 0 ? 0 : 180;
+    return lastTurn; // in between: no flicker
+  }
+  var lastTurn = 0, outStream = null, drawing = false, drawGen = 0;
+
+  function sizeCanvas() {
+    var h = $('quality').value === '1080' ? 1080 : 720;
+    var c = $('out');
+    if (c.height !== h) { c.width = h * 16 / 9; c.height = h; }
+  }
+
+  function drawLoop() {
+    var gen = ++drawGen;
+    var step = function () {
+      if (!drawing || gen !== drawGen) return;
+      drawFrame();
+      var v = $('video');
+      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(step);
+      else requestAnimationFrame(step);
+    };
+    step();
+  }
+
+  function drawFrame() {
+    var v = $('video'), c = $('out'), ctx = c.getContext('2d');
+    var vw = v.videoWidth, vh = v.videoHeight;
+    if (vw && vh) {
+      var turn = vw >= vh ? 0 : turnFor();
+      lastTurn = vw >= vh ? lastTurn : turn;
+      var sideways = turn === 90 || turn === -90;
+      var w = sideways ? vh : vw, h = sideways ? vw : vh; // size once turned
+      var k = Math.min(c.width / w, c.height / h);
+      // Upright and held sideways: fill the frame (crop a sliver if needed). Upright and held upright: fit, with bars.
+      if (w >= h) k = Math.max(c.width / w, c.height / h);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.save();
+      ctx.translate(c.width / 2, c.height / 2);
+      ctx.rotate((turn + ($('flip').checked ? 180 : 0)) * Math.PI / 180);
+      ctx.drawImage(v, -vw * k / 2, -vh * k / 2, vw * k, vh * k);
+      ctx.restore();
+    }
+  }
+
   function openCamera() {
-    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    if (stream && stream.camera) stream.camera.getTracks().forEach(function (t) { t.stop(); });
+    if (stream) stream.getAudioTracks().forEach(function (t) { t.stop(); });
     stream = null;
     return navigator.mediaDevices.getUserMedia(constraints()).then(function (s) {
-      stream = s;
-      var v = s.getVideoTracks()[0];
-      if (v && 'contentHint' in v) v.contentHint = 'motion';
-      $('video').srcObject = s;
-      return $('video').play().catch(function () {});
+      var cam = s;
+      sizeCanvas();
+      if (!outStream) {
+        outStream = $('out').captureStream(30);
+        var ov = outStream.getVideoTracks()[0];
+        if (ov && 'contentHint' in ov) ov.contentHint = 'motion';
+      }
+      // What goes to the app: the turned picture, plus the microphone.
+      stream = new MediaStream(outStream.getVideoTracks().concat(cam.getAudioTracks()));
+      stream.camera = cam;
+      $('video').srcObject = cam;
+      var started = $('video').play().catch(function () {});
+      drawing = true;
+      drawLoop();
+      return started;
     });
+  }
+  function stopCamera() {
+    drawing = false;
+    if (stream && stream.camera) stream.camera.getTracks().forEach(function (t) { t.stop(); });
+    if (stream) stream.getAudioTracks().forEach(function (t) { t.stop(); });
   }
 
   function waitForIce(peer) {
@@ -212,6 +304,7 @@ export const PHONE_PAGE = `<!doctype html>
     store.set('cam-facing', $('facing').value);
     store.set('cam-quality', $('quality').value);
     $('start').disabled = true;
+    askMotion();
     status('Allow the camera and microphone when the phone asks.');
     openCamera().then(function () {
       running = true;
@@ -238,7 +331,7 @@ export const PHONE_PAGE = `<!doctype html>
     bye();
     clearTimeout(retryTimer);
     closePeer();
-    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stopCamera();
     stream = null;
     $('video').srcObject = null;
     if (wakeLock) { wakeLock.release().catch(function () {}); wakeLock = null; }
