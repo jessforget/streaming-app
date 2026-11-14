@@ -181,6 +181,13 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
     await expect(t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'atem' as never })).rejects.toThrow('kind must be')
   })
 
+  it('can put a camera behind the graphics, and the same camera in several scenes', async () => {
+    const dev = t.c.state.inputs.video[0].id
+    for (const sceneId of ['live', 'ending']) await t.c.run('local', 'layer.add', { sceneId, kind: 'video', device: dev, at: 'bottom' })
+    for (const sceneId of ['live', 'ending']) expect(t.c.state.scenes.find((s) => s.id === sceneId)!.layers.at(-1)).toMatchObject({ kind: 'video', device: dev })
+    await expect(t.c.run('local', 'layer.add', { sceneId: 'live', kind: 'video', device: dev, at: 'middle' as never })).rejects.toThrow('top or bottom')
+  })
+
   it('edits, reorders and removes sources', async () => {
     const r = (await t.c.run('local', 'layer.add', { sceneId: 'brb', kind: 'text', text: '{guest.name}' })) as { layerId: string }
     await t.c.run('local', 'layer.update', { sceneId: 'brb', layerId: r.layerId, name: 'Guest', text: 'Hello' })

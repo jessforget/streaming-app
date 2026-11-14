@@ -68,6 +68,8 @@ export interface CommandMap {
     text?: string
     url?: string
     placement?: Placement
+    /** Where in the source list: 'top' (default, in front) or 'bottom' (behind everything). */
+    at?: 'top' | 'bottom'
   }
   'layer.remove': { sceneId: string; layerId: string }
   'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }

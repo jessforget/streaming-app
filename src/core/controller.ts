@@ -262,7 +262,10 @@ export class Controller extends Emitter<Events> {
         const layer: Layer = { id: this.newId('layer'), name: '', kind, visible: true }
         this.applyLayerFields(layer, P)
         if (!layer.name) layer.name = this.defaultLayerName(layer)
-        scene.layers.unshift(layer) // new sources go on top, like OBS
+        // New sources go on top, like OBS; a camera added from the inputs list goes behind the graphics.
+        if (P.at !== undefined && P.at !== 'top' && P.at !== 'bottom') throw new CommandError('at must be top or bottom')
+        if (P.at === 'bottom') scene.layers.push(layer)
+        else scene.layers.unshift(layer)
         await this.engine.setScene(scene)
         if (layer.kind === 'text') await this.pushText(scene, layer)
         this.changed()

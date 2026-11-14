@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AppState, AudioSource, HealthStats } from '../../shared/state'
+import type { AppState, AudioSource, HealthStats, Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
@@ -18,8 +18,11 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   const { bridge, studio = null, studioElsewhere = false } = props
   const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
   const [settings, setSettings] = useState<SettingsTab | null>(null)
+  // The scene whose sources are being edited: follows the scene you click, but any scene can be picked, even the one on air.
+  const [editingId, setEditingId] = useState<string | null>(null)
   useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
   if (!state) return <div className="loading">Starting…</div>
+  const editing = state.scenes.find((s) => s.id === editingId) ?? state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
   return (
     <div className="app">
       <TopBar state={state} stats={stats} run={run} openSettings={setSettings} />
@@ -28,11 +31,12 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
       <div className="workspace">
         <main className="stage">
           <Monitors state={state} run={run} studio={studio} />
-          <SceneStrip state={state} run={run} />
+          <SceneStrip state={state} run={run} onPick={setEditingId} />
         </main>
         <aside className="side">
+          <InputsPanel state={state} run={run} openSettings={setSettings} />
           <section className="panel">
-            <SourceList state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
+            <SourceList state={state} run={run} scene={editing} picker={<ScenePicker state={state} scene={editing} onPick={setEditingId} />} />
           </section>
           <SoundPanel state={state} stats={stats} run={run} studio={studio} openSettings={setSettings} />
           <section className="panel">
@@ -165,7 +169,7 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
   )
 }
 
-function SceneStrip({ state, run }: { state: AppState; run: Run }) {
+function SceneStrip({ state, run, onPick }: { state: AppState; run: Run; onPick: (id: string) => void }) {
   const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
   return (
     <section className="scenes" aria-label="Scenes">
@@ -182,7 +186,10 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
               key={s.id}
               className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''}`}
               aria-pressed={next}
-              onClick={() => run('scene.preview', { sceneId: s.id })}
+              onClick={() => {
+                onPick(s.id)
+                void run('scene.preview', { sceneId: s.id })
+              }}
               onDoubleClick={() => run('scene.program', { sceneId: s.id })}
             >
               <ScenePicture scene={s} state={state} />
@@ -196,6 +203,83 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
         })}
       </div>
       <SceneTools state={state} run={run} scene={preview} />
+    </section>
+  )
+}
+
+/** "Sources in [scene ▾]": pick any scene to edit, whether it is on air, next or neither. */
+function ScenePicker({ state, scene, onPick }: { state: AppState; scene: Scene; onPick: (id: string) => void }) {
+  const tag = (id: string) => (id === state.programSceneId ? ' (on air)' : id === state.previewSceneId ? ' (next)' : '')
+  return (
+    <label className="scene-picker">
+      <h2>Sources in</h2>
+      <select value={scene.id} onChange={(e) => onPick(e.target.value)} aria-label="Scene to edit">
+        {state.scenes.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+            {tag(s.id)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+/**
+ * Video inputs, like OBS: every camera and capture device this PC sees, set
+ * up once and independent of scenes. Tick the scenes each one appears in;
+ * one device can be in many scenes and is opened only once.
+ */
+function InputsPanel({ state, run, openSettings }: { state: AppState; run: Run; openSettings: (t: SettingsTab) => void }) {
+  const used = (deviceId: string, scene: Scene) => scene.layers.find((l) => l.kind === 'video' && l.device === deviceId)
+  const toggle = (deviceId: string, name: string, scene: Scene) => {
+    const layer = used(deviceId, scene)
+    if (layer) return run('layer.remove', { sceneId: scene.id, layerId: layer.id })
+    return run('layer.add', { sceneId: scene.id, kind: 'video', device: deviceId, name, placement: 'full', at: 'bottom' })
+  }
+  // Video sources whose device isn't plugged in, so they can be found and fixed.
+  const missing = [
+    ...new Set(
+      state.scenes.flatMap((s) => s.layers.filter((l) => l.kind === 'video' && !state.inputs.video.some((d) => d.id === l.device)).map((l) => l.name))
+    )
+  ]
+  return (
+    <section className="panel" aria-label="Video inputs">
+      <div className="panel-head">
+        <h2>Video inputs</h2>
+        <button className="ghost small" onClick={() => openSettings('inputs')}>
+          All inputs
+        </button>
+      </div>
+      {state.inputs.video.length === 0 && (
+        <p className="muted small">No cameras found. Plug in the ATEM Mini (USB-C) or a capture card, and allow camera access.</p>
+      )}
+      <div className="inputs">
+        {state.inputs.video.map((d) => (
+          <div key={d.id} className="input-row">
+            <strong>{d.name}</strong>
+            <div className="scene-chips" role="group" aria-label={`Scenes showing ${d.name}`}>
+              {state.scenes.map((s) => {
+                const on = !!used(d.id, s)
+                return (
+                  <button
+                    key={s.id}
+                    className={`chip ${on ? 'on' : ''}`}
+                    aria-pressed={on}
+                    title={on ? `Remove ${d.name} from ${s.name}` : `Show ${d.name} in ${s.name}`}
+                    onClick={() => toggle(d.id, d.name, s)}
+                  >
+                    {on ? '✓ ' : ''}
+                    {s.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      {missing.length > 0 && <p className="warn-text small">Not plugged in: {missing.join(', ')}. Pick its device again with ✎, or remove it.</p>}
+      <p className="hint">Tick the scenes each camera shows in. It goes behind the graphics, filling the picture; change that with ✎ in the scene’s sources.</p>
     </section>
   )
 }
