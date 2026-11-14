@@ -4,17 +4,17 @@ import type { AppState } from '../../../shared/state'
 import type { Studio } from './studio'
 
 /** Shows one of the studio's canvases (Live or Preview), moving the real canvas into the page. */
-export function LiveCanvas({ canvas, live }: { canvas: HTMLCanvasElement; live?: boolean }) {
+export function LiveCanvas({ canvas, live, next }: { canvas: HTMLCanvasElement; live?: boolean; next?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     ref.current?.appendChild(canvas)
     return () => canvas.remove()
   }, [canvas])
-  return <div ref={ref} className={`picture live-video ${live ? 'is-live' : ''}`} />
+  return <div ref={ref} className={`picture live-video ${live ? 'is-live' : ''} ${next ? 'is-next' : ''}`} />
 }
 
 /** An audio meter that reads the mixer directly, many times a second, without redrawing the page. */
-export function LiveMeter({ studio, id }: { studio: Studio; id: string }) {
+export function LiveMeter({ studio, id, horizontal }: { studio: Studio; id: string; horizontal?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     let frame = 0
@@ -23,12 +23,12 @@ export function LiveMeter({ studio, id }: { studio: Studio; id: string }) {
       const level = studio.levels()[id] ?? 0
       // Fast up, slow down, like a real meter.
       shown = level > shown ? level : shown * 0.9
-      if (ref.current) ref.current.style.height = `${Math.round(Math.sqrt(shown) * 100)}%`
+      if (ref.current) ref.current.style[horizontal ? 'width' : 'height'] = `${Math.round(Math.sqrt(shown) * 100)}%`
       frame = requestAnimationFrame(loop)
     }
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
-  }, [studio, id])
+  }, [studio, id, horizontal])
   return <div ref={ref} className="meter" />
 }
 

@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client'
 import { DemoApp } from './bridge/demoBridge'
 import { MainWindow } from './MainWindow'
 import { RemoteScreen } from './Remote'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/space-grotesk'
 import './styles.css'
 
 type View = 'main' | 'tablet' | 'companion'

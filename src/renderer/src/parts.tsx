@@ -13,7 +13,7 @@ export function HealthPill({ stats }: { stats: HealthStats | null }) {
 }
 
 /** A drawing of a scene: what viewers would see. Used for scene thumbnails, the tablet and the mockup; the main window shows the real video. */
-export function ScenePicture({ scene, state, live }: { scene: Scene; state: AppState; live?: boolean }) {
+export function ScenePicture({ scene, state, live, next }: { scene: Scene; state: AppState; live?: boolean; next?: boolean }) {
   const visible = scene.layers.filter((l) => l.visible)
   const video = visible.find((l) => l.kind === 'video')
   const texts = visible.filter((l) => l.kind === 'text' && l.text)
@@ -21,7 +21,7 @@ export function ScenePicture({ scene, state, live }: { scene: Scene; state: AppS
   const lower = texts.find((l) => l.id.endsWith('lower-third'))
   const score = texts.find((l) => l.id.endsWith('score'))
   return (
-    <div className={`picture ${live ? 'is-live' : ''} ${video ? 'has-camera' : ''}`}>
+    <div className={`picture ${live ? 'is-live' : ''} ${next ? 'is-next' : ''} ${video ? 'has-camera' : ''}`}>
       {video && (
         <div className={`picture-camera ${title ? 'corner' : ''}`}>{deviceName(state, video.device) ?? video.name}</div>
       )}

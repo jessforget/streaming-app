@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client'
 import { WsBridge, type Status } from './bridge/wsBridge'
 import { MainWindow } from './MainWindow'
 import { Studio } from './studio/studio'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/space-grotesk'
 import './styles.css'
 
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'

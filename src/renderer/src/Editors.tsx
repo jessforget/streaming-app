@@ -109,7 +109,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         <h2>Sources in {scene.name}</h2>
         {!adding && (
           <button className="small" onClick={() => setAdding(true)}>
-            + Add source
+            + Add
           </button>
         )}
       </div>
@@ -129,7 +129,6 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
                 <span />
               </label>
               <span className="layer-name">{l.name}</span>
-              <span className="layer-kind">{KIND_LABEL[l.kind]}</span>
               <LayerDetail state={state} layer={l} />
               <span className="layer-tools">
                 <button
@@ -180,13 +179,13 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
 }
 
 function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
+  const kind = KIND_LABEL[layer.kind]
   if (layer.kind === 'video') {
     const name = deviceName(state, layer.device)
-    return <span className={`layer-text ${name ? '' : 'warn-text'}`}>{name ?? 'Device not found'}</span>
+    return <span className={`layer-text ${name ? '' : 'warn-text'}`}>{`${kind} · ${name ?? 'device not found'}`}</span>
   }
-  if (layer.text) return <code className="layer-text">{layer.text}</code>
-  if (layer.url) return <code className="layer-text">{layer.url}</code>
-  return null
+  const extra = layer.text ?? layer.url
+  return <span className="layer-text">{extra ? `${kind} · ${extra}` : kind}</span>
 }
 
 /** Fields shared by "Add source" and "Edit". */

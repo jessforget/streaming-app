@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppState, AudioSource, HealthStats } from '../../shared/state'
-import { PLATFORMS } from '../../shared/presets'
+import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
 import { HealthPill, Notice, ScenePicture } from './parts'
@@ -26,53 +26,99 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
       <div className="workspace">
-        <ScenesColumn state={state} run={run} />
-        <CenterColumn state={state} run={run} studio={studio} />
-        <RightColumn state={state} stats={stats} run={run} openSettings={setSettings} studio={studio} />
+        <main className="stage">
+          <Monitors state={state} run={run} studio={studio} />
+          <SceneStrip state={state} run={run} />
+        </main>
+        <aside className="side">
+          <section className="panel">
+            <SourceList state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
+          </section>
+          <SoundPanel state={state} stats={stats} run={run} studio={studio} openSettings={setSettings} />
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Live data</h2>
+              <button className="ghost small" onClick={() => setSettings('devices')}>
+                Devices
+              </button>
+            </div>
+            <DataTable state={state} />
+          </section>
+        </aside>
       </div>
       {settings && <Settings state={state} run={run} tab={settings} onTab={setSettings} onClose={() => setSettings(null)} />}
     </div>
   )
 }
 
+/** Platforms shown as switches in the top bar: the three most used, plus any other that is on or has a key. */
+const MAIN_PLATFORMS = ['youtube', 'facebook', 'instagram']
+
 function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
   const { state, stats, run, openSettings } = props
   const liveFor = useElapsed(state.stream.startedAt)
   const recFor = useElapsed(state.recording.startedAt)
+  const live = state.stream.live
+  const shown = state.stream.destinations.filter((d) => MAIN_PLATFORMS.includes(d.platform) || d.enabled || d.hasKey)
   const enabled = state.stream.destinations.filter((d) => d.enabled)
-  const where = enabled.map((d) => PLATFORMS[d.platform].label).join(', ')
   return (
     <header className="topbar">
       <div className="setup-name">
         <strong>{state.setupName}</strong>
-        {state.engine.mode === 'simulated' && (
-          <span className="pill practice" title={state.engine.note}>
-            Practice mode
-          </span>
-        )}
+        <span className="muted small">
+          {state.engine.mode === 'simulated' ? (
+            <span className="pill practice" title={state.engine.note}>
+              Practice mode
+            </span>
+          ) : (
+            <button className="link small" onClick={() => openSettings('golive')}>
+              Settings
+            </button>
+          )}
+        </span>
       </div>
       <HealthPill stats={stats} />
+      <div className="platforms" role="group" aria-label="Go live on">
+        <span className="eyebrow">Go live on</span>
+        {shown.map((d) => {
+          const info = PLATFORMS[d.platform]
+          const note = !d.hasKey ? 'add key' : d.vertical ? 'vertical' : QUALITY_PRESETS[state.stream.quality].summary.split(',')[0]
+          return (
+            <button
+              key={d.id}
+              className={`platform ${d.enabled ? 'on' : ''}`}
+              aria-pressed={d.enabled}
+              disabled={live}
+              title={live ? 'Stop the stream to change platforms' : d.hasKey ? `Stream to ${info.label}` : `Add the ${info.label} stream key in Settings`}
+              onClick={() => (d.hasKey || d.enabled ? run('settings.setDestination', { id: d.id, enabled: !d.enabled }) : openSettings('golive'))}
+            >
+              <span className="box" aria-hidden="true" />
+              <strong>{info.label}</strong>
+              <small>{note}</small>
+            </button>
+          )
+        })}
+        <button className="ghost small" onClick={() => openSettings('golive')} disabled={live}>
+          More…
+        </button>
+      </div>
       <div className="topbar-actions">
-        <button className="ghost" onClick={() => openSettings('golive')}>
-          Settings
+        <button className={`rec ${state.recording.active ? 'danger' : ''}`} onClick={() => run(state.recording.active ? 'record.stop' : 'record.start')}>
+          <span className="rec-dot" aria-hidden="true" />
+          {state.recording.active ? `Stop rec ${recFor}` : 'Record'}
         </button>
-        <button
-          className={state.recording.active ? 'danger' : ''}
-          onClick={() => run(state.recording.active ? 'record.stop' : 'record.start')}
-        >
-          {state.recording.active ? `Stop recording ${recFor}` : 'Record'}
-        </button>
-        {state.stream.live ? (
-          <button className="danger strong" onClick={() => run('stream.stop')}>
-            Stop stream {liveFor}
+        {live ? (
+          <button className="end-live strong" onClick={() => run('stream.stop')}>
+            End stream {liveFor}
           </button>
         ) : (
           <button
-            className="accent strong"
+            className="go-live strong"
+            disabled={enabled.length === 0}
             onClick={() => run('stream.start')}
-            title={where ? `Go live on ${where}` : 'Pick a platform in Settings first'}
+            title={enabled.length ? `Go live on ${enabled.map((d) => PLATFORMS[d.platform].label).join(', ')}` : 'Turn on a platform first'}
           >
-            Start stream{enabled.length > 1 ? ` (${enabled.length})` : ''}
+            Go live
           </button>
         )}
       </div>
@@ -80,11 +126,54 @@ function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; o
   )
 }
 
-function ScenesColumn({ state, run }: { state: AppState; run: Run }) {
+function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: Studio | null }) {
+  const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
+  const program = state.scenes.find((s) => s.id === state.programSceneId) ?? state.scenes[0]
+  const liveFor = useElapsed(state.stream.startedAt)
+  const onCount = state.stream.destinations.filter((d) => d.enabled).length
+  const same = preview.id === program.id
   return (
-    <section className="col scenes" aria-label="Scenes">
-      <h2>Scenes</h2>
-      <div className="scene-list">
+    <div className="monitors">
+      <section className="monitor program" aria-label="Live">
+        <div className="monitor-head">
+          <span className="badge live">{state.stream.live ? 'ON AIR' : 'LIVE PICTURE'}</span>
+          <strong>{program.name}</strong>
+          <span className="muted small push">
+            {state.stream.live ? `Live ${liveFor} on ${onCount} platform${onCount === 1 ? '' : 's'}` : 'Not streaming'}
+          </span>
+        </div>
+        {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
+      </section>
+      <section className="monitor next" aria-label="Next">
+        <div className="monitor-head">
+          <span className="badge next">NEXT</span>
+          <strong>{preview.name}</strong>
+        </div>
+        {studio ? <LiveCanvas canvas={studio.compositor.preview} next /> : <ScenePicture scene={preview} state={state} next />}
+        <div className="segmented wide" role="group" aria-label="Transition">
+          {(['cut', 'fade'] as const).map((k) => (
+            <button key={k} className={state.transition.kind === k ? 'on' : ''} aria-pressed={state.transition.kind === k} onClick={() => run('transition.set', { kind: k })}>
+              {k === 'cut' ? 'Cut' : `Fade ${state.transition.durationMs / 1000} s`}
+            </button>
+          ))}
+        </div>
+        <button className="take" onClick={() => run('scene.goLive')} disabled={same}>
+          {same ? 'Already on air' : `Take ${preview.name} to air`}
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function SceneStrip({ state, run }: { state: AppState; run: Run }) {
+  const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
+  return (
+    <section className="scenes" aria-label="Scenes">
+      <div className="section-head">
+        <h2>Scenes</h2>
+        <span className="muted small">Click to put in Next, double-click to take it to air. Cameras are switched on the ATEM.</span>
+      </div>
+      <div className="scene-grid">
         {state.scenes.map((s) => {
           const live = s.id === state.programSceneId
           const next = s.id === state.previewSceneId && !live
@@ -92,137 +181,88 @@ function ScenesColumn({ state, run }: { state: AppState; run: Run }) {
             <button
               key={s.id}
               className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''}`}
+              aria-pressed={next}
               onClick={() => run('scene.preview', { sceneId: s.id })}
               onDoubleClick={() => run('scene.program', { sceneId: s.id })}
-              title="Click to queue in Preview, double-click to put on air"
             >
               <ScenePicture scene={s} state={state} />
               <span className="scene-name">
-                {s.name}
-                {live && <em className="tag live">On air</em>}
-                {next && <em className="tag next">Next</em>}
+                <span>{s.name}</span>
+                {live && <em className="tag live">ON AIR</em>}
+                {next && <em className="tag next">NEXT</em>}
               </span>
             </button>
           )
         })}
       </div>
-      <SceneTools state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
-      <p className="hint">Click to queue a scene. Double-click to put it on air right away.</p>
+      <SceneTools state={state} run={run} scene={preview} />
     </section>
   )
 }
 
-function CenterColumn({ state, run, studio }: { state: AppState; run: Run; studio: Studio | null }) {
-  const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
-  const program = state.scenes.find((s) => s.id === state.programSceneId) ?? state.scenes[0]
+function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Run; studio: Studio | null; openSettings: (t: SettingsTab) => void }) {
+  const { state, stats, run, studio, openSettings } = props
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const edited = state.audio.find((a) => a.id === editing)
   return (
-    <section className="col center">
-      <div className="monitors">
-        <figure>
-          <figcaption>
-            Preview: <strong>{preview.name}</strong>
-          </figcaption>
-          {studio ? <LiveCanvas canvas={studio.compositor.preview} /> : <ScenePicture scene={preview} state={state} />}
-        </figure>
-        <figure>
-          <figcaption className="live-caption">
-            Live: <strong>{program.name}</strong>
-          </figcaption>
-          {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
-        </figure>
-      </div>
-      <div className="golive-row">
-        <div className="segmented" role="group" aria-label="Transition">
-          {(['cut', 'fade'] as const).map((k) => (
-            <button key={k} className={state.transition.kind === k ? 'on' : ''} onClick={() => run('transition.set', { kind: k })}>
-              {k === 'cut' ? 'Cut' : `Fade ${state.transition.durationMs / 1000} s`}
+    <section className="panel" aria-label="Sound">
+      <div className="panel-head">
+        <h2>Sound</h2>
+        <span className="row">
+          <button className="ghost small" onClick={() => openSettings('inputs')}>
+            Inputs
+          </button>
+          <button className="ghost small" onClick={() => run('audio.muteAll')}>
+            Mute all
+          </button>
+          {!adding && (
+            <button className="small" onClick={() => setAdding(true)}>
+              + Add
             </button>
-          ))}
-        </div>
-        <button className="accent strong golive" onClick={() => run('scene.goLive')} disabled={preview.id === program.id}>
-          Go Live Scene: {preview.name}
-        </button>
+          )}
+        </span>
       </div>
-      <SourceList state={state} run={run} scene={preview} />
+      {adding && <AddAudioForm state={state} run={run} onDone={() => setAdding(false)} />}
+      <div className="strips">
+        {state.audio.map((a) => (
+          <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} />
+        ))}
+      </div>
+      {edited && <AudioEditor key={edited.id} state={state} run={run} source={edited} onDone={() => setEditing(null)} />}
     </section>
   )
 }
 
-function RightColumn(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void; studio: Studio | null }) {
-  const { state, stats, run, openSettings, studio } = props
-  const [addingAudio, setAddingAudio] = useState(false)
-  const [editingAudio, setEditingAudio] = useState<string | null>(null)
-  const editing = state.audio.find((a) => a.id === editingAudio)
-  return (
-    <section className="col right">
-      <div className="panel">
-        <div className="panel-head">
-          <h2>Audio</h2>
-          <span className="row">
-            <button className="ghost small" onClick={() => openSettings('inputs')}>
-              Inputs
-            </button>
-            <button className="ghost small" onClick={() => run('audio.muteAll')}>
-              Mute all
-            </button>
-          </span>
-        </div>
-        <div className="mixer">
-          {state.audio.map((a) => (
-            <Fader
-              key={a.id}
-              a={a}
-              state={state}
-              level={stats?.audioLevels[a.id] ?? 0}
-              studio={studio}
-              run={run}
-              onEdit={() => setEditingAudio(a.id)}
-            />
-          ))}
-        </div>
-        {editing && <AudioEditor key={editing.id} state={state} run={run} source={editing} onDone={() => setEditingAudio(null)} />}
-        {addingAudio ? (
-          <AddAudioForm state={state} run={run} onDone={() => setAddingAudio(false)} />
-        ) : (
-          <button className="small add-audio" onClick={() => setAddingAudio(true)}>
-            + Add audio
-          </button>
-        )}
-      </div>
-      <div className="panel">
-        <div className="panel-head">
-          <h2>Data fields</h2>
-          <button className="ghost small" onClick={() => openSettings('devices')}>
-            Devices
-          </button>
-        </div>
-        <DataTable state={state} />
-      </div>
-    </section>
-  )
-}
-
-function Fader(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
+/** One sound channel, as a row: name, device, meter, volume, mute. */
+function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
   const { a, state, level, studio, run, onEdit } = props
   const dev = [...state.inputs.audio, ...state.inputs.video].find((d) => d.id === a.device)
   // A mic channel with no device picked uses Windows' default mic.
   const usesDefault = a.kind === 'device' && !a.device
   const unplugged = a.kind !== 'desktop' && !dev && !usesDefault
-  const from = a.kind === 'desktop' ? 'Desktop sound' : usesDefault ? 'Windows default mic' : (dev?.name ?? 'Device not plugged in')
-  const chs = a.channels ? `Ch ${a.channels.join('+')}` : ''
-  const detail = [chs, a.syncOffsetMs ? `${a.syncOffsetMs > 0 ? '+' : ''}${a.syncOffsetMs} ms` : ''].filter(Boolean).join(' · ')
+  const from = a.kind === 'desktop' ? 'This PC' : usesDefault ? 'Windows default mic' : (dev?.name ?? 'Unplugged')
+  const chs = a.channels ? (a.channels.length === 1 ? `input ${a.channels[0]}` : `inputs ${a.channels.join(' + ')}`) : ''
   return (
-    <div className={`fader ${a.muted ? 'muted' : ''}`} title={`${from}${a.channels ? `, channel ${a.channels.join(' and ')}` : ''}`}>
-      <span className="fader-tools">
-        <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, channels, sync offset" onClick={onEdit}>
-          ✎
+    <div className={`strip ${a.muted ? 'muted' : ''}`}>
+      <div className="strip-head">
+        <strong>{a.name}</strong>
+        {a.syncOffsetMs > 0 && <span className="muted small">+{a.syncOffsetMs} ms</span>}
+        <span className="strip-tools">
+          <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, device, inputs, sync offset" onClick={onEdit}>
+            ✎
+          </button>
+          <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
+            ✕
+          </button>
+        </span>
+        <button className={`small mute ${a.muted ? 'danger' : ''}`} aria-pressed={a.muted} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
+          {a.muted ? 'Muted' : 'Mute'}
         </button>
-        <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
-          ✕
-        </button>
-      </span>
-      <div className="fader-track">
-        {studio ? <LiveMeter studio={studio} id={a.id} /> : <div className="meter" style={{ height: `${Math.round(level * 100)}%` }} />}
+      </div>
+      <span className={`small ${unplugged ? 'warn-text' : 'muted'}`}>{[from, chs].filter(Boolean).join(' · ')}</span>
+      <div className="strip-level">
+        <div className="hmeter">{studio ? <LiveMeter studio={studio} id={a.id} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
         <input
           type="range"
           min={0}
@@ -232,11 +272,6 @@ function Fader(props: { a: AudioSource; state: AppState; level: number; studio: 
           onChange={(e) => run('audio.setVolume', { sourceId: a.id, volume: Number(e.target.value) / 100 })}
         />
       </div>
-      <span className="fader-name">{a.name}</span>
-      <small className={`fader-detail ${unplugged ? 'warn-text' : ''}`}>{unplugged ? 'Unplugged' : detail || (usesDefault ? 'Default mic' : '')}</small>
-      <button className={`small ${a.muted ? 'danger' : ''}`} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
-        {a.muted ? 'Muted' : 'Mute'}
-      </button>
     </div>
   )
 }
