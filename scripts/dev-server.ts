@@ -1,19 +1,19 @@
 /**
- * Run the control server without the desktop app, with the simulated engine.
+ * Run the app in practice mode: the simulated engine, nothing captured or sent.
  * Handy for building the companion app or a stream deck, and for trying the
  * tablet remote.
  *
- *   npm run build            (once, so the tablet page exists)
- *   npm run server
- *   npm run server -- --port 7421
+ *   npm run build            (once, so the pages exist)
+ *   npm run practice
+ *   npm run practice -- --port 7421
  */
 import { join } from 'node:path'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore } from '../src/core/ports'
 import { SimEngine } from '../src/core/sim'
-import { ControlServer } from '../src/main/control/server'
-import { MemoryDeviceStore, PairingManager } from '../src/main/control/pairing'
+import { ControlServer } from '../src/server/control/server'
+import { MemoryDeviceStore, PairingManager } from '../src/server/control/pairing'
 import { DEFAULT_CONTROL_PORT } from '../src/shared/protocol'
 
 async function main() {
@@ -33,7 +33,7 @@ async function main() {
   controller.on('error', (m) => console.warn(m))
   await controller.start()
 
-  const server = new ControlServer({ controller, pairing, port, staticDir: join(__dirname, '../out/renderer') })
+  const server = new ControlServer({ controller, pairing, port, staticDir: join(__dirname, '../out/web') })
   await server.start()
   controller.updateDevices({ ...pairing.snapshot(), controlUrl: server.urls()[0] })
 

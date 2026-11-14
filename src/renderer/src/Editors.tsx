@@ -1,7 +1,7 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
 import { useState } from 'react'
-import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Scene } from '../../shared/state'
-import { LAYER_KINDS, SYNC_OFFSET_RANGE, channelCount, channelName } from '../../shared/state'
+import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
+import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf } from '../../shared/state'
 import { deviceName } from './parts'
 import type { Run } from './useApp'
 
@@ -19,7 +19,7 @@ const KIND_HELP: Record<LayerKind, string> = {
   video: 'The ATEM Mini, a HyperDeck through a capture card, or any camera',
   image: 'A picture or logo from a file',
   text: 'Words on screen. {field} shows data from the companion app',
-  browser: 'A web page, such as an alerts overlay',
+  browser: 'A web page, such as an alerts overlay (needs the desktop version: the web version can’t draw web pages into the video)',
   media: 'A video or sound file',
   screen: 'Everything on one of this PC’s screens',
   window: 'One app window on this PC'
@@ -193,8 +193,8 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
 function SourceFields(props: {
   state: AppState
   kind: LayerKind
-  v: { name: string; device: string; text: string; url: string }
-  set: (k: 'name' | 'device' | 'text' | 'url', value: string) => void
+  v: Fields
+  set: (k: keyof Fields, value: string) => void
 }) {
   const { state, kind, v, set } = props
   return (
@@ -232,18 +232,40 @@ function SourceFields(props: {
           />
         </label>
       )}
+      <label>
+        Where
+        <select value={v.placement} onChange={(e) => set('placement', e.target.value)}>
+          {PLACEMENTS.map((p) => (
+            <option key={p} value={p}>
+              {PLACEMENT_LABEL[p]}
+            </option>
+          ))}
+        </select>
+      </label>
     </>
   )
 }
 
-function useFields(init: { name?: string; device?: string; text?: string; url?: string }) {
-  const [v, setV] = useState({ name: init.name ?? '', device: init.device ?? '', text: init.text ?? '', url: init.url ?? '' })
-  return [v, (k: keyof typeof v, value: string) => setV((old) => ({ ...old, [k]: value }))] as const
+interface Fields {
+  name: string
+  device: string
+  text: string
+  url: string
+  placement: Placement
+}
+
+function useFields(init: { name?: string; device?: string; text?: string; url?: string; placement: Placement }) {
+  const [v, setV] = useState<Fields>({ name: init.name ?? '', device: init.device ?? '', text: init.text ?? '', url: init.url ?? '', placement: init.placement })
+  return [v, (k: keyof Fields, value: string) => setV((old) => ({ ...old, [k]: value }))] as const
 }
 
 function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
   const [kind, setKind] = useState<LayerKind>('video')
-  const [v, set] = useFields({ device: state.inputs.video[0]?.id })
+  const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
+  const pick = (k: LayerKind) => {
+    setKind(k)
+    set('placement', k === 'text' ? 'lower-third' : 'full')
+  }
   const needsDevice = kind === 'video' && !v.device
   const add = async () => {
     const ok = await run('layer.add', {
@@ -252,7 +274,8 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
       ...(v.name.trim() && { name: v.name.trim() }),
       ...(kind === 'video' && { device: v.device }),
       ...(kind === 'text' && { text: v.text }),
-      ...((kind === 'image' || kind === 'media' || kind === 'browser') && v.url && { url: v.url })
+      ...((kind === 'image' || kind === 'media' || kind === 'browser') && v.url && { url: v.url }),
+      placement: v.placement
     })
     if (ok) onDone()
   }
@@ -272,7 +295,7 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
             role="radio"
             aria-checked={kind === k}
             className={kind === k ? 'on' : ''}
-            onClick={() => setKind(k)}
+            onClick={() => pick(k)}
             title={KIND_HELP[k]}
           >
             {KIND_LABEL[k]}
@@ -298,7 +321,7 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
 
 function SourceEditor(props: { state: AppState; run: Run; scene: Scene; layer: Layer; onDone: () => void }) {
   const { state, run, scene, layer, onDone } = props
-  const [v, set] = useFields(layer)
+  const [v, set] = useFields({ ...layer, placement: placementOf(layer) })
   const save = async () => {
     const ok = await run('layer.update', {
       sceneId: scene.id,
@@ -306,7 +329,8 @@ function SourceEditor(props: { state: AppState; run: Run; scene: Scene; layer: L
       ...(v.name.trim() && v.name.trim() !== layer.name && { name: v.name.trim() }),
       ...(layer.kind === 'video' && v.device && v.device !== layer.device && { device: v.device }),
       ...(layer.kind === 'text' && v.text !== (layer.text ?? '') && { text: v.text }),
-      ...(v.url !== (layer.url ?? '') && { url: v.url })
+      ...(v.url !== (layer.url ?? '') && { url: v.url }),
+      ...(v.placement !== placementOf(layer) && { placement: v.placement })
     })
     if (ok) onDone()
   }
@@ -489,8 +513,10 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
 
 /** Edit a mixer channel: name, which inputs, sync offset. */
 export function AudioEditor({ state, run, source, onDone }: { state: AppState; run: Run; source: AudioSource; onDone: () => void }) {
-  const dev = state.inputs.audio.find((d) => d.id === source.device)
+  const [device, setDevice] = useState(source.device ?? '')
+  const dev = state.inputs.audio.find((d) => d.id === device)
   const options = source.kind === 'device' ? channelOptions(dev) : []
+  const devices = source.kind === 'video' ? state.inputs.video : state.inputs.audio
   const [name, setName] = useState(source.name)
   const [channels, setChannels] = useState(source.channels?.join(',') ?? '')
   const [sync, setSync] = useState(String(source.syncOffsetMs ?? 0))
@@ -499,6 +525,7 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
     const ok = await run('audio.update', {
       sourceId: source.id,
       ...(name.trim() && name.trim() !== source.name && { name: name.trim() }),
+      ...(device && device !== source.device && { device }),
       ...(options.length > 0 && chs && channels !== (source.channels?.join(',') ?? '') && { channels: chs }),
       syncOffsetMs: Number(sync) || 0
     })
@@ -513,13 +540,32 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
       }}
     >
       <strong>{source.name}</strong>
-      <span className="muted small">
-        {source.kind === 'desktop' ? 'Desktop sound' : (deviceName(state, source.device) ?? 'Device not plugged in')}
-      </span>
+      {source.kind === 'desktop' && <span className="muted small">Desktop sound</span>}
       <label>
         Name
         <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
       </label>
+      {source.kind !== 'desktop' && (
+        <label>
+          Device
+          <select
+            value={device}
+            onChange={(e) => {
+              setDevice(e.target.value)
+              setChannels('')
+            }}
+          >
+            {!devices.some((d) => d.id === device) && (
+              <option value={device}>{device ? 'Device not plugged in' : source.kind === 'device' ? 'Windows default mic' : 'Pick a device…'}</option>
+            )}
+            {devices.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {options.length > 0 && (
         <label>
           Channels

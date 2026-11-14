@@ -342,3 +342,13 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
   .qr { max-width: 200px; }
   .demo-tablet { border-width: 0; border-radius: 0; margin: 0; }
 }
+
+/* ---------- Live video and studio messages (web version) ---------- */
+.live-video canvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.studio-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+  padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.studio-bar.warn { background: var(--warn-bg); border-bottom-color: var(--warn); }
+.studio-ask { display: inline-flex; align-items: center; gap: 8px; }
+.offline-bar { padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); }

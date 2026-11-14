@@ -8,7 +8,7 @@
  *
  * See docs/PROTOCOL.md for the human-readable version.
  */
-import type { AppState, AudioKind, HealthStats, LayerKind } from './state'
+import type { AppState, AudioKind, HealthStats, InputDevice, LayerKind, Placement } from './state'
 
 export const PROTOCOL_VERSION = 1
 export const DEFAULT_CONTROL_PORT = 7420
@@ -67,12 +67,23 @@ export interface CommandMap {
     device?: string
     text?: string
     url?: string
+    placement?: Placement
   }
   'layer.remove': { sceneId: string; layerId: string }
   'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }
-  'layer.update': { sceneId: string; layerId: string; name?: string; device?: string; text?: string; url?: string }
+  'layer.update': {
+    sceneId: string
+    layerId: string
+    name?: string
+    device?: string
+    text?: string
+    url?: string
+    placement?: Placement
+  }
   'audio.add': { name: string; kind: AudioKind; device?: string; channels?: number[]; syncOffsetMs?: number }
-  'audio.update': { sourceId: string; name?: string; channels?: number[]; syncOffsetMs?: number }
+  'audio.update': { sourceId: string; name?: string; device?: string; channels?: number[]; syncOffsetMs?: number }
+  'inputs.report': { video: InputDevice[]; audio: InputDevice[] }
+  'studio.report': { fps: number; audioLevels: Record<string, number> }
   'audio.remove': { sourceId: string }
   'inputs.refresh': Record<string, never>
   'devices.setPairingOpen': { open: boolean }
@@ -114,6 +125,8 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'layer.update': 'admin',
   'audio.add': 'admin',
   'audio.update': 'admin',
+  'inputs.report': 'admin',
+  'studio.report': 'admin',
   'audio.remove': 'admin',
   'inputs.refresh': 'admin',
   'devices.setPairingOpen': 'admin',
@@ -184,8 +197,10 @@ export interface WelcomeMessage {
   v: number
   deviceId: string
   name: string
-  role: Role
+  role: Role | 'local'
   state: AppState
+  /** Only for the main window on the streaming PC: true when this page runs the video (the studio). */
+  studio?: boolean
 }
 
 export interface ResultMessage {
@@ -208,6 +223,13 @@ export interface StatsEvent {
   stats: HealthStats
 }
 
+/** Something went wrong on its own (a stream dropped, a device was unplugged), in plain words. */
+export interface NoticeEvent {
+  type: 'event'
+  name: 'notice'
+  message: string
+}
+
 export interface ErrorMessage {
   type: 'error'
   error: string
@@ -219,6 +241,7 @@ export type ServerMessage =
   | ResultMessage
   | StateEvent
   | StatsEvent
+  | NoticeEvent
   | ErrorMessage
 
 export class CommandError extends Error {}

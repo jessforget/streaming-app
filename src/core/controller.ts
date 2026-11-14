@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, SYNC_OFFSET_RANGE, channelCount, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -57,6 +57,18 @@ export class Controller extends Emitter<Events> {
     this.now = opts.now ?? (() => Date.now())
     this.s = structuredClone(opts.initial)
     for (const d of this.s.stream.destinations) d.hasKey = this.keys.has(d.id)
+    // The engine says when an output stops on its own (connection lost, the studio page closed).
+    this.engine.onOutputStopped = (kind, reason) => {
+      if (kind === 'stream' && this.s.stream.live) {
+        this.s.stream.live = false
+        this.s.stream.startedAt = null
+      } else if (kind === 'record' && this.s.recording.active) {
+        this.s.recording.active = false
+        this.s.recording.startedAt = null
+      } else return
+      this.emit('error', reason)
+      this.changed()
+    }
   }
 
   get state(): AppState {
@@ -299,6 +311,13 @@ export class Controller extends Emitter<Events> {
       case 'audio.update': {
         const src = this.audio(str(P, 'sourceId'))
         if (P.name !== undefined) src.name = name(P, 'name')
+        if (P.device !== undefined) {
+          if (src.kind === 'desktop') throw new CommandError('Desktop sound has no device to pick')
+          const device = this.device(src.kind === 'video' ? 'video' : 'audio', P.device)
+          // Another device has other channels: start again from its first pair.
+          if (device !== src.device) src.channels = undefined
+          src.device = device
+        }
         if (P.channels !== undefined) {
           if (src.kind === 'desktop') throw new CommandError('Desktop sound has no channels to pick')
           src.channels = this.channels(src.kind, src.device, P.channels)
@@ -312,6 +331,36 @@ export class Controller extends Emitter<Events> {
         this.s.audio = this.s.audio.filter((x) => x !== src)
         await this.engine.setAudioSources(this.s.audio)
         return this.changed()
+      }
+      case 'inputs.report': {
+        // The main window's browser lists the devices it can open, with their real names.
+        const list = (v: unknown, kind: string) => {
+          if (!Array.isArray(v) || v.length > 64) throw new CommandError(`${kind} must be a list of devices`)
+          return v.map((d) => {
+            if (!d || typeof d.id !== 'string' || typeof d.name !== 'string' || !d.id || d.id.length > 256) {
+              throw new CommandError('Each device needs an id and a name')
+            }
+            const out: InputDevice = { id: d.id, name: d.name.slice(0, 120) || 'Unnamed device' }
+            if (d.driver === 'wasapi' || d.driver === 'asio') out.driver = d.driver
+            if (typeof d.group === 'string') out.group = d.group.slice(0, 256)
+            if (Number.isInteger(d.channels) && d.channels >= 1 && d.channels <= 64) out.channels = d.channels
+            if (Array.isArray(d.channelNames)) out.channelNames = d.channelNames.slice(0, 64).map((n: unknown) => String(n).slice(0, 60))
+            return out
+          })
+        }
+        const inputs = { video: list(P.video, 'video'), audio: list(P.audio, 'audio') }
+        this.engine.setInputs?.(inputs)
+        await this.applyInputs(inputs)
+        return null
+      }
+      case 'studio.report': {
+        const levels: Record<string, number> = {}
+        const raw = P.audioLevels
+        if (raw && typeof raw === 'object') {
+          for (const [k, v] of Object.entries(raw)) if (typeof v === 'number' && v >= 0 && v <= 1) levels[k] = v
+        }
+        this.engine.report?.({ fps: typeof P.fps === 'number' ? P.fps : 0, audioLevels: levels })
+        return null
       }
       case 'inputs.refresh':
         await this.refreshInputs()
@@ -503,15 +552,25 @@ export class Controller extends Emitter<Events> {
     if (this.polling) return
     this.polling = true
     try {
-      const before = this.s.inputs
       let now: AppState['inputs']
       try {
         now = await this.engine.listDevices()
       } catch {
         return
       }
+      await this.applyInputs(now)
+    } finally {
+      this.polling = false
+    }
+  }
+
+  /** New list of devices the PC can see; say so in plain words when one in use goes or comes back. */
+  private async applyInputs(now: AppState['inputs']) {
+    {
+      const before = this.s.inputs
       if (JSON.stringify(now) === JSON.stringify(before)) return
       this.s.inputs = now
+      this.findMovedDevices(before, now)
       const ids = (x: AppState['inputs']) => new Set([...x.video, ...x.audio].map((d) => d.id))
       const was = ids(before)
       const is = ids(now)
@@ -528,8 +587,25 @@ export class Controller extends Emitter<Events> {
         for (const scene of this.s.scenes) if (scene.layers.some((l) => l.device && back.includes(l.device))) await this.engine.setScene(scene)
       }
       this.changed()
-    } finally {
-      this.polling = false
+    }
+  }
+
+  /**
+   * Browsers give a device a new id now and then (after clearing site data,
+   * or in a new browser profile). A device in use that vanished while one
+   * with the same name and kind appeared is the same device: follow it.
+   */
+  private findMovedDevices(before: AppState['inputs'], now: AppState['inputs']) {
+    for (const kind of ['video', 'audio'] as const) {
+      const nowIds = new Set(now[kind].map((d) => d.id))
+      for (const old of before[kind]) {
+        if (nowIds.has(old.id)) continue
+        const twins = now[kind].filter((d) => d.name === old.name && !before[kind].some((b) => b.id === d.id))
+        if (twins.length !== 1) continue
+        const id = twins[0].id
+        for (const a of this.s.audio) if (a.device === old.id) a.device = id
+        for (const scene of this.s.scenes) for (const l of scene.layers) if (l.device === old.id) l.device = id
+      }
     }
   }
 
@@ -546,6 +622,10 @@ export class Controller extends Emitter<Events> {
     if (P.url !== undefined) {
       if (typeof P.url !== 'string' || P.url.length > 2000) throw new CommandError('url must be text')
       layer.url = P.url.trim() || undefined
+    }
+    if (P.placement !== undefined) {
+      if (!PLACEMENTS.includes(P.placement as Placement)) throw new CommandError(`placement must be one of ${PLACEMENTS.join(', ')}`)
+      layer.placement = P.placement as Placement
     }
   }
 

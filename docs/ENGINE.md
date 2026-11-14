@@ -1,60 +1,46 @@
-# Video engine and inputs
+# Video engine and inputs (web version)
 
 ## How the video and audio get in
 
 Like OBS, this app does not switch cameras. Cameras plug into the ATEM and are switched there. The app takes in what the ATEM or HyperDeck sends, as sources you can put in scenes.
 
-| Device | How it connects | Video source | Audio |
+The main window, open in Chrome or Edge on the streaming PC, opens the devices with the browser's camera and microphone access (`getUserMedia`). The browser gives each device its real name.
+
+| Device | How it connects | Video | Audio |
 | --- | --- | --- | --- |
-| ATEM Mini, Mini Pro, Mini Extreme | USB-C to the PC | Shows up as a webcam named "Blackmagic Design" (libobs `dshow_input`) | Shows up as a USB audio input (`wasapi_input_capture`) |
-| HyperDeck, or a larger ATEM (Television Studio, Constellation) | HDMI or SDI out into a Blackmagic DeckLink card or UltraStudio box | libobs `decklink-input` | Comes in with the picture, on the same device |
-| Either one, through a USB HDMI capture stick | USB | Webcam (`dshow_input`) | Comes in with the picture |
-| USB audio interface: Zoom LiveTrak L-12, Focusrite Scarlett | USB, with the maker's driver installed | none | Each mic input or pair on its own mixer channel (ASIO), or the device's stereo pair (Windows audio) |
+| ATEM Mini, Mini Pro, Mini Extreme | USB-C to the PC | A camera named "Blackmagic Design" | A USB audio input from the same box; "Sound from a video input" finds it by the box it belongs to |
+| HyperDeck, or a larger ATEM | HDMI or SDI into a DeckLink card or UltraStudio box, or an HDMI capture stick | A camera (DeckLink needs Blackmagic Desktop Video's webcam driver) | The capture device's audio input |
+| USB audio interface: Zoom LiveTrak L-12, Focusrite Scarlett | USB, with the maker's driver installed | none | Each input or pair on its own fader, as far as Windows audio exposes them |
 
-### USB audio interfaces
+- **Names.** Windows names like "Microphone (2- ZOOM L-12 Audio)" are shown device first: "ZOOM L-12 Audio · Microphone". USB ids that Chrome adds, like "(1edb:be55)", are removed.
+- **Channels.** The app asks each audio device for up to 32 channels and uses what it gets. Many drivers give the browser only a stereo pair; Focusrite lists each pair as its own device ("Analogue 1 + 2", "3 + 4"). ASIO (every L-12 input separately) is not available in a browser; that comes with the desktop version.
+- **Sync offset.** The ATEM's picture usually reaches the PC a few frames after the sound from a separate interface. Each audio channel can be held back 0 to 5000 ms. Clap on camera and adjust until it lines up.
+- **Plugging in and out.** The list updates by itself. A channel or source whose device is unplugged says so, and comes back by itself when the device is plugged in again. If the browser gives a device a new id (after clearing site data), the app finds it again by name.
+- **Voice processing is off**: no echo cancelling, noise suppression or automatic gain, so music and room mics sound as they are.
 
-- **Names.** Devices show up by their own names. Windows audio names like "Microphone (2- ZOOM L-12 Audio)" are shown device first: "ZOOM L-12 Audio · Microphone". ASIO devices use the driver's name, and their channels use the driver's channel names.
-- **Channels.** Through ASIO, each mixer channel takes one input (a mic) or a pair, so a 14-input L-12 can give every mic its own fader ("Add all 14 inputs"). Through Windows audio, a device gives one stereo pair; Focusrite lists each pair as its own device ("Analogue 1 + 2", "3 + 4").
-- **ASIO needs the obs-asio plugin** ([obs-asio](https://github.com/Andersama/obs-asio), GPL-2.0) installed next to libobs. Without it, no ASIO devices are listed and the interfaces still work through Windows audio. The plugin's settings (`device_id`, `route 0`, `route 1`) are written from its source and not yet tried on a real PC.
-- **Sync offset.** The ATEM's video usually reaches the PC a few frames after the sound from a separate interface. Each mixer channel has a sync offset (-950 to 5000 ms; libobs `sync_offset`). Clap on camera and adjust until it lines up.
-- **Plug and unplug.** The app looks for devices every 3 seconds. Unplugging one that is in use shows a notice and marks its channel "Unplugged"; plugging it back in reopens it.
+## Drawing the scenes
 
-In the app:
+The main window draws Live (full quality, the size of the quality preset) and Preview (smaller) on canvases, at the preset's frame rate, from a timer that keeps running when the window is in the background. Sources are drawn back to front, each in its place (fill, centre, lower third, top, corners). Fades mix the old and new scene.
 
-- **+ Add source → Video input** picks one of the devices the PC can see. One device can appear in many scenes; the engine opens it once and shares it.
-- **+ Add audio** adds a mixer channel: an audio input (a mic, the ATEM Mini's USB audio), the sound from a video input (HyperDeck or capture card), or the PC's desktop sound.
-- **Settings → Video and audio inputs** lists what the PC can see, with a "Look again" button after plugging something in.
+## Sound
 
-Device ids are prefixed by type (`dshow:`, `decklink:`, `wasapi:`) so the engine knows which libobs source to make.
+Each fader is: device input → its channels → delay (sync offset) → volume → meter → program mix (Web Audio, 48 kHz). One device is opened once and shared, so an L-12 can feed one fader per mic.
 
-## The video engine (libobs)
+## Streaming and recording
 
-Capture, mixing, encoding, streaming and recording come from OBS's own engine, libobs, through **obs-studio-node**, the Node.js binding Streamlabs maintains. The code is in [`src/main/engine/obsEngine.ts`](../src/main/engine/obsEngine.ts).
+While streaming or recording, the main window encodes the Live picture and the program sound once (`MediaRecorder`, H.264 when the browser can, at twice the platform bitrate) and sends it to the app server over a local WebSocket. The server hands it to ffmpeg:
 
-**Status: not yet run on Windows.** The engine code follows obs-studio-node's API but has not been tested against a real build. The first Windows run (Phase 1) will need small fixes. Until obs-studio-node is installed, the app runs in **practice mode** with a simulated engine: every button works, but nothing is captured or sent. The top bar says "Practice mode" so this is never a surprise.
+- **Stream:** re-encoded to H.264 + AAC with a keyframe every 2 seconds, sent to every platform at once (ffmpeg's `tee`, so one encode). Instagram gets a vertical 720×1280 picture cut from the middle. If one platform fails, the others keep going.
+- **Recording:** MKV keeps the browser's picture as it is; MP4 keeps it when it is H.264, otherwise re-encodes. MP4 recordings are fragmented, so they stay playable if the PC crashes.
+- **Encoder:** the first that works of NVIDIA NVENC, Intel QuickSync, AMD AMF, then x264 on the processor. Checked once when the app starts.
+- **ffmpeg** comes with `npm install` (`ffmpeg-static`). Set `FFMPEG_PATH` to use another build.
 
-### Installing obs-studio-node (Windows)
+If the stream drops, the app stops it, says why in plain words, and the tablet sees the same notice.
 
-The version on the public npm registry is old. Streamlabs publishes current Windows builds with each [obs-studio-node release](https://github.com/stream-labs/obs-studio-node/releases).
+## Later: the desktop app (.exe)
 
-1. Download the Windows (win64) release archive for the latest release.
-2. In this repository: `npm install <path-to-the-downloaded-tar.gz>`.
-3. Run `npm run dev`. The top bar no longer says "Practice mode".
+The web version is built so it can be wrapped without a rewrite:
 
-To force practice mode anyway: set `STREAMING_ENGINE=simulated`.
-
-## Encoders and quality
-
-**Low**, **Medium** and **High** in Go Live settings set resolution, frame rate and bitrate ([`src/shared/presets.ts`](../src/shared/presets.ts)). The engine picks the best encoder the PC has, in this order: NVIDIA NVENC, AMD AMF, Intel QuickSync, then x264 on the processor.
-
-## Streaming to several platforms at once (optional)
-
-Up to 3 platforms can be on at once. Each gets its own RTMP or RTMPS output. YouTube and Facebook take the wide picture. Instagram is vertical: a separate vertical layout is planned for Phase 2; until then Instagram gets the wide picture. The health bar shows the upload speed needed for all of them.
-
-## Remaining engine work (Phase 1 and 2)
-
-- First run on Windows with obs-studio-node, an ATEM Mini over USB-C and a HyperDeck through a DeckLink card; fix whatever the API differs on (device property names in particular).
-- Real video in the Preview and Live monitors (`OBS_content_createSourcePreviewDisplay`). Today the monitors show a drawing of each scene.
-- Audio peak meters from libobs volmeters (today: simulated levels).
-- A vertical scene layout for Instagram.
-- Position and size of each source on the canvas (today every source fills the picture).
+- An Electron (or Tauri) shell starts the same app server (`src/server/index.ts`) and opens the same main window at `http://localhost:7420`. No screen code changes.
+- In the desktop shell, the parts the browser can't do get added next to what exists: browser sources (a hidden web view per overlay), ASIO audio for every L-12 input, no click needed for screen and desktop capture, and stream keys in Windows' encrypted storage.
+- The tablet remote, companion app and stream deck don't change at all: they use the same control API.

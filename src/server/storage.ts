@@ -1,9 +1,8 @@
 /**
  * Saving to disk: the Setup (scenes, audio, platforms, settings), paired
- * devices, and stream keys. Stream keys are encrypted with the operating
- * system's protection (Windows DPAPI via Electron safeStorage) when available.
+ * devices, and stream keys.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppState } from '../shared/state'
 import { defaultState } from '../core/defaults'
@@ -18,10 +17,10 @@ function readJson<T>(file: string): T | undefined {
   }
 }
 
-function writeJson(file: string, value: unknown) {
+function writeJson(file: string, value: unknown, mode = 0o644) {
   mkdirSync(dirname(file), { recursive: true })
   const tmp = `${file}.tmp`
-  writeFileSync(tmp, JSON.stringify(value, null, 2))
+  writeFileSync(tmp, JSON.stringify(value, null, 2), { mode })
   renameSync(tmp, file)
 }
 
@@ -31,13 +30,18 @@ type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'
   destinations: AppState['stream']['destinations']
   recordFolder: string
   recordFormat: AppState['recording']['format']
+  /** The devices seen last time, so a device whose id changed is found again by its name. */
+  inputs?: AppState['inputs']
 }
 
 export class SetupFile {
-  constructor(private readonly file: string) {}
+  constructor(
+    private readonly file: string,
+    private readonly fresh: () => AppState = defaultState
+  ) {}
 
   load(): AppState {
-    const base = defaultState()
+    const base = this.fresh()
     const saved = readJson<Partial<SavedSetup>>(this.file)
     if (!saved) return base
     return {
@@ -47,6 +51,7 @@ export class SetupFile {
       previewSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
       programSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
       transition: saved.transition ?? base.transition,
+      inputs: saved.inputs ?? base.inputs,
       audio: (saved.audio ?? base.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, level: 0 })),
       stream: {
         ...base.stream,
@@ -73,7 +78,8 @@ export class SetupFile {
       quality: s.stream.quality,
       destinations: s.stream.destinations,
       recordFolder: s.recording.folder,
-      recordFormat: s.recording.format
+      recordFormat: s.recording.format,
+      inputs: s.inputs
     }
     writeJson(this.file, setup)
   }
@@ -89,29 +95,17 @@ export class DeviceFile implements DeviceStore {
   }
 }
 
-export interface Encryptor {
-  isEncryptionAvailable(): boolean
-  encryptString(text: string): Buffer
-  decryptString(data: Buffer): string
-}
-
-/** Stream keys, encrypted at rest. If the OS offers no encryption, keys live in memory only. */
-export class EncryptedKeyStore implements KeyStore {
+/**
+ * Stream keys, saved in a file only this Windows user can read. The web
+ * version keeps them as plain text there; the desktop version will encrypt
+ * them with Windows' own protection (DPAPI).
+ */
+export class FileKeyStore implements KeyStore {
   private keys = new Map<string, string>()
 
-  constructor(
-    private readonly file: string,
-    private readonly crypto: Encryptor
-  ) {
-    if (!crypto.isEncryptionAvailable() || !existsSync(file)) return
+  constructor(private readonly file: string) {
     const saved = readJson<Record<string, string>>(file) ?? {}
-    for (const [id, b64] of Object.entries(saved)) {
-      try {
-        this.keys.set(id, crypto.decryptString(Buffer.from(b64, 'base64')))
-      } catch {
-        // unreadable (another user or machine): ignore, the user re-enters it
-      }
-    }
+    for (const [id, key] of Object.entries(saved)) if (typeof key === 'string' && key) this.keys.set(id, key)
   }
 
   get(id: string) {
@@ -123,10 +117,7 @@ export class EncryptedKeyStore implements KeyStore {
   set(id: string, key: string) {
     if (key) this.keys.set(id, key)
     else this.keys.delete(id)
-    if (!this.crypto.isEncryptionAvailable()) return
-    const out: Record<string, string> = {}
-    for (const [k, v] of this.keys) out[k] = this.crypto.encryptString(v).toString('base64')
-    writeJson(this.file, out)
+    writeJson(this.file, Object.fromEntries(this.keys), 0o600)
   }
 }
 

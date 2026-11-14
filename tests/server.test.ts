@@ -4,8 +4,8 @@ import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore } from '../src/core/ports'
 import { SimEngine } from '../src/core/sim'
-import { ControlServer } from '../src/main/control/server'
-import { MemoryDeviceStore, PairingManager } from '../src/main/control/pairing'
+import { ControlServer } from '../src/server/control/server'
+import { MemoryDeviceStore, PairingManager } from '../src/server/control/pairing'
 
 type Msg = Record<string, any>
 
@@ -15,8 +15,8 @@ class TestClient {
   private waiters: { match: (m: Msg) => boolean; resolve: (m: Msg) => void }[] = []
   closed: Promise<{ code: number; reason: string }>
 
-  constructor(port: number) {
-    this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+  constructor(port: number, origin?: string) {
+    this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, origin ? { origin } : undefined)
     this.ws.on('message', (raw) => {
       const m = JSON.parse(raw.toString())
       const w = this.waiters.findIndex((x) => x.match(m))
@@ -48,8 +48,8 @@ let pairing: PairingManager
 let server: ControlServer
 const clients: TestClient[] = []
 
-async function client() {
-  const c = new TestClient(server.port)
+async function client(origin?: string) {
+  const c = new TestClient(server.port, origin)
   clients.push(c)
   await c.open()
   return c
@@ -173,6 +173,47 @@ describe('commands and events', () => {
     const { c } = await pairedClient('viewer')
     controller.tickStats()
     expect(await c.next((m) => m.type === 'event' && m.name === 'stats')).toMatchObject({ stats: { health: 'idle' } })
+  })
+})
+
+describe('the main window on the streaming PC', () => {
+  it('connects without a code, sees everything and runs the video', async () => {
+    await controller.run('local', 'devices.setPairingOpen', { open: true })
+    const c = await client(`http://127.0.0.1:${server.port}`)
+    c.send({ type: 'local', studio: true })
+    const welcome = await c.next((m) => m.type === 'welcome')
+    expect(welcome).toMatchObject({ role: 'local', studio: true })
+    expect(welcome.state.devices.pairingCode).toBe(pairing.pairingCode)
+    // A second window controls but does not run the video.
+    const second = await client(`http://127.0.0.1:${server.port}`)
+    second.send({ type: 'local', studio: true })
+    expect(await second.next((m) => m.type === 'welcome')).toMatchObject({ role: 'local', studio: false })
+  })
+
+  it('reports the devices the browser can see, by their real names', async () => {
+    const c = await client(`http://127.0.0.1:${server.port}`)
+    c.send({ type: 'local', studio: true })
+    await c.next((m) => m.type === 'welcome')
+    const r = await c.request({
+      type: 'command',
+      action: 'inputs.report',
+      params: {
+        video: [{ id: 'v1', name: 'Blackmagic Design', group: 'g1' }],
+        audio: [{ id: 'a1', name: 'ZOOM L-12 Audio · Microphone', group: 'g2', channels: 2 }]
+      }
+    })
+    expect(r.ok).toBe(true)
+    expect(controller.state.inputs.video.map((d) => d.name)).toEqual(['Blackmagic Design'])
+    expect(controller.state.inputs.audio.map((d) => d.name)).toEqual(['ZOOM L-12 Audio · Microphone'])
+  })
+
+  it('refuses "local" from another site or another PC', async () => {
+    const c = await client('http://evil.example')
+    c.send({ type: 'local', studio: true })
+    expect((await c.closed).code).toBe(4005)
+    const tablet = await pairedClient()
+    const r = await tablet.c.request({ type: 'command', action: 'inputs.report', params: { video: [], audio: [] } })
+    expect(r.ok).toBe(false)
   })
 })
 

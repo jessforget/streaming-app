@@ -262,10 +262,27 @@ describe('USB audio interfaces (Zoom L-12, Focusrite)', () => {
   })
 
   it('edits a channel: name, inputs and sync offset', async () => {
-    await t.c.run('local', 'audio.update', { sourceId: 'mic', name: 'Host mic', syncOffsetMs: -40 })
-    expect(t.c.state.audio.find((a) => a.id === 'mic')).toMatchObject({ name: 'Host mic', syncOffsetMs: -40 })
+    await t.c.run('local', 'audio.update', { sourceId: 'mic', name: 'Host mic', syncOffsetMs: 40 })
+    expect(t.c.state.audio.find((a) => a.id === 'mic')).toMatchObject({ name: 'Host mic', syncOffsetMs: 40 })
+    // Sound can only be held back, not played early.
+    await expect(t.c.run('local', 'audio.update', { sourceId: 'mic', syncOffsetMs: -40 })).rejects.toThrow('from 0')
     await expect(t.c.run('local', 'audio.update', { sourceId: 'desktop', channels: [1] })).rejects.toThrow('Desktop')
+    // Move the mic to the L-12: its channels start again from the first pair.
+    await t.c.run('local', 'audio.update', { sourceId: 'mic', device: 'zoom-l12' })
+    expect(t.c.state.audio.find((a) => a.id === 'mic')).toMatchObject({ device: 'zoom-l12', channels: undefined })
+    await expect(t.c.run('local', 'audio.update', { sourceId: 'mic', device: 'nope' })).rejects.toThrow('no audio device')
     await expect(t.c.run('remote', 'audio.update', { sourceId: 'mic', syncOffsetMs: 0 })).rejects.toBeInstanceOf(CommandError)
+  })
+
+  it('follows a device whose id changed, by its name', async () => {
+    await t.c.run('local', 'audio.add', { name: 'Host', kind: 'device', device: 'zoom-l12', channels: [1] })
+    const notices: string[] = []
+    t.c.on('error', (m) => notices.push(m))
+    const l12 = t.engine.devices.audio.find((d) => d.id === 'zoom-l12')!
+    t.engine.devices.audio = t.engine.devices.audio.map((d) => (d === l12 ? { ...l12, id: 'zoom-l12-new-id' } : d))
+    await t.c.pollDevices()
+    expect(t.c.state.audio.find((a) => a.name === 'Host')?.device).toBe('zoom-l12-new-id')
+    expect(notices).toEqual([])
   })
 
   it('notices a device in use being unplugged and plugged back in', async () => {

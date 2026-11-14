@@ -12,7 +12,7 @@ export function HealthPill({ stats }: { stats: HealthStats | null }) {
   )
 }
 
-/** A drawing of a scene: what viewers would see. The real video preview comes from the engine (Phase 2). */
+/** A drawing of a scene: what viewers would see. Used for scene thumbnails, the tablet and the mockup; the main window shows the real video. */
 export function ScenePicture({ scene, state, live }: { scene: Scene; state: AppState; live?: boolean }) {
   const visible = scene.layers.filter((l) => l.visible)
   const video = visible.find((l) => l.kind === 'video')

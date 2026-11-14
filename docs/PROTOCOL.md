@@ -90,12 +90,12 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `scene.add` | `{ "name": "Interview" }` → `{ "sceneId" }` |
 | `scene.rename` | `{ "sceneId", "name" }` |
 | `scene.remove` | `{ "sceneId" }` (not the scene on air, not the last one) |
-| `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "text" \| "browser" \| "media" \| "screen" \| "window", "name"?, "device"?, "text"?, "url"? }` → `{ "layerId" }`. New sources go on top. |
-| `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"? }` |
+| `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "text" \| "browser" \| "media" \| "screen" \| "window", "name"?, "device"?, "text"?, "url"?, "placement"? }` → `{ "layerId" }`. New sources go on top. |
+| `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"?, "placement"? }`. `placement`: `full`, `center`, `lower-third`, `top`, `top-left`, `top-right`, `bottom-right`. |
 | `layer.move` | `{ "sceneId", "layerId", "direction": "up" \| "down" }` |
 | `layer.remove` | `{ "sceneId", "layerId" }` |
-| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"?, "channels"?, "syncOffsetMs"? }` → `{ "sourceId" }`. `channels` = one input (`[3]`, a mic) or a pair (`[9, 10]`) of a multichannel interface, counted from 1. `syncOffsetMs` = -950 to 5000. |
-| `audio.update` | `{ "sourceId", "name"?, "channels"?, "syncOffsetMs"? }` |
+| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"?, "channels"?, "syncOffsetMs"? }` → `{ "sourceId" }`. `channels` = one input (`[3]`, a mic) or a pair (`[9, 10]`) of a multichannel interface, counted from 1. `syncOffsetMs` = 0 to 5000 (holds the sound back). |
+| `audio.update` | `{ "sourceId", "name"?, "device"?, "channels"?, "syncOffsetMs"? }`. A new device starts again from its first pair. |
 | `audio.remove` | `{ "sourceId" }` |
 | `inputs.refresh` | none (look for capture and audio devices again) |
 
@@ -129,6 +129,12 @@ Health once a second while the app runs:
 { "type": "event", "name": "stats", "stats": { "health": "good", "message": "Healthy, 0 dropped frames", "fps": 30, "cpu": 21, "droppedFrames": 0, "totalFrames": 5400, "requiredKbps": 4660, "audioLevels": { "mic": 0.62 } } }
 ```
 
+Something that went wrong on its own (a stream dropped, a device was unplugged), in words you can show:
+
+```json
+{ "type": "event", "name": "notice", "message": "ZOOM L-12 Audio · Microphone was unplugged" }
+```
+
 Useful parts of `state` for a stream deck's button lights:
 
 - `programSceneId` / `previewSceneId`: which scene is on air / next.
@@ -137,6 +143,10 @@ Useful parts of `state` for a stream deck's button lights:
 - `audio[].muted`.
 
 Devices never receive stream keys or the pairing code.
+
+## The main window (streaming PC only)
+
+The main window, opened at `http://localhost:7420` on the streaming PC, sends `{ "type": "local", "studio": true }` instead of pairing. The server accepts it only from this PC and from its own page (checked by address, `Host` and `Origin`). The first main window runs the video (`"studio": true` in `welcome`) and reports with `inputs.report` (the devices its browser can open) and `studio.report` (frame rate and audio levels). It sends the picture and sound on a second WebSocket, `/media?kind=stream|record`. Other devices can't do any of this.
 
 ## 7. Limits
 

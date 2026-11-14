@@ -174,7 +174,7 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
           </li>
           <li>
             <strong>USB audio interface (Zoom LiveTrak L-12, Focusrite Scarlett):</strong> install the maker's driver, then plug
-            it in. It shows up here by its own name. With ASIO you can give each mic input its own mixer channel.
+            it in. It shows up here by its own name. Each input or pair the driver offers can have its own fader (in the web version, often just the main pair; every input separately comes with the desktop version).
           </li>
           <li>
             <strong>HyperDeck or a larger ATEM:</strong> connect its HDMI or SDI out to a capture card (Blackmagic DeckLink or

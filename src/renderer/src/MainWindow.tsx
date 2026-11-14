@@ -1,24 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AppState, AudioSource, HealthStats } from '../../shared/state'
 import { PLATFORMS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
 import { HealthPill, Notice, ScenePicture } from './parts'
 import { Settings, type SettingsTab } from './Settings'
+import type { Studio } from './studio/studio'
+import { LiveCanvas, LiveMeter, StudioBar } from './studio/StudioParts'
 import { useApp, useElapsed, type Run } from './useApp'
 
-export function MainWindow({ bridge }: { bridge: Bridge }) {
-  const { state, stats, run, notice, clearNotice } = useApp(bridge)
+/**
+ * The main window. On the streaming PC it also runs the studio (the live
+ * video and sound); in the mockup there is no studio and the monitors show a
+ * drawing of each scene instead.
+ */
+export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; studioElsewhere?: boolean }) {
+  const { bridge, studio = null, studioElsewhere = false } = props
+  const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
   const [settings, setSettings] = useState<SettingsTab | null>(null)
+  useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
   if (!state) return <div className="loading">Starting…</div>
   return (
     <div className="app">
       <TopBar state={state} stats={stats} run={run} openSettings={setSettings} />
       <Notice text={notice} onClose={clearNotice} />
+      <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
       <div className="workspace">
         <ScenesColumn state={state} run={run} />
-        <CenterColumn state={state} run={run} />
-        <RightColumn state={state} stats={stats} run={run} openSettings={setSettings} />
+        <CenterColumn state={state} run={run} studio={studio} />
+        <RightColumn state={state} stats={stats} run={run} openSettings={setSettings} studio={studio} />
       </div>
       {settings && <Settings state={state} run={run} tab={settings} onTab={setSettings} onClose={() => setSettings(null)} />}
     </div>
@@ -102,7 +112,7 @@ function ScenesColumn({ state, run }: { state: AppState; run: Run }) {
   )
 }
 
-function CenterColumn({ state, run }: { state: AppState; run: Run }) {
+function CenterColumn({ state, run, studio }: { state: AppState; run: Run; studio: Studio | null }) {
   const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
   const program = state.scenes.find((s) => s.id === state.programSceneId) ?? state.scenes[0]
   return (
@@ -112,13 +122,13 @@ function CenterColumn({ state, run }: { state: AppState; run: Run }) {
           <figcaption>
             Preview: <strong>{preview.name}</strong>
           </figcaption>
-          <ScenePicture scene={preview} state={state} />
+          {studio ? <LiveCanvas canvas={studio.compositor.preview} /> : <ScenePicture scene={preview} state={state} />}
         </figure>
         <figure>
           <figcaption className="live-caption">
             Live: <strong>{program.name}</strong>
           </figcaption>
-          <ScenePicture scene={program} state={state} live />
+          {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
         </figure>
       </div>
       <div className="golive-row">
@@ -138,8 +148,8 @@ function CenterColumn({ state, run }: { state: AppState; run: Run }) {
   )
 }
 
-function RightColumn(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
-  const { state, stats, run, openSettings } = props
+function RightColumn(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void; studio: Studio | null }) {
+  const { state, stats, run, openSettings, studio } = props
   const [addingAudio, setAddingAudio] = useState(false)
   const [editingAudio, setEditingAudio] = useState<string | null>(null)
   const editing = state.audio.find((a) => a.id === editingAudio)
@@ -159,7 +169,15 @@ function RightColumn(props: { state: AppState; stats: HealthStats | null; run: R
         </div>
         <div className="mixer">
           {state.audio.map((a) => (
-            <Fader key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} run={run} onEdit={() => setEditingAudio(a.id)} />
+            <Fader
+              key={a.id}
+              a={a}
+              state={state}
+              level={stats?.audioLevels[a.id] ?? 0}
+              studio={studio}
+              run={run}
+              onEdit={() => setEditingAudio(a.id)}
+            />
           ))}
         </div>
         {editing && <AudioEditor key={editing.id} state={state} run={run} source={editing} onDone={() => setEditingAudio(null)} />}
@@ -184,11 +202,13 @@ function RightColumn(props: { state: AppState; stats: HealthStats | null; run: R
   )
 }
 
-function Fader(props: { a: AudioSource; state: AppState; level: number; run: Run; onEdit: () => void }) {
-  const { a, state, level, run, onEdit } = props
+function Fader(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
+  const { a, state, level, studio, run, onEdit } = props
   const dev = [...state.inputs.audio, ...state.inputs.video].find((d) => d.id === a.device)
-  const unplugged = a.kind !== 'desktop' && !dev
-  const from = a.kind === 'desktop' ? 'Desktop sound' : (dev?.name ?? 'Device not plugged in')
+  // A mic channel with no device picked uses Windows' default mic.
+  const usesDefault = a.kind === 'device' && !a.device
+  const unplugged = a.kind !== 'desktop' && !dev && !usesDefault
+  const from = a.kind === 'desktop' ? 'Desktop sound' : usesDefault ? 'Windows default mic' : (dev?.name ?? 'Device not plugged in')
   const chs = a.channels ? `Ch ${a.channels.join('+')}` : ''
   const detail = [chs, a.syncOffsetMs ? `${a.syncOffsetMs > 0 ? '+' : ''}${a.syncOffsetMs} ms` : ''].filter(Boolean).join(' · ')
   return (
@@ -202,7 +222,7 @@ function Fader(props: { a: AudioSource; state: AppState; level: number; run: Run
         </button>
       </span>
       <div className="fader-track">
-        <div className="meter" style={{ height: `${Math.round(level * 100)}%` }} />
+        {studio ? <LiveMeter studio={studio} id={a.id} /> : <div className="meter" style={{ height: `${Math.round(level * 100)}%` }} />}
         <input
           type="range"
           min={0}
@@ -213,7 +233,7 @@ function Fader(props: { a: AudioSource; state: AppState; level: number; run: Run
         />
       </div>
       <span className="fader-name">{a.name}</span>
-      <small className={`fader-detail ${unplugged ? 'warn-text' : ''}`}>{unplugged ? 'Unplugged' : detail}</small>
+      <small className={`fader-detail ${unplugged ? 'warn-text' : ''}`}>{unplugged ? 'Unplugged' : detail || (usesDefault ? 'Default mic' : '')}</small>
       <button className={`small ${a.muted ? 'danger' : ''}`} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
         {a.muted ? 'Muted' : 'Mute'}
       </button>

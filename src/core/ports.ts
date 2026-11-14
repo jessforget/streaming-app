@@ -46,6 +46,12 @@ export interface Engine {
   stopRecording(): Promise<void>
   readStats(): EngineStats
   shutdown(): Promise<void>
+  /** The page that draws the video reports which devices its browser can open. */
+  setInputs?(inputs: AppState['inputs']): void
+  /** Numbers from the page that draws the video (frames per second, audio levels). */
+  report?(r: { fps: number; audioLevels: Record<string, number> }): void
+  /** Set by the controller: called when a stream or recording stops by itself, with a plain-words reason. */
+  onOutputStopped?: (kind: 'stream' | 'record', reason: string) => void
 }
 
 /** Stream keys. Kept out of AppState so they are never sent to devices. */

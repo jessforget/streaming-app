@@ -1,14 +1,20 @@
 /**
  * The control server: one WebSocket on the local network for the tablet
  * remote, the companion app and a future stream deck. It also serves the
- * tablet remote page and a developer test page over plain HTTP.
+ * pages: the main window (only to the streaming PC itself), the tablet
+ * remote, the mockup and a developer test page.
+ *
+ * The main window connects as "local" (full control, settings included).
+ * Only a page opened on this PC, from this server's own address, may do that:
+ * the connection must come from the PC itself (loopback) and carry this
+ * server's own origin, so other websites open in the browser can't.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { CommandError, PROTOCOL_VERSION, ROLES, type Role, type ServerMessage } from '../../shared/protocol'
+import { CommandError, PROTOCOL_VERSION, ROLES, type Caller, type Role, type ServerMessage } from '../../shared/protocol'
 import type { AppState } from '../../shared/state'
 import type { Controller } from '../../core/controller'
 import { errorText } from '../../core/controller'
@@ -24,13 +30,35 @@ export interface ControlServerOptions {
   /** Folder with the built interface (remote.html and assets/). */
   staticDir?: string
   appVersion?: string
+  /** A media connection from the studio page (video and audio for a stream or a recording). */
+  onMedia?: (socket: WebSocket, kind: 'stream' | 'record', codec: string) => void
+  /** The studio page (the main window that runs the video) came or went. */
+  onStudio?: (present: boolean) => void
+}
+
+const MAX_MEDIA_MESSAGE_BYTES = 16 * 1024 * 1024
+const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.mp4', '.webm', '.mov', '.mkv', '.mp3', '.wav', '.ogg'])
+
+/** True when the request comes from this PC and from a page this server served. */
+export function isLocalRequest(req: IncomingMessage, port: number): boolean {
+  const addr = req.socket.remoteAddress ?? ''
+  const loopback = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
+  const host = req.headers.host ?? ''
+  const okHost = host === `localhost:${port}` || host === `127.0.0.1:${port}`
+  const origin = req.headers.origin
+  // Browsers always send Origin on WebSocket upgrades; plain page loads may leave it out.
+  const okOrigin = origin === undefined ? req.headers.upgrade === undefined : origin === `http://${host}`
+  return loopback && okHost && okOrigin
 }
 
 interface Client {
   socket: WebSocket
   deviceId: string | null
   name: string
-  role: Role | null
+  role: Caller | null
+  /** May say hello as the main window: it's on this PC and from this server's page. */
+  canBeLocal: boolean
+  studio: boolean
   failedPairs: number
   /** Simple rate limit: messages in the current second. */
   windowStart: number
@@ -48,6 +76,17 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
   '.json': 'application/json',
   '.woff2': 'font/woff2'
 }
@@ -55,6 +94,7 @@ const MIME: Record<string, string> = {
 export class ControlServer {
   private http: Server
   private wss: WebSocketServer
+  private media: WebSocketServer
   private clients = new Set<Client>()
   private stateTimer: ReturnType<typeof setTimeout> | null = null
   private boundPort = 0
@@ -65,11 +105,24 @@ export class ControlServer {
         res.writeHead(500).end()
       })
     })
-    this.wss = new WebSocketServer({ server: this.http, path: '/ws', maxPayload: MAX_MESSAGE_BYTES })
-    this.wss.on('connection', (socket) => this.handleSocket(socket))
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES })
+    this.media = new WebSocketServer({ noServer: true, maxPayload: MAX_MEDIA_MESSAGE_BYTES })
+    this.http.on('upgrade', (req, socket, head) => {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      if (url.pathname === '/ws') {
+        this.wss.handleUpgrade(req, socket, head, (ws) => this.handleSocket(ws, req))
+      } else if (url.pathname === '/media' && this.opts.onMedia && isLocalRequest(req, this.boundPort)) {
+        const kind = url.searchParams.get('kind') === 'record' ? 'record' : 'stream'
+        const codec = (url.searchParams.get('codec') ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
+        this.media.handleUpgrade(req, socket, head, (ws) => this.opts.onMedia!(ws, kind, codec))
+      } else {
+        socket.destroy()
+      }
+    })
 
     opts.controller.on('state', () => this.scheduleState())
     opts.controller.on('stats', (stats) => this.broadcast({ type: 'event', name: 'stats', stats }))
+    opts.controller.on('error', (message) => this.broadcast({ type: 'event', name: 'notice', message }))
     opts.pairing.onRemove((id) => {
       for (const c of this.clients) if (c.deviceId === id) c.socket.close(4003, 'Removed')
     })
@@ -108,18 +161,22 @@ export class ControlServer {
   async stop() {
     if (this.stateTimer) clearTimeout(this.stateTimer)
     for (const c of this.clients) c.socket.terminate()
+    for (const ws of this.media.clients) ws.terminate()
+    await new Promise<void>((r) => this.media.close(() => r()))
     await new Promise<void>((r) => this.wss.close(() => r()))
     await new Promise<void>((r) => this.http.close(() => r()))
   }
 
   // ---------- WebSocket ----------
 
-  private handleSocket(socket: WebSocket) {
+  private handleSocket(socket: WebSocket, req: IncomingMessage) {
     const client: Client = {
       socket,
       deviceId: null,
       name: '',
       role: null,
+      canBeLocal: isLocalRequest(req, this.boundPort),
+      studio: false,
       failedPairs: 0,
       windowStart: Date.now(),
       windowCount: 0
@@ -145,6 +202,7 @@ export class ControlServer {
       clearTimeout(authTimer)
       this.clients.delete(client)
       if (client.deviceId) this.opts.pairing.markConnected(client.deviceId, -1)
+      if (client.studio) this.opts.onStudio?.(false)
     })
     socket.on('error', () => socket.terminate())
   }
@@ -164,6 +222,31 @@ export class ControlServer {
         this.send(client, { type: 'error', error: errorText(e) })
         if (client.failedPairs >= MAX_FAILED_PAIRS) client.socket.close(4002, 'Too many wrong codes')
       }
+      return
+    }
+
+    if (msg.type === 'local') {
+      if (!client.canBeLocal) {
+        this.send(client, { type: 'error', error: 'Open the main window on the streaming PC itself, at http://localhost:' + this.boundPort })
+        client.socket.close(4005, 'Not local')
+        return
+      }
+      client.role = 'local'
+      client.name = 'This PC'
+      // The first main window to ask runs the video; another tab just shows the controls.
+      if (msg.studio === true && ![...this.clients].some((c) => c.studio)) {
+        client.studio = true
+        this.opts.onStudio?.(true)
+      }
+      this.send(client, {
+        type: 'welcome',
+        v: PROTOCOL_VERSION,
+        deviceId: 'local',
+        name: client.name,
+        role: 'local',
+        state: this.opts.controller.state,
+        studio: client.studio
+      })
       return
     }
 
@@ -190,7 +273,8 @@ export class ControlServer {
         const result = await controller.run(client.role, action, params, client.name)
         // Commands that return the whole state don't repeat it: a state event follows.
         const data = result && typeof result === 'object' && 'scenes' in result ? undefined : result
-        this.send(client, { type: 'result', id, ok: true, data: action === 'state.get' ? this.publicState() : data })
+        const state = client.role === 'local' ? controller.state : this.publicState()
+        this.send(client, { type: 'result', id, ok: true, data: action === 'state.get' ? state : data })
       } catch (e) {
         const error = e instanceof CommandError ? e.message : `Something went wrong: ${errorText(e)}`
         this.send(client, { type: 'result', id, ok: false, error })
@@ -232,7 +316,11 @@ export class ControlServer {
 
   private broadcast(msg: ServerMessage) {
     const text = JSON.stringify(msg)
-    for (const c of this.clients) if (c.role && c.socket.readyState === c.socket.OPEN) c.socket.send(text)
+    // The main window on this PC also sees the pairing code, to show it.
+    const local = msg.type === 'event' && msg.name === 'state' ? JSON.stringify({ ...msg, state: this.opts.controller.state }) : text
+    for (const c of this.clients) {
+      if (c.role && c.socket.readyState === c.socket.OPEN) c.socket.send(c.role === 'local' ? local : text)
+    }
   }
 
   private send(client: Client, msg: ServerMessage) {
@@ -257,7 +345,10 @@ export class ControlServer {
     res.setHeader('Cache-Control', 'no-store')
     if (req.method !== 'GET') return void res.writeHead(405).end()
 
-    if (path === '/') return void res.writeHead(302, { Location: '/remote' }).end()
+    const local = isLocalRequest(req, this.boundPort)
+    // The main window is for the streaming PC itself; anyone else gets the tablet remote.
+    if (path === '/' && !local) return void res.writeHead(302, { Location: '/remote' }).end()
+    if (path === '/files') return this.serveLocalFile(local, url.searchParams.get('path') ?? '', res)
     if (path === '/api/info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return void res.end(
@@ -269,8 +360,9 @@ export class ControlServer {
       return void res.end(TEST_PAGE)
     }
     const dir = this.opts.staticDir
-    if (!dir) return void res.writeHead(404).end('Remote page not built. Run npm run build.')
-    const file = path === '/remote' ? 'remote.html' : path.startsWith('/assets/') ? path.slice(1) : null
+    if (!dir) return void res.writeHead(404).end('Pages not built. Run npm run build.')
+    const file =
+      path === '/' ? 'index.html' : path === '/remote' ? 'remote.html' : path === '/demo' ? 'demo.html' : path.startsWith('/assets/') ? path.slice(1) : null
     if (!file) return void res.writeHead(404).end('Not found')
     const full = normalize(join(dir, file))
     if (!full.startsWith(normalize(dir) + sep)) return void res.writeHead(403).end()
@@ -280,6 +372,20 @@ export class ControlServer {
       res.end(body)
     } catch {
       res.writeHead(404).end('Not found')
+    }
+  }
+
+  /** Pictures and video files on this PC, for image and media sources. Only for the main window on this PC. */
+  private async serveLocalFile(local: boolean, file: string, res: ServerResponse) {
+    if (!local) return void res.writeHead(403).end()
+    const ext = extname(file).toLowerCase()
+    if (!file || !MEDIA_EXT.has(ext)) return void res.writeHead(404).end('Only pictures, video and sound files')
+    try {
+      const body = await readFile(file)
+      res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' })
+      res.end(body)
+    } catch {
+      res.writeHead(404).end('File not found')
     }
   }
 }

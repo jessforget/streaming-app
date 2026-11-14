@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts", "tests", "vitest.config.mts", "electron.vite.config.mts"]
+  "include": ["src", "scripts", "tests", "vitest.config.mts", "vite.config.mts"]
 }

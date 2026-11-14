@@ -40,7 +40,7 @@ export function useApp(bridge: Bridge) {
     [bridge]
   )
 
-  return { state, stats: stats ?? state?.stats ?? null, run, notice, clearNotice: () => setNotice(null) }
+  return { state, stats: stats ?? state?.stats ?? null, run, notice, showNotice: setNotice, clearNotice: () => setNotice(null) }
 }
 
 /** "01:24:06" since a start time, updating every second. */

@@ -11,6 +11,19 @@ export const IDLE_STATS: AppState['stats'] = {
   audioLevels: {}
 }
 
+/**
+ * A fresh install on a real PC: the same scenes and mixer, but with no device
+ * chosen yet, because the PC's own devices have their own ids. The app asks
+ * for them in the source and audio settings.
+ */
+export function freshSetup(): AppState {
+  const s = defaultState()
+  for (const scene of s.scenes) for (const l of scene.layers) if (l.kind === 'video') delete l.device
+  s.audio = s.audio.filter((a) => a.kind === 'desktop' || a.id === 'mic')
+  for (const a of s.audio) delete a.device
+  return s
+}
+
 /** The Setup a new install starts with: a typical ATEM multicamera show. */
 export function defaultState(): AppState {
   return {

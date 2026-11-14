@@ -8,11 +8,37 @@ export type LayerKind = 'video' | 'screen' | 'window' | 'image' | 'text' | 'brow
 
 export const LAYER_KINDS: LayerKind[] = ['video', 'image', 'text', 'browser', 'media', 'screen', 'window']
 
+/** Where a source sits in the picture. Full = fills it; the rest are boxes and text spots. */
+export type Placement = 'full' | 'center' | 'lower-third' | 'top' | 'top-right' | 'bottom-right' | 'top-left'
+
+export const PLACEMENTS: Placement[] = ['full', 'center', 'lower-third', 'top', 'top-right', 'bottom-right', 'top-left']
+
+export const PLACEMENT_LABEL: Record<Placement, string> = {
+  full: 'Fill the picture',
+  center: 'Centre',
+  'lower-third': 'Lower third',
+  top: 'Top centre',
+  'top-right': 'Small box, top right',
+  'bottom-right': 'Small box, bottom right',
+  'top-left': 'Small box, top left'
+}
+
+/** Where a source is drawn when nobody picked a spot. */
+export function placementOf(layer: Layer): Placement {
+  if (layer.placement) return layer.placement
+  if (layer.kind !== 'text') return 'full'
+  if (layer.id.endsWith('lower-third')) return 'lower-third'
+  if (layer.id.endsWith('score')) return 'top'
+  return 'center'
+}
+
 export interface Layer {
   id: string
   name: string
   kind: LayerKind
   visible: boolean
+  /** Where it sits. Default: video and images fill the picture, text is centred. */
+  placement?: Placement
   /** Video layers: which capture device (an id from state.inputs.video). */
   device?: string
   /** Text layers: shown text. `{field.name}` is replaced by that data field's value. */
@@ -62,6 +88,8 @@ export interface InputDevice {
   name: string
   /** Audio devices: how they're reached. ASIO lets you pick single channels of a multichannel interface. */
   driver?: 'wasapi' | 'asio'
+  /** Devices that are one physical box share a group (the ATEM Mini's picture and its sound). */
+  group?: string
   /** Audio devices: number of input channels, when known. */
   channels?: number
   /** Audio devices: each input channel's name from the driver ("Ch 1", "Analogue 3"), when it gives them. */
@@ -84,8 +112,8 @@ export function channelName(d: InputDevice | undefined, ch: number): string {
   return d?.channelNames?.[ch - 1] ?? `Ch ${ch}`
 }
 
-/** Longest audio delay the app allows, in milliseconds (and -950 the most it can be moved earlier). */
-export const SYNC_OFFSET_RANGE = { min: -950, max: 5000 }
+/** Audio delay the app allows, in milliseconds (sound can be held back to meet the video, not moved earlier). */
+export const SYNC_OFFSET_RANGE = { min: 0, max: 5000 }
 
 /** How many input channels an audio device can offer the channel picker. */
 export function channelCount(d: InputDevice | undefined): number {
@@ -140,8 +168,8 @@ export interface HealthStats {
 }
 
 export interface EngineInfo {
-  /** 'obs' = real video engine; 'simulated' = practice mode, nothing is captured or sent. */
-  mode: 'obs' | 'simulated'
+  /** 'live' = cameras and sound are real; 'simulated' = practice mode, nothing is captured or sent. */
+  mode: 'live' | 'simulated'
   note: string
 }
 

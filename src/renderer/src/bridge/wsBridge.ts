@@ -1,6 +1,12 @@
 /**
- * Tablet remote's connection: the same WebSocket control API the companion
- * app and a stream deck use. Handles pairing, reconnecting and requests.
+ * A screen's connection to the app's server: the same WebSocket control API
+ * the companion app and a stream deck use. Handles pairing, reconnecting and
+ * requests.
+ *
+ * - The tablet remote pairs with a code and keeps a key.
+ * - The main window on the streaming PC connects as "local" (no code needed:
+ *   the server checks the connection really comes from this PC). The first
+ *   main window also runs the video (the studio).
  */
 import type { AppState, HealthStats } from '../../../shared/state'
 import type { Action, CommandMap, Role, ServerMessage } from '../../../shared/protocol'
@@ -25,10 +31,10 @@ function saveToken(token: string | null) {
   }
 }
 
-type Status = 'connecting' | 'connected' | 'offline' | 'needs-pairing'
+export type Status = 'connecting' | 'connected' | 'offline' | 'needs-pairing'
 
 export class WsBridge implements Bridge {
-  readonly mode = 'remote' as const
+  readonly mode: 'local' | 'remote'
   private ws: WebSocket | null = null
   private state: AppState | null = null
   private pending = new Map<string, (r: CommandResult) => void>()
@@ -39,10 +45,18 @@ export class WsBridge implements Bridge {
   private statusFns = new Set<(s: Status, detail?: string) => void>()
   private retry = 0
   private stopped = false
-  role: Role | null = null
+  role: Role | 'local' | null = null
   name = ''
+  /** Main window only: true when this page runs the video and sound. */
+  studio = false
+  private first: object | null = null
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    opts: { local?: boolean } = {}
+  ) {
+    this.mode = opts.local ? 'local' : 'remote'
+  }
 
   onStatus(fn: (s: Status, detail?: string) => void) {
     this.statusFns.add(fn)
@@ -51,6 +65,7 @@ export class WsBridge implements Bridge {
 
   /** Connect with the saved key. Resolves false when the tablet must pair. */
   connect() {
+    if (this.mode === 'local') return this.open({ type: 'local', studio: true })
     const token = savedToken()
     if (!token) return this.setStatus('needs-pairing')
     this.open({ type: 'hello', token })
@@ -69,6 +84,7 @@ export class WsBridge implements Bridge {
 
   private open(first: object) {
     this.stopped = false
+    this.first = first
     this.ws?.close()
     this.setStatus('connecting')
     const ws = new WebSocket(this.url)
@@ -79,6 +95,15 @@ export class WsBridge implements Bridge {
       if (this.ws !== ws) return
       for (const [, resolve] of this.pending) resolve({ ok: false, error: 'Connection lost' })
       this.pending.clear()
+      if (this.mode === 'local') {
+        // The main window never pairs: keep trying until the app's server is back.
+        this.studio = false
+        this.setStatus('offline', e.code === 4005 ? e.reason : undefined)
+        if (e.code === 4005) return
+        const delay = Math.min(5_000, 500 * 2 ** this.retry++)
+        setTimeout(() => !this.stopped && this.first && this.open(this.first), delay)
+        return
+      }
       if (e.code === 4004 || e.code === 4003) {
         saveToken(null)
         return this.setStatus('needs-pairing', e.code === 4003 ? 'This tablet was removed on the streaming PC' : undefined)
@@ -99,6 +124,7 @@ export class WsBridge implements Bridge {
         this.retry = 0
         this.role = m.role
         this.name = m.name
+        this.studio = m.studio === true
         this.state = m.state
         this.setStatus('connected')
         this.stateFns.forEach((fn) => fn(m.state))
@@ -107,7 +133,8 @@ export class WsBridge implements Bridge {
         if (m.name === 'state') {
           this.state = m.state
           this.stateFns.forEach((fn) => fn(m.state))
-        } else this.statsFns.forEach((fn) => fn(m.stats))
+        } else if (m.name === 'notice') this.noticeFns.forEach((fn) => fn(m.message))
+        else this.statsFns.forEach((fn) => fn(m.stats))
         break
       case 'result': {
         const resolve = m.id ? this.pending.get(m.id) : undefined
@@ -118,7 +145,8 @@ export class WsBridge implements Bridge {
         break
       }
       case 'error':
-        if (!this.role) this.setStatus('needs-pairing', m.error)
+        if (!this.role && this.mode === 'remote') this.setStatus('needs-pairing', m.error)
+        else if (!this.role) this.setStatus('offline', m.error)
         else this.noticeFns.forEach((fn) => fn(m.error))
         break
     }
