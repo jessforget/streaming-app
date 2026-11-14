@@ -27,6 +27,27 @@ Try without any hardware: `npm run practice` starts a simulated app (nothing cap
 
 The interactive mockup: after `npm run build`, open `http://localhost:7420/demo` while the app runs.
 
+## Desktop version (uses the graphics card)
+
+```
+npm install
+npm run desktop
+```
+
+This opens the same app in its own window (Electron) instead of Chrome. The
+window asks Windows for the strong graphics card (the NVIDIA one on a laptop
+with two), draws Live and Preview there with WebGPU, and encodes the video once
+on the card's own encoder (WebCodecs, NVENC on NVIDIA). ffmpeg then passes that
+picture straight to YouTube, Facebook and the rest, with no second encode; only
+Instagram's vertical picture is encoded again. The window also keeps full speed
+in the background, opens cameras without "Allow" prompts, and shares the main
+screen with the PC's sound.
+
+If the browser or PC can't draw or encode on the card, the app falls back to the
+old way (2D canvas and the browser's recorder) by itself. Add `?engine=canvas`
+to the address to force the old way. `tools/gpu-test.html` is a 20-second speed
+test for a PC (also published as an artifact).
+
 ## Phones as cameras
 
 Any Android phone or iPhone on the same network can be a camera, with no app to install:

@@ -22,13 +22,13 @@ export function fileUrl(path: string): string {
 export class Compositor {
   readonly program = document.createElement('canvas')
   readonly preview = document.createElement('canvas')
-  private state: AppState | null = null
+  protected state: AppState | null = null
   private videos = new Map<string, { el: HTMLVideoElement; stream?: MediaStream; failed?: boolean }>()
   private images = new Map<string, HTMLImageElement>()
   /** Screen and window sources, once the person picked what to share. */
   private displays = new Map<string, HTMLVideoElement>()
   private shownProgram = ''
-  private fadeFrom: { scene: Scene; start: number; ms: number } | null = null
+  protected fadeFrom: { scene: Scene; start: number; ms: number } | null = null
   /** Sources that need a click to start (screen and window capture). */
   readonly waiting = new Set<string>()
   /** Video devices that could not be opened, with the reason. */
@@ -38,7 +38,7 @@ export class Compositor {
   /** Slideshow folders: their pictures, once listed. */
   private folders = new Map<string, HTMLImageElement[]>()
   /** When each scene last went on air (for countdowns in minutes). */
-  private liveAt = new Map<string, number>()
+  protected liveAt = new Map<string, number>()
   private onAir = new Set<string>()
 
   /** The playing element of a video file, for its sound. */
@@ -46,10 +46,16 @@ export class Compositor {
     return this.videos.get(`media:${url}`)?.el ?? null
   }
 
-  constructor() {
-    // No see-through: the browser can skip blending the canvases, which is cheaper for every frame.
-    this.program.getContext('2d', { alpha: false })
-    this.preview.getContext('2d', { alpha: false })
+  /** Which way Live and Preview are drawn: the processor's 2D canvas, or the graphics card (GpuCompositor). */
+  readonly renderer: 'canvas' | 'gpu' = 'canvas'
+
+  constructor(gpu = false) {
+    if (gpu) this.renderer = 'gpu'
+    else {
+      // No see-through: the browser can skip blending the canvases, which is cheaper for every frame.
+      this.program.getContext('2d', { alpha: false })
+      this.preview.getContext('2d', { alpha: false })
+    }
     this.setSize(1920, 1080)
   }
 
@@ -275,7 +281,7 @@ export class Compositor {
     ctx.globalAlpha = alpha
   }
 
-  private drawableFor(l: Layer): Drawable | null {
+  protected drawableFor(l: Layer): Drawable | null {
     if (l.kind === 'video' && l.device) return this.ready(this.videos.get(l.device)?.el)
     if (l.kind === 'media' && l.url) return this.ready(this.videos.get(`media:${l.url}`)?.el)
     if (l.kind === 'image' && l.url) {
@@ -312,7 +318,7 @@ export class Compositor {
     ctx.drawImage(src, x, y, dw, dh)
   }
 
-  private drawText(ctx: CanvasRenderingContext2D, l: Layer, text: string, w: number, h: number) {
+  drawText(ctx: CanvasRenderingContext2D, l: Layer, text: string, w: number, h: number) {
     if (!text.trim()) return
     const place = placementOf(l)
     const family = '"Segoe UI", system-ui, sans-serif'
@@ -376,7 +382,7 @@ export class Compositor {
 }
 
 /** The box a placement stands for, in a w×h picture. */
-function boxFor(place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
+export function boxFor(place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
   const m = Math.round(h * 0.03)
   return place === 'full'
     ? { x: 0, y: 0, w, h }

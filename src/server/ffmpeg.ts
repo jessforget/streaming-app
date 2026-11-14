@@ -75,11 +75,21 @@ const INPUT = ['-hide_banner', '-loglevel', 'error', '-fflags', '+genpts', '-thr
 const PROGRESS = ['-progress', 'pipe:1', '-stats_period', '1', '-nostats']
 
 /**
+ * The page says "h264gpu" when its graphics card already made the final
+ * H.264 picture (right size, frame rate, bitrate and a keyframe every
+ * 2 seconds). Then ffmpeg passes it on as it is, with no second encode.
+ */
+export const READY_CODEC = 'h264gpu'
+
+/**
  * One encode per picture shape, sent to every platform at once (ffmpeg's tee
  * output). Instagram gets a vertical 720×1280 picture cut from the middle of
- * the Live picture; the others get the Live picture as it is.
+ * the Live picture; the others get the Live picture as it is. When the page
+ * sends a ready picture, the wide one is copied and only the vertical one is
+ * encoded here.
  */
-export function streamArgs(targets: StreamTarget[], preset: QualityPreset, encoder: string): string[] {
+export function streamArgs(targets: StreamTarget[], preset: QualityPreset, encoder: string, codec = ''): string[] {
+  const ready = codec === READY_CODEC
   const fit = `scale=${preset.width}:${preset.height}:force_original_aspect_ratio=decrease,pad=${preset.width}:${preset.height}:(ow-iw)/2:(oh-ih)/2,fps=${preset.fps},format=yuv420p`
   const vertical = targets.some((t) => t.vertical)
   const wide = targets.some((t) => !t.vertical)
@@ -88,25 +98,39 @@ export function streamArgs(targets: StreamTarget[], preset: QualityPreset, encod
     return `[f=flv${select}:flvflags=no_duration_filesize:onfail=ignore]${teeEscape(ingestAddress(t))}`
   }
   const tall = 'crop=trunc(ih*9/16/2)*2:ih,scale=720:1280,setsar=1,format=yuv420p'
-  const video =
-    vertical && wide
-      ? ['-filter_complex', `[0:v]${fit},split=2[wide][v2];[v2]${tall}[tall]`, '-map', '[wide]', '-map', '[tall]']
-      : ['-map', '0:v:0', '-vf', vertical ? `${fit},${tall}` : fit]
+  // The vertical picture is smaller, so 60% of the wide bitrate is plenty.
+  const tallPreset = { ...preset, videoKbps: Math.round(preset.videoKbps * 0.6) }
+  let video: string[]
+  if (ready && wide) {
+    video = vertical
+      ? ['-filter_complex', `[0:v]fps=${preset.fps},${tall}[tall]`, '-map', '0:v:0', '-map', '[tall]', '-c:v:0', 'copy', ...perStream(encoderArgs(encoder, tallPreset), 1)]
+      : ['-map', '0:v:0', '-c:v', 'copy']
+  } else {
+    video =
+      vertical && wide
+        ? ['-filter_complex', `[0:v]${fit},split=2[wide][v2];[v2]${tall}[tall]`, '-map', '[wide]', '-map', '[tall]']
+        : ['-map', '0:v:0', '-vf', vertical ? `${fit},${tall}` : fit]
+    video.push(...encoderArgs(encoder, preset))
+  }
   return [
     ...INPUT,
     ...PROGRESS,
     ...video,
     '-map', '0:a:0',
-    ...encoderArgs(encoder, preset),
     '-c:a', 'aac', '-b:a', `${preset.audioKbps}k`, '-ar', '48000', '-ac', '2',
     '-flags', '+global_header',
     '-f', 'tee', targets.map(slave).join('|')
   ]
 }
 
+/** Encoder options for one output stream only (-c:v becomes -c:v:1, -b:v becomes -b:v:1, and so on). */
+function perStream(args: string[], index: number): string[] {
+  return args.map((a) => (/^-(c:v|b:v|maxrate|bufsize|g|keyint_min|preset|tune|rc|profile:v|usage|sc_threshold|no-scenecut|forced-idr)$/.test(a) ? `${a.replace(/:v$/, '')}:v:${index}` : a))
+}
+
 export function recordArgs(file: string, format: 'mp4' | 'mkv', codec: string, preset: QualityPreset, encoder: string): string[] {
   // MKV keeps whatever the browser made. MP4 needs H.264; other codecs are re-encoded.
-  const video = format === 'mkv' || codec === 'h264' ? ['-c:v', 'copy'] : encoderArgs(encoder, preset)
+  const video = format === 'mkv' || codec === 'h264' || codec === READY_CODEC ? ['-c:v', 'copy'] : encoderArgs(encoder, preset)
   const audio = format === 'mkv' ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', `${preset.audioKbps}k`]
   // Fragmented MP4 stays playable if the PC crashes mid-recording.
   const container = format === 'mp4' ? ['-movflags', '+frag_keyframe+empty_moov+default_base_moof'] : []

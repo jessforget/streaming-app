@@ -49,6 +49,8 @@ select { font: 15px var(--body); padding: 8px; border-radius: 6px; border: 1px s
     <select id="mode">
       <option value="60">1080p, 60 fps, 6000 kbps</option>
       <option value="30">1080p, 30 fps, 4500 kbps</option>
+      <option value="60-off">1080p60, off-screen copy (check 2)</option>
+      <option value="60-enc">1080p60, encoder only (check 3)</option>
     </select>
     <button id="go" class="primary">Start test</button>
     <button id="copy" disabled>Copy results</button>
@@ -127,10 +129,12 @@ async function run() {
   if (running) return;
   if (!navigator.gpu || !('VideoEncoder' in window)) { setVerdict('bad', 'This browser can\'t run the test', 'It needs WebGPU and WebCodecs. Use the latest Chrome or Edge.'); return; }
   running = true; $('go').disabled = true; $('copy').disabled = true;
-  const fps = +$('mode').value, kbps = fps === 60 ? 6000 : 4500;
+  const mode = $('mode').value, fps = parseInt(mode, 10), kbps = fps === 60 ? 6000 : 4500;
+  const route = mode.endsWith('-off') ? 'offscreen' : mode.endsWith('-enc') ? 'encoder-only' : 'canvas';
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   const device = await adapter.requestDevice();
-  const ctx = $('view').getContext('webgpu');
+  const off = route === 'offscreen' ? new OffscreenCanvas(W, H) : null;
+  const ctx = (off || $('view')).getContext('webgpu');
   const format = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format, alphaMode: 'opaque' });
   const mod = device.createShaderModule({ code: SHADER });
@@ -160,13 +164,18 @@ async function run() {
   const hw = info['hw' + fps];
   enc.configure({ codec: 'avc1.640032', width: W, height: H, framerate: fps, bitrate: kbps * 1000, bitrateMode: 'constant', latencyMode: 'realtime',
     hardwareAcceleration: hw ? 'prefer-hardware' : 'no-preference', avc: { format: 'annexb' } });
-  log(`\nRunning 1080p${fps} at ${kbps} kbps, encoder: ${hw ? 'graphics card' : 'browser default'}`);
+  const bases = []; let copyMs = 0, copies = 0;
+  log(`\nRoute: ${route}`);
+  log(`Running 1080p${fps} at ${kbps} kbps, encoder: ${hw ? 'graphics card' : 'browser default'}`);
   $('tally').textContent = 'LIVE TEST'; $('tally').classList.add('on');
 
   const t0 = performance.now(), frameMs = 1000 / fps, samples = [];
   let next = t0, dropped = 0, sec = { d: 0, e: 0, b: 0, at: t0 };
   await new Promise((done) => {
     function frame(now) {
+      try { step(now) } catch (e) { errors += e.message + ' '; done() }
+    }
+    function step(now) {
       const elapsed = (now - t0) / 1000;
       if (elapsed >= RUN_SECONDS) return done();
       if (now + 2 >= next) {
@@ -182,7 +191,12 @@ async function run() {
         if (enc.encodeQueueSize > 4) dropped++; // encoder can't keep up: skip like OBS does
         else {
           const ts = Math.round(drawn * 1e6 / fps);
-          const vf = new VideoFrame($('view'), { timestamp: ts });
+          const c0 = performance.now();
+          let vf;
+          if (route === 'offscreen') { const bmp = off.transferToImageBitmap(); vf = new VideoFrame(bmp, { timestamp: ts }); bmp.close(); }
+          else if (route === 'encoder-only') { if (bases.length < 8) bases.push(new VideoFrame($('view'), { timestamp: 0 })); vf = new VideoFrame(bases[drawn % bases.length], { timestamp: ts }); }
+          else vf = new VideoFrame($('view'), { timestamp: ts });
+          copyMs += performance.now() - c0; copies++;
           sentAt.set(ts, performance.now());
           enc.encode(vf, { keyFrame: drawn % (fps * 2) === 1 }); vf.close();
         }
@@ -203,7 +217,8 @@ async function run() {
 
   const avg = (k) => samples.reduce((s, x) => s + x[k], 0) / Math.max(1, samples.length);
   const low = Math.min(...samples.map((s) => s.e));
-  const r = { test: `1080p${fps}`, drawnPerSec: +avg('d').toFixed(1), encodedPerSec: +avg('e').toFixed(1), worstSecond: +low.toFixed(1), encoderWaitMs: +avg('lag').toFixed(1), kbps: Math.round(avg('b')), skippedFrames: dropped, errors: errors || 'none', ...info };
+  bases.forEach((b) => b.close());
+  const r = { test: `1080p${fps} ${route}`, copyMsPerFrame: +(copyMs / Math.max(1, copies)).toFixed(2), drawnPerSec: +avg('d').toFixed(1), encodedPerSec: +avg('e').toFixed(1), worstSecond: +low.toFixed(1), encoderWaitMs: +avg('lag').toFixed(1), kbps: Math.round(avg('b')), skippedFrames: dropped, errors: errors || 'none', ...info };
   log(JSON.stringify(r, null, 2));
   window.__result = r;
   const target = fps * 0.97;

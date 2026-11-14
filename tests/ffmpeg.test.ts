@@ -7,7 +7,7 @@ import { QUALITY_PRESETS } from '../src/shared/presets'
 import type { StreamTarget } from '../src/core/ports'
 import { EventEmitter } from 'node:events'
 import { BrowserEngine, MEDIA_RECONNECT_CODE } from '../src/server/browserEngine'
-import { FfmpegOutput, findFfmpeg, ingestAddress, plainError, recordArgs, redact, streamArgs } from '../src/server/ffmpeg'
+import { FfmpegOutput, READY_CODEC, findFfmpeg, ingestAddress, plainError, recordArgs, redact, streamArgs } from '../src/server/ffmpeg'
 
 const preset = QUALITY_PRESETS.low
 const target = (over: Partial<StreamTarget>): StreamTarget => ({
@@ -36,6 +36,22 @@ describe('ffmpeg arguments', () => {
     const args = streamArgs([target({}), target({ platform: 'instagram', vertical: true, url: 'rtmps://ig/rtmp' })], preset, 'libx264')
     expect(args.join(' ')).toContain('split=2')
     expect(args.at(-1)).toContain("select=\\'v:1,a\\'")
+  })
+
+  it('passes a picture the graphics card already encoded straight through', () => {
+    const args = streamArgs([target({}), target({ platform: 'facebook', url: 'rtmps://fb/rtmp' })], preset, 'h264_nvenc', READY_CODEC)
+    expect(args[args.indexOf('-c:v') + 1]).toBe('copy')
+    expect(args).not.toContain('h264_nvenc')
+    expect(args).not.toContain('-vf')
+  })
+
+  it('with Instagram, copies the wide picture and encodes only the vertical one', () => {
+    const args = streamArgs([target({}), target({ platform: 'instagram', vertical: true, url: 'rtmps://ig/rtmp' })], preset, 'h264_nvenc', READY_CODEC)
+    expect(args[args.indexOf('-c:v:0') + 1]).toBe('copy')
+    expect(args[args.indexOf('-c:v:1') + 1]).toBe('h264_nvenc')
+    expect(args[args.indexOf('-b:v:1') + 1]).toBe(`${Math.round(preset.videoKbps * 0.6)}k`)
+    expect(args[args.indexOf('-g:v:1') + 1]).toBe(String(preset.fps * 2))
+    expect(args).not.toContain('-c:v')
   })
 
   it('escapes characters that mean something to the tee output', () => {

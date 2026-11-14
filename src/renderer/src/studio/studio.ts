@@ -13,6 +13,8 @@ import type { AppState } from '../../../shared/state'
 import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
 import { listDevices, onDeviceChange } from './devices'
+import { GpuCompositor } from './gpuCompositor'
+import { GpuOutput, gpuEncodeSupported } from './gpuOutput'
 import { Mixer } from './mixer'
 import { Output } from './output'
 import { PhoneCams } from './phones'
@@ -44,12 +46,15 @@ onmessage=e=>{if(e.data==='done'){busy=false;return}ms=1000/e.data;clearTimeout(
   return { setFps: (f) => w.postMessage(f), stop: () => w.terminate() }
 }
 
+const GPU_FAILED_KEY = 'streaming-app:gpu-failed-early'
+
 export class Studio {
-  readonly compositor = new Compositor()
   readonly mixer = new Mixer()
   readonly phones = new PhoneCams()
   private state: AppState | null = null
-  private outputs: Partial<Record<'stream' | 'record', Output>> = {}
+  private outputs: Partial<Record<'stream' | 'record', Output | GpuOutput>> = {}
+  /** Which qualities the graphics card can encode (checked once at the start). */
+  private gpuEncode = new Map<string, boolean>()
   private clock: ReturnType<typeof workerClock> | null = null
   private fps = 30
   private frames = 0
@@ -61,7 +66,36 @@ export class Studio {
   private listeners = new Set<() => void>()
   private media: MediaStream | null = null
 
-  constructor(private readonly bridge: Bridge) {}
+  constructor(
+    private readonly bridge: Bridge,
+    readonly compositor: Compositor = new Compositor()
+  ) {}
+
+  /**
+   * A studio that draws on the graphics card when it can, else on the 2D canvas as before.
+   * Add ?engine=canvas to the address to force the old way (for comparing, or a PC without WebGPU).
+   */
+  static async create(bridge: Bridge): Promise<Studio> {
+    // If the graphics card failed soon after the last start, use the canvas once; the next start tries the card again.
+    let failedLastTime = false
+    try {
+      failedLastTime = localStorage.getItem(GPU_FAILED_KEY) === '1'
+      localStorage.removeItem(GPU_FAILED_KEY)
+    } catch {
+      // storage blocked: just try the card
+    }
+    const forceCanvas = new URLSearchParams(location.search).get('engine') === 'canvas' || failedLastTime
+    const gpu = forceCanvas ? null : await GpuCompositor.create()
+    return new Studio(bridge, gpu ?? new Compositor())
+  }
+
+  /** How this window makes the video, in words: shown in Settings and written to the log. */
+  get engineInfo(): string {
+    const c = this.compositor
+    if (!(c instanceof GpuCompositor)) return 'Drawing with the processor (2D canvas)'
+    const enc = [...this.gpuEncode].filter(([, ok]) => ok).map(([q]) => q)
+    return `Drawing on the graphics card (${c.cardName}); encoding on the card for: ${enc.join(', ') || 'none'}`
+  }
 
   async start() {
     // Browsers keep sound off until the person clicks or types on the page once.
@@ -77,6 +111,21 @@ export class Studio {
     window.addEventListener('keydown', wake)
     this.mixer.ctx.addEventListener('statechange', () => this.changed())
     this.mixer.resume()
+    if (this.compositor instanceof GpuCompositor) {
+      const started = performance.now()
+      this.compositor.onLost = () => {
+        if (performance.now() - started < 120_000) {
+          try {
+            localStorage.setItem(GPU_FAILED_KEY, '1')
+          } catch {
+            // nothing to remember it in
+          }
+        }
+        this.notice('The graphics card stopped drawing (a driver reset). Reload this window with F5 to get the picture back.')
+      }
+      for (const [q, preset] of Object.entries(QUALITY_PRESETS)) this.gpuEncode.set(q, await gpuEncodeSupported(preset))
+    }
+    console.info(`[studio] ${this.engineInfo}`)
     this.clock = workerClock(this.fps, () => this.tick())
     // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
     this.compositor.phoneStream = (id) => this.phones.stream(id)
@@ -116,7 +165,13 @@ export class Studio {
     const running = this.outputs[kind]
     if (on && !running && this.state) {
       this.mixer.resume()
-      this.outputs[kind] = new Output(kind, this.programMedia(), QUALITY_PRESETS[this.state.stream.quality], (m) => this.notice(m))
+      const quality = this.state.stream.quality
+      const preset = QUALITY_PRESETS[quality]
+      const onProblem = (m: string) => this.notice(m)
+      // Encoded once on the graphics card and passed on as is, when it can; otherwise the browser's recorder as before.
+      this.outputs[kind] = this.gpuEncode.get(quality)
+        ? new GpuOutput(kind, this.compositor.program, this.mixer.output.stream.getAudioTracks()[0], preset, onProblem)
+        : new Output(kind, this.programMedia(), preset, onProblem)
     } else if (!on && running) {
       running.stop()
       delete this.outputs[kind]
@@ -136,6 +191,7 @@ export class Studio {
   private tick() {
     this.frames++
     this.compositor.draw(this.frames % 2 === 0)
+    for (const o of Object.values(this.outputs)) if (o instanceof GpuOutput) o.pushFrame()
     const track = this.media?.getVideoTracks()[0] as (MediaStreamTrack & { requestFrame?: () => void }) | undefined
     track?.requestFrame?.()
     const now = performance.now()
@@ -150,20 +206,29 @@ export class Studio {
   /** Seconds in a row the PC drew too few frames while live, and whether the person was told. */
   private slowFor = 0
   private toldSlow = false
+  private skippedBefore = 0
 
   /** Live, but this PC cannot draw the chosen frame rate: say so once, with what to change. */
   private checkKeepingUp() {
     if (!this.outputs.stream && !this.outputs.record) {
       this.slowFor = 0
       this.toldSlow = false
+      this.skippedBefore = 0
       return
     }
-    this.slowFor = this.measured < this.fps * 0.75 ? this.slowFor + 1 : 0
+    // Frames the graphics card's encoder had no time for, in the last second.
+    const skipped = Object.values(this.outputs).reduce((n, o) => n + (o instanceof GpuOutput ? o.skipped : 0), 0)
+    const skippedNow = skipped - this.skippedBefore
+    this.skippedBefore = skipped
+    this.slowFor = this.measured < this.fps * 0.75 || skippedNow > this.fps * 0.25 ? this.slowFor + 1 : 0
     if (this.slowFor >= 5 && !this.toldSlow) {
       this.toldSlow = true
+      const intel = this.compositor instanceof GpuCompositor && /intel/i.test(this.compositor.cardName)
       this.notice(
         `This PC is making only ${this.measured} of ${this.fps} frames a second, so the stream may stutter or drop. ` +
-          'Pick a lower quality in Settings (720p, 30 fps is the lightest), close other programs, and keep this window in front.'
+          (intel
+            ? 'The window is using the built-in Intel graphics, not the NVIDIA card: start the app with "Start Streaming App" (the desktop version), or set Chrome to High performance in Windows Settings > Display > Graphics.'
+            : 'Pick a lower quality in Settings (720p, 30 fps is the lightest), close other programs, and keep this window in front.')
       )
     }
   }
