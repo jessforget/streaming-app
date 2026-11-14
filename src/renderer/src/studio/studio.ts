@@ -34,8 +34,10 @@ onmessage=e=>{if(e.data==='done'){busy=false;return}ms=1000/e.data;clearTimeout(
     try {
       tick()
     } finally {
-      // Let the drawing reach the screen and any clicks run before the next frame is asked for.
-      setTimeout(() => w.postMessage('done'), 0)
+      // Straight away, not with a timer: browsers slow timers down to once a second (or once a
+      // minute) in a tab that is in the background, which would starve the stream. Clicks still
+      // get their turn, because the worker waits for the next frame time before asking again.
+      w.postMessage('done')
     }
   }
   w.postMessage(fps)
