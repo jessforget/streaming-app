@@ -16,7 +16,7 @@ export interface QualityPreset {
  * Bitrates follow common platform guidance and stay under Twitch's 6000 kbps cap.
  */
 export const QUALITY_PRESETS: Record<Quality, QualityPreset> = {
-  low: { label: 'Low', width: 1280, height: 720, fps: 30, videoKbps: 3000, audioKbps: 128, summary: '720p, 30 fps' },
+  low: { label: 'Standard', width: 1280, height: 720, fps: 30, videoKbps: 2500, audioKbps: 160, summary: '720p, 30 fps (like OBS)' },
   medium: { label: 'Medium', width: 1920, height: 1080, fps: 30, videoKbps: 4500, audioKbps: 160, summary: '1080p, 30 fps' },
   high: { label: 'High', width: 1920, height: 1080, fps: 60, videoKbps: 6000, audioKbps: 160, summary: '1080p, 60 fps' }
 }

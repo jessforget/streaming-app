@@ -129,7 +129,7 @@ describe('streaming', () => {
       ['instagram', true]
     ])
     c.tickStats()
-    expect(c.state.stats.requiredKbps).toBe(3 * (4500 + 160))
+    expect(c.state.stats.requiredKbps).toBe(3 * (2500 + 160))
   })
 
   it('turns dropped frames into plain words', async () => {

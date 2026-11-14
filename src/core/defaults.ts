@@ -91,7 +91,7 @@ export function defaultState(): AppState {
     stream: {
       live: false,
       startedAt: null,
-      quality: 'medium',
+      quality: 'low',
       destinations: [
         { id: 'youtube', platform: 'youtube', enabled: true, hasKey: false, vertical: false },
         { id: 'facebook', platform: 'facebook', enabled: false, hasKey: false, vertical: false },
