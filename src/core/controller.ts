@@ -580,7 +580,7 @@ export class Controller extends Emitter<Events> {
         ...this.s.scenes.flatMap((s) => s.layers.map((l) => l.device))
       ])
       const named = (id: string) => [...before.video, ...before.audio, ...now.video, ...now.audio].find((d) => d.id === id)?.name ?? id
-      for (const id of was) if (!is.has(id) && used.has(id)) this.emit('error', `${named(id)} was unplugged`)
+      for (const id of was) if (!is.has(id) && used.has(id)) this.emit('error', `${named(id)} ${id.startsWith('phone:') ? 'disconnected' : 'was unplugged'}`)
       const back = [...is].filter((id) => !was.has(id) && used.has(id))
       if (back.length) {
         // Reopen what uses it, so sound and picture come back without a restart.

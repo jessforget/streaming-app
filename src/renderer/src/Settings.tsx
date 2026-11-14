@@ -161,6 +161,7 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
   const { video, audio } = state.inputs
   return (
     <div className="stack">
+      <PhoneCameras state={state} />
       <section>
         <h3>Video and audio coming into this PC</h3>
         <p className="muted">
@@ -222,6 +223,70 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
         <p className="muted small">Add one to a scene with "+ Add source", or to the mixer with "+ Add audio".</p>
       </section>
     </div>
+  )
+}
+
+/** Phones as cameras: scan the QR code, press Start on the phone, and it shows up as a video input. */
+function PhoneCameras({ state }: { state: AppState }) {
+  const [links, setLinks] = useState<string[] | null>(null)
+  const [pick, setPick] = useState(0)
+  const [qr, setQr] = useState('')
+  useEffect(() => {
+    fetch('/api/phone-link')
+      .then((r) => (r.ok ? r.json() : { links: [] }))
+      .then((b: { links?: string[] }) => setLinks(b.links ?? []))
+      .catch(() => setLinks([]))
+  }, [])
+  const link = links?.[pick] ?? ''
+  useEffect(() => {
+    if (!link) return setQr('')
+    QRCode.toString(link, { type: 'svg', margin: 1 }).then(setQr, () => setQr(''))
+  }, [link])
+  // Only the main window on the streaming PC gets the link (it holds the phones' secret).
+  if (links === null || links.length === 0) return null
+  const phones = state.inputs.video.filter((d) => d.id.startsWith('phone:'))
+  return (
+    <section className="pairing">
+      <div className="qr" aria-label="QR code for a phone camera" dangerouslySetInnerHTML={{ __html: qr }} />
+      <div>
+        <h3>Phone cameras</h3>
+        <p className="muted">
+          Use an Android phone or an iPhone on the same Wi-Fi as a camera. Scan this code with the phone's camera, then press
+          Start camera on the phone. It shows up below and in "+ Add source", like a webcam.
+        </p>
+        <p className="muted small">
+          The first time, the phone warns that the connection isn't private, because the app made its own certificate. That's
+          expected on your own network: on Android tap Advanced, then Proceed; on iPhone tap Show Details, then visit this website.
+        </p>
+        {links.length > 1 && (
+          <p className="small">
+            Network:{' '}
+            <select value={pick} onChange={(e) => setPick(Number(e.target.value))}>
+              {links.map((l, i) => (
+                <option key={l} value={i}>
+                  {new URL(l).hostname}
+                </option>
+              ))}
+            </select>
+          </p>
+        )}
+        <p>
+          <code>{link.replace(/#.*/, '')}</code>
+        </p>
+        {phones.length === 0 ? (
+          <p className="muted small">No phone connected yet.</p>
+        ) : (
+          <ul className="device-list">
+            {phones.map((d) => (
+              <li key={d.id}>
+                <span className="dot on" />
+                <strong>{d.name}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   )
 }
 

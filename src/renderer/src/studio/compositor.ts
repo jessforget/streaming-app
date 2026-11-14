@@ -5,6 +5,12 @@
  */
 import { renderTemplate } from '../../../shared/template'
 import { placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { PHONE_PREFIX } from './phones'
+
+/** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
+const stopTracks = (id: string, stream?: MediaStream) => {
+  if (!id.startsWith(PHONE_PREFIX)) stream?.getTracks().forEach((t) => t.stop())
+}
 
 type Drawable = HTMLVideoElement | HTMLImageElement
 
@@ -27,6 +33,8 @@ export class Compositor {
   readonly waiting = new Set<string>()
   /** Video devices that could not be opened, with the reason. */
   readonly problems = new Map<string, string>()
+  /** Where phone cameras come from (set by the studio). */
+  phoneStream: (id: string) => MediaStream | null = () => null
 
   constructor() {
     this.setSize(1920, 1080)
@@ -69,7 +77,7 @@ export class Compositor {
     for (const id of devices) if (!this.videos.has(id)) this.openDevice(id, state)
     for (const [id, v] of this.videos) {
       if (!id.startsWith('media:') && !devices.has(id)) {
-        v.stream?.getTracks().forEach((t) => t.stop())
+        stopTracks(id, v.stream)
         this.videos.delete(id)
         this.problems.delete(id)
       }
@@ -95,6 +103,19 @@ export class Compositor {
     Object.assign(el, { muted: true, playsInline: true, autoplay: true })
     const entry: { el: HTMLVideoElement; stream?: MediaStream; failed?: boolean } = { el }
     this.videos.set(id, entry)
+    if (id.startsWith(PHONE_PREFIX)) {
+      const stream = this.phoneStream(id)
+      if (!stream) {
+        entry.failed = true
+        this.problems.set(id, 'Phone not connected')
+        return
+      }
+      entry.stream = stream
+      el.srcObject = stream
+      void el.play().catch(() => {})
+      this.problems.delete(id)
+      return
+    }
     const fps = state.stream.quality === 'high' ? 60 : 30
     navigator.mediaDevices
       .getUserMedia({ video: { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: fps } } })
@@ -262,8 +283,18 @@ export class Compositor {
     ctx.fillText(text, x + bw / 2, y + bh / 2, w * 0.6)
   }
 
+  /** A phone connected again or left: open it afresh on the next update. */
+  refreshPhones() {
+    for (const [id, v] of this.videos) {
+      if (!id.startsWith(PHONE_PREFIX)) continue
+      v.el.srcObject = null
+      this.videos.delete(id)
+      this.problems.delete(id)
+    }
+  }
+
   close() {
-    for (const v of this.videos.values()) v.stream?.getTracks().forEach((t) => t.stop())
+    for (const [id, v] of this.videos) stopTracks(id, v.stream)
     for (const v of this.displays.values()) (v.srcObject as MediaStream | null)?.getTracks().forEach((t) => t.stop())
     this.videos.clear()
     this.displays.clear()

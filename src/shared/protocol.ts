@@ -235,7 +235,18 @@ export interface ErrorMessage {
   error: string
 }
 
+/** Main window only: a phone wants to send its camera (WebRTC offer). Answer with a "phone-answer" message. */
+export interface PhoneOfferMessage {
+  type: 'phone-offer'
+  reqId: string
+  /** The phone's own id; the camera shows in the device list as "phone:<id>". */
+  id: string
+  name: string
+  sdp: string
+}
+
 export type ServerMessage =
+  | PhoneOfferMessage
   | PairedMessage
   | WelcomeMessage
   | ResultMessage

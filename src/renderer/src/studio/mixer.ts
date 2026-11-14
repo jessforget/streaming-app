@@ -7,6 +7,12 @@
  * mic. The program mix goes into the stream and the recording.
  */
 import type { AppState, AudioSource, InputDevice } from '../../../shared/state'
+import { PHONE_PREFIX } from './phones'
+
+/** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
+const stopTracks = (id: string, d: DeviceInput | null) => {
+  if (!id.startsWith(PHONE_PREFIX)) d?.stream.getTracks().forEach((t) => t.stop())
+}
 
 interface DeviceInput {
   stream: MediaStream
@@ -35,6 +41,8 @@ export class Mixer {
   private desktop: MediaStream | null = null
   /** Channels that can't play right now, with the reason (shown under the fader). */
   readonly problems = new Map<string, string>()
+  /** Where phone microphones come from (set by the studio). */
+  phoneStream: (id: string) => MediaStream | null = () => null
 
   constructor() {
     this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' })
@@ -50,6 +58,12 @@ export class Mixer {
     this.desktop = stream
     this.devices.delete('desktop')
     for (const [id, c] of this.chains) if (c.key.startsWith('desktop')) this.drop(id)
+  }
+
+  /** A phone connected again or left: open its sound afresh on the next update. */
+  refreshPhones() {
+    for (const id of [...this.devices.keys()]) if (id.startsWith(PHONE_PREFIX)) this.devices.delete(id)
+    for (const [id, c] of this.chains) if (c.key.includes(`|${PHONE_PREFIX}`)) this.drop(id)
   }
 
   get needsDesktop() {
@@ -77,7 +91,7 @@ export class Mixer {
     const used = new Set(state.audio.map((a) => this.deviceFor(a, state.inputs) ?? ''))
     for (const id of [...this.devices.keys()]) {
       if (!used.has(id) && id !== 'desktop') {
-        void this.devices.get(id)?.then((d) => d?.stream.getTracks().forEach((t) => t.stop()))
+        void this.devices.get(id)?.then((d) => stopTracks(id, d))
         this.devices.delete(id)
       }
     }
@@ -113,6 +127,10 @@ export class Mixer {
       if (id === 'desktop') {
         if (!this.desktop) return null
         stream = this.desktop
+      } else if (id.startsWith(PHONE_PREFIX)) {
+        const phone = this.phoneStream(id)
+        if (!phone?.getAudioTracks().length) return null
+        stream = new MediaStream(phone.getAudioTracks())
       } else {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -157,7 +175,10 @@ export class Mixer {
     void this.openDevice(device).then((d) => {
       if (this.chains.get(a.id) !== chain) return
       if (!d) {
-        this.problems.set(a.id, device === 'desktop' ? 'Needs a click to share desktop sound' : 'Could not open the device')
+        this.problems.set(
+          a.id,
+          device === 'desktop' ? 'Needs a click to share desktop sound' : device.startsWith(PHONE_PREFIX) ? 'Phone not connected' : 'Could not open the device'
+        )
         return
       }
       // Pick the channels: one input goes to both sides; a pair goes left and right.
@@ -186,7 +207,7 @@ export class Mixer {
   }
 
   close() {
-    for (const p of this.devices.values()) void p.then((d) => d?.stream.getTracks().forEach((t) => t.stop()))
+    for (const [id, p] of this.devices) void p.then((d) => stopTracks(id, d))
     void this.ctx.close()
   }
 }

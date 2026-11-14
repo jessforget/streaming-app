@@ -9,7 +9,7 @@
  *   main window also runs the video (the studio).
  */
 import type { AppState, HealthStats } from '../../../shared/state'
-import type { Action, CommandMap, Role, ServerMessage } from '../../../shared/protocol'
+import type { Action, CommandMap, PhoneOfferMessage, Role, ServerMessage } from '../../../shared/protocol'
 import type { Bridge, CommandResult } from './bridge'
 
 const TOKEN_KEY = 'streaming-app-remote-token'
@@ -43,6 +43,7 @@ export class WsBridge implements Bridge {
   private statsFns = new Set<(s: HealthStats) => void>()
   private noticeFns = new Set<(m: string) => void>()
   private statusFns = new Set<(s: Status, detail?: string) => void>()
+  private phoneFn: ((offer: PhoneOfferMessage) => Promise<string>) | null = null
   private retry = 0
   private stopped = false
   role: Role | 'local' | null = null
@@ -115,8 +116,31 @@ export class WsBridge implements Bridge {
     }
   }
 
+  /** Main window: answer phones that want to send their camera. */
+  onPhoneOffer(fn: (offer: PhoneOfferMessage) => Promise<string>) {
+    this.phoneFn = fn
+    return () => {
+      if (this.phoneFn === fn) this.phoneFn = null
+    }
+  }
+
+  private answerPhone(m: PhoneOfferMessage) {
+    const reply = (r: { sdp?: string; error?: string }) => {
+      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'phone-answer', reqId: m.reqId, ...r }))
+    }
+    if (!m.reqId) return void this.phoneFn?.(m).catch(() => {})
+    if (!this.phoneFn) return reply({ error: 'The main window is not ready yet.' })
+    this.phoneFn(m).then(
+      (sdp) => reply({ sdp }),
+      (e: Error) => reply({ error: e?.message || 'The main window could not take the camera.' })
+    )
+  }
+
   private handle(m: ServerMessage) {
     switch (m.type) {
+      case 'phone-offer':
+        this.answerPhone(m)
+        break
       case 'paired':
         saveToken(m.token)
         break

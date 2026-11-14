@@ -15,6 +15,7 @@ import { Compositor } from './compositor'
 import { listDevices, onDeviceChange } from './devices'
 import { Mixer } from './mixer'
 import { Output } from './output'
+import { PhoneCams } from './phones'
 
 /** A clock in a worker: it keeps ticking when the window is in the background, unlike animation frames. */
 function workerClock(fps: number, tick: () => void): { setFps(f: number): void; stop(): void } {
@@ -28,6 +29,7 @@ function workerClock(fps: number, tick: () => void): { setFps(f: number): void; 
 export class Studio {
   readonly compositor = new Compositor()
   readonly mixer = new Mixer()
+  readonly phones = new PhoneCams()
   private state: AppState | null = null
   private outputs: Partial<Record<'stream' | 'record', Output>> = {}
   private clock: ReturnType<typeof workerClock> | null = null
@@ -36,6 +38,7 @@ export class Studio {
   private measured = 0
   private lastMeasure = performance.now()
   private offDevices: (() => void) | null = null
+  private offPhoneOffers: (() => void) | null = null
   private reportTimer: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<() => void>()
   private media: MediaStream | null = null
@@ -57,6 +60,16 @@ export class Studio {
     this.mixer.ctx.addEventListener('statechange', () => this.changed())
     this.mixer.resume()
     this.clock = workerClock(this.fps, () => this.tick())
+    // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
+    this.compositor.phoneStream = (id) => this.phones.stream(id)
+    this.mixer.phoneStream = (id) => this.phones.stream(id)
+    this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
+    this.phones.subscribe(() => {
+      this.compositor.refreshPhones()
+      this.mixer.refreshPhones()
+      if (this.state) this.update(this.state)
+      void this.reportDevices()
+    })
     await this.reportDevices()
     this.offDevices = onDeviceChange(() => void this.reportDevices())
     this.reportTimer = setInterval(() => {
@@ -117,7 +130,8 @@ export class Studio {
   private async reportDevices() {
     try {
       const inputs = await listDevices()
-      await this.bridge.command('inputs.report', inputs)
+      const phones = this.phones.devices()
+      await this.bridge.command('inputs.report', { video: [...inputs.video, ...phones.video], audio: [...inputs.audio, ...phones.audio] })
     } catch {
       this.notice('Could not list the cameras and audio devices. Allow camera and microphone access for this page.')
     }
@@ -183,6 +197,8 @@ export class Studio {
   stop() {
     this.clock?.stop()
     this.offDevices?.()
+    this.offPhoneOffers?.()
+    this.phones.close()
     if (this.reportTimer) clearInterval(this.reportTimer)
     for (const o of Object.values(this.outputs)) o?.stop()
     this.compositor.close()

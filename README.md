@@ -27,6 +27,17 @@ Try without any hardware: `npm run practice` starts a simulated app (nothing cap
 
 The interactive mockup: after `npm run build`, open `http://localhost:7420/demo` while the app runs.
 
+## Phones as cameras
+
+Any Android phone or iPhone on the same network can be a camera, with no app to install:
+
+1. On the PC, open **Settings → Video and audio inputs**. A QR code is at the top.
+2. Scan it with the phone's camera. The phone opens a camera page at `https://<this-pc>:7421/cam`.
+3. The first time, the phone warns that the connection isn't private: the app made its own certificate for your network. On Android tap **Advanced → Proceed**; on iPhone tap **Show Details → visit this website**.
+4. Name the camera, pick Back or Front and 720p or 1080p, and press **Start camera**.
+
+The phone then shows up in the device list as "<name> (phone)", with its microphone as "<name> (phone mic)", and can be added to any scene like a webcam. Several phones can connect at once. The video goes straight from the phone to the main window (WebRTC); keep the phone page open and the phone unlocked while live.
+
 ## What the web version can and can't do
 
 | Works | Limit |

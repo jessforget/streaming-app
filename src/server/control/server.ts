@@ -18,6 +18,7 @@ import { CommandError, PROTOCOL_VERSION, ROLES, type Caller, type Role, type Ser
 import type { AppState } from '../../shared/state'
 import type { Controller } from '../../core/controller'
 import { errorText } from '../../core/controller'
+import type { PhoneOffer } from '../phones'
 import type { PairingManager } from './pairing'
 import { TEST_PAGE } from './testPage'
 
@@ -34,6 +35,12 @@ export interface ControlServerOptions {
   onMedia?: (socket: WebSocket, kind: 'stream' | 'record', codec: string) => void
   /** The studio page (the main window that runs the video) came or went. */
   onStudio?: (present: boolean) => void
+  /** Phones as cameras: the main window answers each phone that wants to connect. */
+  phones?: {
+    links(): string[]
+    setStudio(send: ((offer: PhoneOffer) => void) | null): void
+    answer(reqId: string, r: { sdp?: string; error?: string }): void
+  }
 }
 
 const MAX_MEDIA_MESSAGE_BYTES = 16 * 1024 * 1024
@@ -202,7 +209,10 @@ export class ControlServer {
       clearTimeout(authTimer)
       this.clients.delete(client)
       if (client.deviceId) this.opts.pairing.markConnected(client.deviceId, -1)
-      if (client.studio) this.opts.onStudio?.(false)
+      if (client.studio) {
+        this.opts.onStudio?.(false)
+        this.opts.phones?.setStudio(null)
+      }
     })
     socket.on('error', () => socket.terminate())
   }
@@ -237,6 +247,7 @@ export class ControlServer {
       if (msg.studio === true && ![...this.clients].some((c) => c.studio)) {
         client.studio = true
         this.opts.onStudio?.(true)
+        this.opts.phones?.setStudio((offer) => this.send(client, { type: 'phone-offer', ...offer }))
       }
       this.send(client, {
         type: 'welcome',
@@ -246,6 +257,15 @@ export class ControlServer {
         role: 'local',
         state: this.opts.controller.state,
         studio: client.studio
+      })
+      return
+    }
+
+    if (msg.type === 'phone-answer') {
+      if (!client.studio) return
+      this.opts.phones?.answer(String(msg.reqId ?? ''), {
+        sdp: typeof msg.sdp === 'string' ? msg.sdp : undefined,
+        error: typeof msg.error === 'string' ? msg.error.slice(0, 200) : undefined
       })
       return
     }
@@ -349,6 +369,12 @@ export class ControlServer {
     // The main window is for the streaming PC itself; anyone else gets the tablet remote.
     if (path === '/' && !local) return void res.writeHead(302, { Location: '/remote' }).end()
     if (path === '/files') return this.serveLocalFile(local, url.searchParams.get('path') ?? '', res)
+    if (path === '/api/phone-link') {
+      // Holds the phone secret: only for the main window on this PC.
+      if (!local) return void res.writeHead(403).end()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return void res.end(JSON.stringify({ links: this.opts.phones?.links() ?? [] }))
+    }
     if (path === '/api/info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       return void res.end(

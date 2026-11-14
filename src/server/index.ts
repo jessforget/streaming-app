@@ -20,6 +20,7 @@ import { BrowserEngine } from './browserEngine'
 import { ControlServer } from './control/server'
 import { PairingManager } from './control/pairing'
 import { findFfmpeg, pickEncoder } from './ffmpeg'
+import { PhoneHub } from './phones'
 import { DeviceFile, FileKeyStore, SetupFile, files } from './storage'
 
 const VERSION = '0.2.0'
@@ -75,7 +76,19 @@ async function main() {
   // The studio page reports devices as they come and go, so no polling here.
   await controller.start({ devicePollMs: 0 })
 
+  // Phones as cameras: their own HTTPS address, because phones only open the camera on HTTPS pages.
+  const phones = new PhoneHub({ dataDir: dir, port: port + 1, log })
+  let phonesOn = true
+  try {
+    await phones.start()
+  } catch (e) {
+    phonesOn = false
+    console.warn(`Phone cameras are off: could not open port ${port + 1} (${errorText(e)}).`)
+    log(`phone cameras off: ${errorText(e)}`)
+  }
+
   const server = new ControlServer({
+    phones: phonesOn ? phones : undefined,
     controller,
     pairing,
     port,
@@ -109,6 +122,7 @@ async function main() {
   console.log(`  Main window (this PC, Chrome or Edge):  http://localhost:${server.port}`)
   for (const url of server.urls()) console.log(`  Tablet remote (same network):          ${url}/remote`)
   console.log(`  Companion app / stream deck:            ws://<this-pc>:${server.port}/ws   (test page: /test)`)
+  if (phonesOn) console.log(`  Phone cameras (scan the QR in Settings):  ${phones.links()[0].replace(/#.*/, '')}`)
   console.log(ffmpeg ? `  Video encoder: ${encoder}` : '  ffmpeg not found: streaming and recording are off until it is installed.')
   console.log(`  Settings saved in ${dir}`)
   console.log('Press Ctrl+C to stop.\n')
@@ -116,6 +130,7 @@ async function main() {
   const stop = async () => {
     await controller.stop().catch(() => {})
     await server.stop().catch(() => {})
+    await phones.stop().catch(() => {})
     process.exit(0)
   }
   process.on('SIGINT', stop)

@@ -1,5 +1,5 @@
 import type { AppState, HealthStats } from '../../../shared/state'
-import type { Action, CommandMap } from '../../../shared/protocol'
+import type { Action, CommandMap, PhoneOfferMessage } from '../../../shared/protocol'
 
 export interface CommandResult {
   ok: boolean
@@ -19,4 +19,6 @@ export interface Bridge {
   onState(fn: (s: AppState) => void): () => void
   onStats(fn: (s: HealthStats) => void): () => void
   onNotice(fn: (msg: string) => void): () => void
+  /** Main window only: a phone wants to send its camera. Return the answer (or throw a reason). */
+  onPhoneOffer?(fn: (offer: PhoneOfferMessage) => Promise<string>): () => void
 }
