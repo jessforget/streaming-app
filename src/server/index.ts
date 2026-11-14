@@ -11,6 +11,7 @@
  * same server and show the same page, with no rewrite.
  */
 import { homedir } from 'node:os'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Controller, errorText } from '../core/controller'
 import { freshSetup } from '../core/defaults'
@@ -48,7 +49,28 @@ async function main() {
   const pairing = new PairingManager(new DeviceFile(f.devices))
   const controller = new Controller({ engine, keys, initial, devices: pairing })
   pairing.onChange((s) => controller.updateDevices(s))
-  controller.on('error', (m) => console.warn(`! ${m}`))
+  // Problems also go to app.log in the data folder, so they can be read after the window is closed.
+  const logFile = join(dir, 'app.log')
+  const log = (line: string) => {
+    try {
+      appendFileSync(logFile, `${new Date().toISOString()} ${line}\n`)
+    } catch {
+      // the log is a convenience; never stop the show over it
+    }
+  }
+  controller.on('error', (m) => {
+    console.warn(`! ${m}`)
+    log(`! ${m}`)
+  })
+  let wasLive = false
+  let wasRec = false
+  controller.on('state', (s) => {
+    if (s.stream.live !== wasLive) log(s.stream.live ? 'stream started' : 'stream stopped')
+    if (s.recording.active !== wasRec) log(s.recording.active ? 'recording started' : 'recording stopped')
+    wasLive = s.stream.live
+    wasRec = s.recording.active
+  })
+  log(`app started, version ${VERSION}`)
   // The studio page reports devices as they come and go, so no polling here.
   await controller.start({ devicePollMs: 0 })
 
