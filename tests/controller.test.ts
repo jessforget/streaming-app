@@ -205,6 +205,18 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
     await expect(t.c.run('local', 'scene.add', { name: '' })).rejects.toThrow()
   })
 
+  it('changes the order of the scenes', async () => {
+    const ids = () => t.c.state.scenes.map((s) => s.id)
+    const first = ids()[0]
+    await t.c.run('local', 'scene.move', { sceneId: first, index: 2 })
+    expect(ids()[2]).toBe(first)
+    await t.c.run('local', 'scene.move', { sceneId: first, index: 99 })
+    expect(ids().at(-1)).toBe(first)
+    await t.c.run('local', 'scene.move', { sceneId: first, index: 0 })
+    expect(ids()[0]).toBe(first)
+    await expect(t.c.run('local', 'scene.move', { sceneId: first, index: 1.5 })).rejects.toThrow()
+  })
+
   it('adds and removes audio channels, including a capture card’s sound', async () => {
     const r = (await t.c.run('local', 'audio.add', { name: 'Capture', kind: 'video', device: 'usb-capture' })) as { sourceId: string }
     expect(t.c.state.audio.at(-1)).toMatchObject({ id: r.sourceId, kind: 'video', device: 'usb-capture' })

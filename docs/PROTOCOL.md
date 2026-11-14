@@ -89,6 +89,7 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | --- | --- |
 | `scene.add` | `{ "name": "Interview" }` → `{ "sceneId" }` |
 | `scene.rename` | `{ "sceneId", "name" }` |
+| `scene.move` | `{ "sceneId", "index" }`: move a scene card to a new place (0 = first) |
 | `scene.remove` | `{ "sceneId" }` (not the scene on air, not the last one) |
 | `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "text" \| "browser" \| "media" \| "screen" \| "window", "name"?, "device"?, "text"?, "url"?, "placement"? }` → `{ "layerId" }`. New sources go on top. |
 | `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"?, "placement"? }`. `placement`: `full`, `center`, `lower-third`, `top`, `top-left`, `top-right`, `bottom-right`. |

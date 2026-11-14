@@ -252,6 +252,19 @@ export class Controller extends Emitter<Events> {
         await this.engine.removeScene(scene.id)
         return this.changed()
       }
+      case 'scene.move': {
+        // Change the order of the scene cards (dragged in the main window).
+        const scene = this.scene(str(P, 'sceneId'))
+        const to = P.index
+        if (typeof to !== 'number' || !Number.isInteger(to)) throw new CommandError('index must be a whole number')
+        const list = this.s.scenes
+        const from = list.indexOf(scene)
+        const at = Math.max(0, Math.min(list.length - 1, to))
+        if (from === at) return null
+        list.splice(from, 1)
+        list.splice(at, 0, scene)
+        return this.changed()
+      }
       case 'scene.rename': {
         this.scene(str(P, 'sceneId')).name = name(P, 'name')
         return this.changed()

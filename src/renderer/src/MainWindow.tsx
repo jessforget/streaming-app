@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { AppState, AudioSource, HealthStats } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
@@ -165,23 +165,89 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
   )
 }
 
+/**
+ * Drag a scene card to change the order (mouse or touch). A short press is
+ * still a click; the drag starts after the pointer moves a few pixels.
+ */
+function useSceneDrag(run: Run) {
+  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null)
+  const start = useRef<{ id: string; x: number; y: number; pointer: number } | null>(null)
+  const moved = useRef(false)
+  const indexAt = (x: number, y: number) => {
+    const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-scene-index]')
+    return el ? Number(el.dataset.sceneIndex) : null
+  }
+  const props = (id: string) => ({
+    onPointerDown: (e: ReactPointerEvent) => {
+      if (e.button !== 0) return
+      start.current = { id, x: e.clientX, y: e.clientY, pointer: e.pointerId }
+      moved.current = false
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      const s = start.current
+      if (!s || s.pointer !== e.pointerId) return
+      if (!moved.current) {
+        if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 8) return
+        moved.current = true
+        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      }
+      const over = indexAt(e.clientX, e.clientY)
+      if (over !== null) setDrag({ id: s.id, over })
+    },
+    onPointerUp: (e: ReactPointerEvent) => {
+      const s = start.current
+      start.current = null
+      if (!s || !moved.current) return
+      const over = indexAt(e.clientX, e.clientY)
+      setDrag(null)
+      if (over !== null) void run('scene.move', { sceneId: s.id, index: over })
+    },
+    onPointerCancel: () => {
+      start.current = null
+      moved.current = false
+      setDrag(null)
+    },
+    // After a drag, the click that follows is not a pick.
+    onClickCapture: (e: ReactMouseEvent) => {
+      if (moved.current) {
+        e.stopPropagation()
+        e.preventDefault()
+        moved.current = false
+      }
+    }
+  })
+  return { drag, props }
+}
+
 function SceneStrip({ state, run }: { state: AppState; run: Run }) {
   const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
+  const { drag, props } = useSceneDrag(run)
+  // While dragging, show the order it will have when dropped.
+  const scenes = [...state.scenes]
+  if (drag) {
+    const from = scenes.findIndex((s) => s.id === drag.id)
+    if (from >= 0) scenes.splice(drag.over, 0, ...scenes.splice(from, 1))
+  }
   return (
     <section className="scenes" aria-label="Scenes">
       <div className="section-head">
         <h2>Scenes</h2>
-        <span className="muted small">Click to put in Next, double-click to take it to air. Cameras are switched on the ATEM.</span>
+        <span className="muted small">
+          Click to put in Next, double-click to take it to air, drag to change the order. Cameras are switched on the ATEM.
+        </span>
       </div>
       <div className="scene-grid">
-        {state.scenes.map((s) => {
+        {scenes.map((s, i) => {
           const live = s.id === state.programSceneId
           const next = s.id === state.previewSceneId && !live
           return (
             <button
               key={s.id}
-              className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''}`}
+              data-scene-index={i}
+              className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${drag?.id === s.id ? 'dragging' : ''}`}
               aria-pressed={next}
+              title="Drag to change the order"
+              {...props(s.id)}
               onClick={() => run('scene.preview', { sceneId: s.id })}
               onDoubleClick={() => run('scene.program', { sceneId: s.id })}
             >

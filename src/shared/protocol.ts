@@ -60,6 +60,8 @@ export interface CommandMap {
   'scene.add': { name: string }
   'scene.remove': { sceneId: string }
   'scene.rename': { sceneId: string; name: string }
+  /** Move a scene to a new place in the list (0 = first). */
+  'scene.move': { sceneId: string; index: number }
   'layer.add': {
     sceneId: string
     kind: LayerKind
@@ -119,6 +121,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.add': 'admin',
   'scene.remove': 'admin',
   'scene.rename': 'admin',
+  'scene.move': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',
