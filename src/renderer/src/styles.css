@@ -207,8 +207,11 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 .kind-picker button.on { background: var(--accent-bg); border-color: var(--accent); }
 .add-audio { margin-top: 10px; width: 100%; }
 .fader { position: relative; }
-.fader-remove { position: absolute; top: -6px; right: -4px; opacity: 0; font-size: 11px !important; }
-.fader:hover .fader-remove, .fader-remove:focus-visible { opacity: 1; }
+.fader-tools { display: flex; gap: 2px; opacity: 0.35; transition: opacity 0.15s; }
+.fader-tools button.icon { padding: 1px 5px; min-height: 22px; font-size: 11px; }
+.fader:hover .fader-tools, .fader-tools:focus-within { opacity: 1; }
+.fader-detail { font-size: 10.5px; color: var(--muted); text-align: center; margin-top: -4px; min-height: 2.6em; line-height: 1.25; }
+.source-form small { font-size: 11px; }
 .remote-sources { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .remote-sources button { min-height: 60px; font-size: 15px; font-weight: 600; display: grid; place-content: center; gap: 2px; background: var(--panel); }
 .remote-sources button.on { background: var(--accent-bg); border-color: var(--accent); }
@@ -244,7 +247,7 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
   writing-mode: vertical-lr; direction: rtl; height: 150px; width: 24px; padding: 0; background: transparent; border: 0;
   accent-color: var(--accent);
 }
-.fader-name { font-size: 11px; text-align: center; line-height: 1.25; }
+.fader-name { font-size: 11px; text-align: center; line-height: 1.25; min-height: 2.5em; display: flex; align-items: flex-start; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .data-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 4px; border-bottom: 1px solid var(--line); }

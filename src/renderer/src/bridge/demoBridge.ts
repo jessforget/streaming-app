@@ -51,6 +51,11 @@ export class DemoApp {
     initial.setupName = 'Friday show'
     const score = initial.scenes.find((s) => s.id === 'live')?.layers.find((l) => l.id === 'live-score')
     if (score) score.visible = true
+    // A Zoom L-12 on the desk: one mixer channel per mic, nudged to match the ATEM's video.
+    initial.audio.splice(2, 1,
+      { id: 'host-mic', name: 'L-12 Ch 1 Host', kind: 'device', device: 'zoom-l12', channels: [1], syncOffsetMs: 80, volume: 0.8, muted: false, level: 0 },
+      { id: 'guest-mic', name: 'L-12 Ch 2 Guest', kind: 'device', device: 'zoom-l12', channels: [2], syncOffsetMs: 80, volume: 0.75, muted: false, level: 0 }
+    )
     this.controller = new Controller({ engine: new SimEngine(), keys, initial })
     this.devices = new DemoDevices(() =>
       this.controller.updateDevices({

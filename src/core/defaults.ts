@@ -70,10 +70,10 @@ export function defaultState(): AppState {
     programSceneId: 'starting',
     transition: { kind: 'fade', durationMs: 300 },
     audio: [
-      { id: 'atem-audio', name: 'ATEM Mini', kind: 'device', device: 'atem-mini-audio', volume: 0.8, muted: false, level: 0 },
-      { id: 'hyperdeck-audio', name: 'HyperDeck', kind: 'video', device: 'decklink-1', volume: 0.8, muted: false, level: 0 },
-      { id: 'mic', name: 'Mic', kind: 'device', device: 'usb-mic', volume: 0.8, muted: false, level: 0 },
-      { id: 'desktop', name: 'Desktop', kind: 'desktop', volume: 0.5, muted: false, level: 0 }
+      { id: 'atem-audio', name: 'ATEM Mini', kind: 'device', device: 'atem-mini-audio', volume: 0.8, muted: false, syncOffsetMs: 0, level: 0 },
+      { id: 'hyperdeck-audio', name: 'HyperDeck', kind: 'video', device: 'decklink-1', volume: 0.8, muted: false, syncOffsetMs: 0, level: 0 },
+      { id: 'mic', name: 'Mic', kind: 'device', device: 'usb-mic', volume: 0.8, muted: false, syncOffsetMs: 0, level: 0 },
+      { id: 'desktop', name: 'Desktop', kind: 'desktop', volume: 0.5, muted: false, syncOffsetMs: 0, level: 0 }
     ],
     stream: {
       live: false,

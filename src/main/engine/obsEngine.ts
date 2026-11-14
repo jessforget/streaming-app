@@ -12,7 +12,7 @@
  * it with `npm install <path-or-url-to-tarball>`. See docs/ENGINE.md.
  */
 import { join } from 'node:path'
-import type { AppState, AudioSource, InputDevice, Layer, Scene } from '../../shared/state'
+import { audioDeviceName, type AppState, type AudioSource, type InputDevice, type Layer, type Scene } from '../../shared/state'
 import type { QualityPreset } from '../../shared/presets'
 import type { Engine, EngineStats, StreamTarget } from '../../core/ports'
 
@@ -34,11 +34,19 @@ const SOURCE_TYPE: Record<Layer['kind'], string> = {
  * Device ids: `dshow:<id>` for anything Windows sees as a webcam (the ATEM
  * Mini over USB-C, USB HDMI capture sticks), `decklink:<hash>` for Blackmagic
  * DeckLink and UltraStudio capture (a HyperDeck or a larger ATEM over SDI or
- * HDMI), `wasapi:<id>` for audio inputs (mics, the ATEM Mini's USB audio).
+ * HDMI), `wasapi:<id>` for audio inputs (mics, the ATEM Mini's USB audio,
+ * one stereo pair of a Focusrite), `asio:<id>` for multichannel audio
+ * interfaces through ASIO (Zoom L-12, Focusrite Scarlett), where each mixer
+ * channel can take one input or one pair.
+ *
+ * ASIO comes from the obs-asio plugin (GPL-2.0, github.com/Andersama/obs-asio),
+ * which must be installed next to libobs. Without it no ASIO devices are listed
+ * and the interfaces still work through Windows audio, one pair at a time.
  */
 const DSHOW = 'dshow:'
 const DECKLINK = 'decklink:'
 const WASAPI = 'wasapi:'
+const ASIO = 'asio:'
 
 export class ObsEngine implements Engine {
   readonly name = 'obs'
@@ -122,7 +130,40 @@ export class ObsEngine implements Engine {
         ...items('dshow_input', 'video_device_id').map((x) => ({ id: DSHOW + x.value, name: x.name })),
         ...items('decklink-input', 'device_hash').map((x) => ({ id: DECKLINK + x.value, name: x.name }))
       ],
-      audio: items('wasapi_input_capture', 'device_id').map((x) => ({ id: WASAPI + x.value, name: x.name }))
+      audio: [
+        // Windows' own friendly names ("Microphone (ZOOM L-12 Audio)"), device first.
+        ...items('wasapi_input_capture', 'device_id').map((x) => ({
+          id: WASAPI + x.value,
+          name: audioDeviceName(x.name),
+          driver: 'wasapi' as const,
+          channels: 2
+        })),
+        // The ASIO driver's own name ("ZOOM L-12", "Focusrite USB ASIO") and its channel names.
+        ...items('asio_input_capture', 'device_id').map((x) => {
+          const channelNames = this.asioChannelNames(x.value)
+          return {
+            id: ASIO + x.value,
+            name: `${x.name} (ASIO)`,
+            driver: 'asio' as const,
+            ...(channelNames.length > 0 && { channels: channelNames.length, channelNames })
+          }
+        })
+      ]
+    }
+  }
+
+  /** obs-asio lists the driver's input channels, by name, as the choices for each route. */
+  private asioChannelNames(deviceId: string): string[] {
+    try {
+      const probe = this.osn.InputFactory.create('asio_input_capture', `probe-asio-${deviceId}`, { device_id: deviceId })
+      const list: { name: string; value: number }[] = probe.properties.get('route 0')?.details?.items ?? []
+      probe.release()
+      return list
+        .filter((x) => typeof x.value === 'number' && x.value >= 0)
+        .sort((a, b) => a.value - b.value)
+        .map((x) => x.name)
+    } catch {
+      return []
     }
   }
 
@@ -204,7 +245,16 @@ export class ObsEngine implements Engine {
         input = this.deviceInput(a.device)
       } else if (a.kind === 'desktop') {
         input = this.osn.InputFactory.create('wasapi_output_capture', `audio-${a.id}`, {})
+      } else if (a.device?.startsWith(ASIO)) {
+        // obs-asio routes each output channel ("route N") from an input channel (0-based, -1 = silent).
+        const [first, second] = a.channels ?? [1, 2]
+        input = this.osn.InputFactory.create('asio_input_capture', `audio-${a.id}`, {
+          device_id: a.device.slice(ASIO.length),
+          'route 0': first - 1,
+          'route 1': (second ?? first) - 1
+        })
       } else {
+        // Windows audio gives the device's stereo pair; a Focusrite lists each pair as its own device.
         input = this.osn.InputFactory.create('wasapi_input_capture', `audio-${a.id}`, {
           device_id: a.device?.startsWith(WASAPI) ? a.device.slice(WASAPI.length) : 'default'
         })
@@ -212,6 +262,9 @@ export class ObsEngine implements Engine {
       if (!input) continue
       input.volume = a.volume
       input.muted = a.muted
+      // Line the sound up with the ATEM's video, which usually arrives a few frames later.
+      const ms = a.syncOffsetMs ?? 0
+      input.syncOffset = { sec: Math.trunc(ms / 1000), nsec: (ms % 1000) * 1_000_000 }
       if (a.kind !== 'video') this.osn.Global.setOutputSource(this.nextChannel++, input)
       this.audio.set(a.id, input)
     }

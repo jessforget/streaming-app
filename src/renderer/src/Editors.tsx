@@ -1,7 +1,7 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
 import { useState } from 'react'
-import type { AppState, AudioKind, Layer, LayerKind, Scene } from '../../shared/state'
-import { LAYER_KINDS } from '../../shared/state'
+import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Scene } from '../../shared/state'
+import { LAYER_KINDS, SYNC_OFFSET_RANGE, channelCount, channelName } from '../../shared/state'
 import { deviceName } from './parts'
 import type { Run } from './useApp'
 
@@ -26,7 +26,7 @@ const KIND_HELP: Record<LayerKind, string> = {
 }
 
 const AUDIO_KIND_LABEL: Record<AudioKind, string> = {
-  device: 'Audio input (mic, ATEM Mini USB audio)',
+  device: 'Audio input (mic, USB interface like Zoom L-12 or Focusrite, ATEM Mini USB audio)',
   video: 'Sound from a video input (HyperDeck, capture card)',
   desktop: 'Desktop sound (this PC)'
 }
@@ -331,17 +331,81 @@ function SourceEditor(props: { state: AppState; run: Run; scene: Scene; layer: L
   )
 }
 
-/** "+ Add audio": a mic, the ATEM Mini's USB audio, a capture card's sound, or desktop sound. */
+/** Channel choices for a device: each stereo pair, then each single input, named the way the driver names them. */
+function channelOptions(d: InputDevice | undefined): { value: string; label: string }[] {
+  const n = channelCount(d)
+  if (n <= 2) return []
+  const out: { value: string; label: string }[] = []
+  for (let c = 1; c < n; c += 2) out.push({ value: `${c},${c + 1}`, label: `${c}+${c + 1} stereo: ${channelName(d, c)}, ${channelName(d, c + 1)}` })
+  for (let c = 1; c <= n; c++) out.push({ value: `${c}`, label: `${c} mono: ${channelName(d, c)}` })
+  return out
+}
+
+const parseChannels = (v: string) => (v ? v.split(',').map(Number) : undefined)
+const shortName = (d: InputDevice | undefined) => (d?.name ?? '').replace(/\s*\((ASIO|USB.*?)\)$/i, '').replace(/^Focusrite USB ASIO/, 'Focusrite')
+
+/** Sync offset field, in milliseconds. */
+function SyncField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label>
+      Sync offset (ms)
+      <input
+        type="number"
+        inputMode="numeric"
+        step={10}
+        min={SYNC_OFFSET_RANGE.min}
+        max={SYNC_OFFSET_RANGE.max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <small className="muted">Delay this sound to match the ATEM video. Clap on camera and adjust until it lines up; often 0 to 150.</small>
+    </label>
+  )
+}
+
+/** "+ Add audio": a mic, a USB audio interface (Zoom L-12, Focusrite), the ATEM Mini's USB audio, a capture card's sound, or desktop sound. */
 export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run; onDone: () => void }) {
   const [kind, setKind] = useState<AudioKind>('device')
   const list = kind === 'video' ? state.inputs.video : kind === 'device' ? state.inputs.audio : []
   const [device, setDevice] = useState(state.inputs.audio[0]?.id ?? '')
+  const [channels, setChannels] = useState('')
   const [name, setName] = useState('')
+  const [sync, setSync] = useState('0')
   const picked = list.find((d) => d.id === device)
-  const autoName = kind === 'desktop' ? 'Desktop' : (picked?.name.replace(/\s*\(.*\)$/, '') ?? '')
+  const options = kind === 'device' ? channelOptions(picked) : []
+  const chs = parseChannels(channels)
+  const autoName =
+    kind === 'desktop'
+      ? 'Desktop'
+      : picked
+        ? chs
+          ? `${shortName(picked)} ${chs.map((c) => channelName(picked, c)).join(' + ')}`
+          : shortName(picked)
+        : ''
+  const syncMs = Number(sync) || 0
   const add = async () => {
-    const ok = await run('audio.add', { name: name.trim() || autoName, kind, ...(kind !== 'desktop' && { device }) })
+    const ok = await run('audio.add', {
+      name: (name.trim() || autoName).slice(0, 60),
+      kind,
+      syncOffsetMs: syncMs,
+      ...(kind !== 'desktop' && { device }),
+      ...(chs && { channels: chs })
+    })
     if (ok) onDone()
+  }
+  /** One mixer channel per input, like a mixing desk. */
+  const addEach = async () => {
+    for (let c = 1; c <= channelCount(picked); c++) {
+      const ok = await run('audio.add', {
+        name: `${shortName(picked)} ${channelName(picked, c)}`.slice(0, 60),
+        kind,
+        device,
+        channels: [c],
+        syncOffsetMs: syncMs
+      })
+      if (!ok) return
+    }
+    onDone()
   }
   return (
     <form
@@ -358,6 +422,7 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
           onChange={(e) => {
             const k = e.target.value as AudioKind
             setKind(k)
+            setChannels('')
             setDevice((k === 'video' ? state.inputs.video : state.inputs.audio)[0]?.id ?? '')
           }}
         >
@@ -371,7 +436,13 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
       {kind !== 'desktop' && (
         <label>
           Device
-          <select value={device} onChange={(e) => setDevice(e.target.value)}>
+          <select
+            value={device}
+            onChange={(e) => {
+              setDevice(e.target.value)
+              setChannels('')
+            }}
+          >
             <option value="">Pick a device…</option>
             {list.map((d) => (
               <option key={d.id} value={d.id}>
@@ -381,13 +452,91 @@ export function AddAudioForm({ state, run, onDone }: { state: AppState; run: Run
           </select>
         </label>
       )}
+      {options.length > 0 && (
+        <label>
+          Channels on {shortName(picked)}
+          <select value={channels} onChange={(e) => setChannels(e.target.value)}>
+            <option value="">1+2 (the first pair)</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         Name
         <input value={name} maxLength={60} placeholder={autoName || 'Channel name'} onChange={(e) => setName(e.target.value)} />
       </label>
+      <SyncField value={sync} onChange={setSync} />
       <div className="row">
         <button type="submit" className="accent small" disabled={(kind !== 'desktop' && !picked) || !(name.trim() || autoName)}>
           Add channel
+        </button>
+        {options.length > 0 && (
+          <button type="button" className="small" onClick={addEach} title="Adds one mixer channel for every input, like a mixing desk">
+            Add all {channelCount(picked)} inputs
+          </button>
+        )}
+        <button type="button" className="ghost small" onClick={onDone}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/** Edit a mixer channel: name, which inputs, sync offset. */
+export function AudioEditor({ state, run, source, onDone }: { state: AppState; run: Run; source: AudioSource; onDone: () => void }) {
+  const dev = state.inputs.audio.find((d) => d.id === source.device)
+  const options = source.kind === 'device' ? channelOptions(dev) : []
+  const [name, setName] = useState(source.name)
+  const [channels, setChannels] = useState(source.channels?.join(',') ?? '')
+  const [sync, setSync] = useState(String(source.syncOffsetMs ?? 0))
+  const save = async () => {
+    const chs = parseChannels(channels)
+    const ok = await run('audio.update', {
+      sourceId: source.id,
+      ...(name.trim() && name.trim() !== source.name && { name: name.trim() }),
+      ...(options.length > 0 && chs && channels !== (source.channels?.join(',') ?? '') && { channels: chs }),
+      syncOffsetMs: Number(sync) || 0
+    })
+    if (ok) onDone()
+  }
+  return (
+    <form
+      className="source-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        save()
+      }}
+    >
+      <strong>{source.name}</strong>
+      <span className="muted small">
+        {source.kind === 'desktop' ? 'Desktop sound' : (deviceName(state, source.device) ?? 'Device not plugged in')}
+      </span>
+      <label>
+        Name
+        <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+      </label>
+      {options.length > 0 && (
+        <label>
+          Channels
+          <select value={channels} onChange={(e) => setChannels(e.target.value)}>
+            {!source.channels && <option value="">1+2 (the first pair)</option>}
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <SyncField value={sync} onChange={setSync} />
+      <div className="row">
+        <button type="submit" className="accent small">
+          Save
         </button>
         <button type="button" className="ghost small" onClick={onDone}>
           Cancel

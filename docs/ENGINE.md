@@ -9,6 +9,15 @@ Like OBS, this app does not switch cameras. Cameras plug into the ATEM and are s
 | ATEM Mini, Mini Pro, Mini Extreme | USB-C to the PC | Shows up as a webcam named "Blackmagic Design" (libobs `dshow_input`) | Shows up as a USB audio input (`wasapi_input_capture`) |
 | HyperDeck, or a larger ATEM (Television Studio, Constellation) | HDMI or SDI out into a Blackmagic DeckLink card or UltraStudio box | libobs `decklink-input` | Comes in with the picture, on the same device |
 | Either one, through a USB HDMI capture stick | USB | Webcam (`dshow_input`) | Comes in with the picture |
+| USB audio interface: Zoom LiveTrak L-12, Focusrite Scarlett | USB, with the maker's driver installed | none | Each mic input or pair on its own mixer channel (ASIO), or the device's stereo pair (Windows audio) |
+
+### USB audio interfaces
+
+- **Names.** Devices show up by their own names. Windows audio names like "Microphone (2- ZOOM L-12 Audio)" are shown device first: "ZOOM L-12 Audio · Microphone". ASIO devices use the driver's name, and their channels use the driver's channel names.
+- **Channels.** Through ASIO, each mixer channel takes one input (a mic) or a pair, so a 14-input L-12 can give every mic its own fader ("Add all 14 inputs"). Through Windows audio, a device gives one stereo pair; Focusrite lists each pair as its own device ("Analogue 1 + 2", "3 + 4").
+- **ASIO needs the obs-asio plugin** ([obs-asio](https://github.com/Andersama/obs-asio), GPL-2.0) installed next to libobs. Without it, no ASIO devices are listed and the interfaces still work through Windows audio. The plugin's settings (`device_id`, `route 0`, `route 1`) are written from its source and not yet tried on a real PC.
+- **Sync offset.** The ATEM's video usually reaches the PC a few frames after the sound from a separate interface. Each mixer channel has a sync offset (-950 to 5000 ms; libobs `sync_offset`). Clap on camera and adjust until it lines up.
+- **Plug and unplug.** The app looks for devices every 3 seconds. Unplugging one that is in use shows a notice and marks its channel "Unplugged"; plugging it back in reopens it.
 
 In the app:
 

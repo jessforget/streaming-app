@@ -2,8 +2,8 @@ import { useState } from 'react'
 import type { AppState, AudioSource, HealthStats } from '../../shared/state'
 import { PLATFORMS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
-import { AddAudioForm, SceneTools, SourceList } from './Editors'
-import { HealthPill, Notice, ScenePicture, deviceName } from './parts'
+import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
+import { HealthPill, Notice, ScenePicture } from './parts'
 import { Settings, type SettingsTab } from './Settings'
 import { useApp, useElapsed, type Run } from './useApp'
 
@@ -141,6 +141,8 @@ function CenterColumn({ state, run }: { state: AppState; run: Run }) {
 function RightColumn(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
   const { state, stats, run, openSettings } = props
   const [addingAudio, setAddingAudio] = useState(false)
+  const [editingAudio, setEditingAudio] = useState<string | null>(null)
+  const editing = state.audio.find((a) => a.id === editingAudio)
   return (
     <section className="col right">
       <div className="panel">
@@ -157,9 +159,10 @@ function RightColumn(props: { state: AppState; stats: HealthStats | null; run: R
         </div>
         <div className="mixer">
           {state.audio.map((a) => (
-            <Fader key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} run={run} />
+            <Fader key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} run={run} onEdit={() => setEditingAudio(a.id)} />
           ))}
         </div>
+        {editing && <AudioEditor key={editing.id} state={state} run={run} source={editing} onDone={() => setEditingAudio(null)} />}
         {addingAudio ? (
           <AddAudioForm state={state} run={run} onDone={() => setAddingAudio(false)} />
         ) : (
@@ -181,13 +184,23 @@ function RightColumn(props: { state: AppState; stats: HealthStats | null; run: R
   )
 }
 
-function Fader({ a, state, level, run }: { a: AudioSource; state: AppState; level: number; run: Run }) {
-  const from = a.kind === 'desktop' ? 'Desktop sound' : (deviceName(state, a.device) ?? 'Device not found')
+function Fader(props: { a: AudioSource; state: AppState; level: number; run: Run; onEdit: () => void }) {
+  const { a, state, level, run, onEdit } = props
+  const dev = [...state.inputs.audio, ...state.inputs.video].find((d) => d.id === a.device)
+  const unplugged = a.kind !== 'desktop' && !dev
+  const from = a.kind === 'desktop' ? 'Desktop sound' : (dev?.name ?? 'Device not plugged in')
+  const chs = a.channels ? `Ch ${a.channels.join('+')}` : ''
+  const detail = [chs, a.syncOffsetMs ? `${a.syncOffsetMs > 0 ? '+' : ''}${a.syncOffsetMs} ms` : ''].filter(Boolean).join(' · ')
   return (
-    <div className={`fader ${a.muted ? 'muted' : ''}`} title={from}>
-      <button className="ghost icon fader-remove" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
-        ✕
-      </button>
+    <div className={`fader ${a.muted ? 'muted' : ''}`} title={`${from}${a.channels ? `, channel ${a.channels.join(' and ')}` : ''}`}>
+      <span className="fader-tools">
+        <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, channels, sync offset" onClick={onEdit}>
+          ✎
+        </button>
+        <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
+          ✕
+        </button>
+      </span>
       <div className="fader-track">
         <div className="meter" style={{ height: `${Math.round(level * 100)}%` }} />
         <input
@@ -200,6 +213,7 @@ function Fader({ a, state, level, run }: { a: AudioSource; state: AppState; leve
         />
       </div>
       <span className="fader-name">{a.name}</span>
+      <small className={`fader-detail ${unplugged ? 'warn-text' : ''}`}>{unplugged ? 'Unplugged' : detail}</small>
       <button className={`small ${a.muted ? 'danger' : ''}`} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
         {a.muted ? 'Muted' : 'Mute'}
       </button>

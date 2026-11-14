@@ -94,11 +94,12 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"? }` |
 | `layer.move` | `{ "sceneId", "layerId", "direction": "up" \| "down" }` |
 | `layer.remove` | `{ "sceneId", "layerId" }` |
-| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"? }` → `{ "sourceId" }` |
+| `audio.add` | `{ "name", "kind": "device" \| "video" \| "desktop", "device"?, "channels"?, "syncOffsetMs"? }` → `{ "sourceId" }`. `channels` = one input (`[3]`, a mic) or a pair (`[9, 10]`) of a multichannel interface, counted from 1. `syncOffsetMs` = -950 to 5000. |
+| `audio.update` | `{ "sourceId", "name"?, "channels"?, "syncOffsetMs"? }` |
 | `audio.remove` | `{ "sourceId" }` |
 | `inputs.refresh` | none (look for capture and audio devices again) |
 
-`device` ids come from `state.inputs.video` and `state.inputs.audio`.
+`device` ids come from `state.inputs.video` and `state.inputs.audio`. Each audio device has its real name, its `driver` (`wasapi` or `asio`), and when known its `channels` count and `channelNames`. The list updates by itself when a device is plugged in or unplugged.
 
 ## 5. Data fields (companion app)
 

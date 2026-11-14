@@ -47,7 +47,7 @@ export class SetupFile {
       previewSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
       programSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
       transition: saved.transition ?? base.transition,
-      audio: (saved.audio ?? base.audio).map((a) => ({ ...a, level: 0 })),
+      audio: (saved.audio ?? base.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, level: 0 })),
       stream: {
         ...base.stream,
         quality: saved.quality ?? base.stream.quality,

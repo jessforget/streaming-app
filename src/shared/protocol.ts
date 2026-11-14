@@ -71,7 +71,8 @@ export interface CommandMap {
   'layer.remove': { sceneId: string; layerId: string }
   'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }
   'layer.update': { sceneId: string; layerId: string; name?: string; device?: string; text?: string; url?: string }
-  'audio.add': { name: string; kind: AudioKind; device?: string }
+  'audio.add': { name: string; kind: AudioKind; device?: string; channels?: number[]; syncOffsetMs?: number }
+  'audio.update': { sourceId: string; name?: string; channels?: number[]; syncOffsetMs?: number }
   'audio.remove': { sourceId: string }
   'inputs.refresh': Record<string, never>
   'devices.setPairingOpen': { open: boolean }
@@ -112,6 +113,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'layer.move': 'admin',
   'layer.update': 'admin',
   'audio.add': 'admin',
+  'audio.update': 'admin',
   'audio.remove': 'admin',
   'inputs.refresh': 'admin',
   'devices.setPairingOpen': 'admin',

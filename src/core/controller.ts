@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { LAYER_KINDS, SYNC_OFFSET_RANGE, channelCount, type AppState, type AudioKind, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -44,6 +44,8 @@ export class Controller extends Emitter<Events> {
   private devices?: DeviceAdmin
   private readonly now: () => number
   private statsTimer: ReturnType<typeof setInterval> | null = null
+  private deviceTimer: ReturnType<typeof setInterval> | null = null
+  private polling = false
   private lastDropped = 0
   private lastTotal = 0
 
@@ -71,17 +73,25 @@ export class Controller extends Emitter<Events> {
     this.changed()
   }
 
-  async start(options: { statsIntervalMs?: number } = {}) {
+  /**
+   * `devicePollMs`: how often to look for capture and audio devices being
+   * plugged in or unplugged (0 = never, as in tests).
+   */
+  async start(options: { statsIntervalMs?: number; devicePollMs?: number } = {}) {
     await this.engine.init(this.s)
     await this.refreshAllTexts()
     await this.refreshInputs()
     const ms = options.statsIntervalMs ?? 1000
     if (ms > 0) this.statsTimer = setInterval(() => this.tickStats(), ms)
+    const poll = options.devicePollMs ?? 3000
+    if (poll > 0) this.deviceTimer = setInterval(() => void this.pollDevices(), poll)
   }
 
   async stop() {
     if (this.statsTimer) clearInterval(this.statsTimer)
+    if (this.deviceTimer) clearInterval(this.deviceTimer)
     this.statsTimer = null
+    this.deviceTimer = null
     await this.engine.shutdown()
   }
 
@@ -279,10 +289,23 @@ export class Controller extends Emitter<Events> {
         if (!['device', 'desktop', 'video'].includes(kind)) throw new CommandError('kind must be device, desktop or video')
         const device = kind === 'desktop' ? undefined : this.device(kind === 'video' ? 'video' : 'audio', P.device)
         const id = this.newId('audio')
-        this.s.audio.push({ id, name: name(P, 'name'), kind, device, volume: 0.8, muted: false, level: 0 })
+        const channels = kind === 'desktop' ? undefined : this.channels(kind, device, P.channels)
+        const syncOffsetMs = P.syncOffsetMs === undefined ? 0 : syncOffset(P)
+        this.s.audio.push({ id, name: name(P, 'name'), kind, device, channels, syncOffsetMs, volume: 0.8, muted: false, level: 0 })
         await this.engine.setAudioSources(this.s.audio)
         this.changed()
         return { sourceId: id }
+      }
+      case 'audio.update': {
+        const src = this.audio(str(P, 'sourceId'))
+        if (P.name !== undefined) src.name = name(P, 'name')
+        if (P.channels !== undefined) {
+          if (src.kind === 'desktop') throw new CommandError('Desktop sound has no channels to pick')
+          src.channels = this.channels(src.kind, src.device, P.channels)
+        }
+        if (P.syncOffsetMs !== undefined) src.syncOffsetMs = syncOffset(P)
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
       }
       case 'audio.remove': {
         const src = this.audio(str(P, 'sourceId'))
@@ -475,6 +498,41 @@ export class Controller extends Emitter<Events> {
     }
   }
 
+  /** Look for devices plugged in or unplugged; say so in plain words when one in use goes or comes back. */
+  async pollDevices() {
+    if (this.polling) return
+    this.polling = true
+    try {
+      const before = this.s.inputs
+      let now: AppState['inputs']
+      try {
+        now = await this.engine.listDevices()
+      } catch {
+        return
+      }
+      if (JSON.stringify(now) === JSON.stringify(before)) return
+      this.s.inputs = now
+      const ids = (x: AppState['inputs']) => new Set([...x.video, ...x.audio].map((d) => d.id))
+      const was = ids(before)
+      const is = ids(now)
+      const used = new Set([
+        ...this.s.audio.map((a) => a.device),
+        ...this.s.scenes.flatMap((s) => s.layers.map((l) => l.device))
+      ])
+      const named = (id: string) => [...before.video, ...before.audio, ...now.video, ...now.audio].find((d) => d.id === id)?.name ?? id
+      for (const id of was) if (!is.has(id) && used.has(id)) this.emit('error', `${named(id)} was unplugged`)
+      const back = [...is].filter((id) => !was.has(id) && used.has(id))
+      if (back.length) {
+        // Reopen what uses it, so sound and picture come back without a restart.
+        await this.engine.setAudioSources(this.s.audio)
+        for (const scene of this.s.scenes) if (scene.layers.some((l) => l.device && back.includes(l.device))) await this.engine.setScene(scene)
+      }
+      this.changed()
+    } finally {
+      this.polling = false
+    }
+  }
+
   private applyLayerFields(layer: Layer, P: Record<string, unknown>) {
     if (P.name !== undefined) layer.name = name(P, 'name')
     if (P.device !== undefined) {
@@ -514,6 +572,23 @@ export class Controller extends Emitter<Events> {
     if (typeof value !== 'string') throw new CommandError('device must be text')
     if (!this.s.inputs[type].some((d) => d.id === value)) throw new CommandError(`This PC has no ${type} device ${value}`)
     return value
+  }
+
+  /** Input channels of a multichannel interface: one (mono) or two (a pair), counted from 1. */
+  private channels(kind: AudioKind, device: string | undefined, value: unknown): number[] | undefined {
+    if (value === undefined) return undefined
+    const list = this.s.inputs[kind === 'video' ? 'video' : 'audio']
+    const max = kind === 'video' ? 2 : channelCount(list.find((d) => d.id === device))
+    if (
+      !Array.isArray(value) ||
+      value.length < 1 ||
+      value.length > 2 ||
+      !value.every((c) => Number.isInteger(c) && c >= 1 && c <= max) ||
+      (value.length === 2 && value[0] === value[1])
+    ) {
+      throw new CommandError(`channels must be one or two different channel numbers from 1 to ${max}`)
+    }
+    return [...value]
   }
 
   private newId(prefix: string): string {
@@ -566,6 +641,10 @@ function num(P: Record<string, unknown>, key: string, min: number, max: number):
     throw new CommandError(`${key} must be a number from ${min} to ${max}`)
   }
   return v
+}
+
+function syncOffset(P: Record<string, unknown>): number {
+  return Math.round(num(P, 'syncOffsetMs', SYNC_OFFSET_RANGE.min, SYNC_OFFSET_RANGE.max))
 }
 
 function name(P: Record<string, unknown>, key: string): string {

@@ -173,6 +173,10 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
             audio input.
           </li>
           <li>
+            <strong>USB audio interface (Zoom LiveTrak L-12, Focusrite Scarlett):</strong> install the maker's driver, then plug
+            it in. It shows up here by its own name. With ASIO you can give each mic input its own mixer channel.
+          </li>
+          <li>
             <strong>HyperDeck or a larger ATEM:</strong> connect its HDMI or SDI out to a capture card (Blackmagic DeckLink or
             UltraStudio, or a USB HDMI capture). The sound comes in with the picture.
           </li>
@@ -187,7 +191,7 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
         </div>
         <h4>Video</h4>
         {video.length === 0 ? (
-          <p className="muted">None found. Check the cable, then press Look again.</p>
+          <p className="muted">None found. Check the cable. Devices show up here by themselves when plugged in.</p>
         ) : (
           <ul className="device-list">
             {video.map((d) => (
@@ -207,6 +211,10 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
               <li key={d.id}>
                 <span className="dot on" />
                 <strong>{d.name}</strong>
+                <span className="muted small">
+                  {d.driver === 'asio' ? 'ASIO' : 'Windows audio'}
+                  {d.channels ? `, ${d.channels} input${d.channels > 1 ? 's' : ''}` : ''}
+                </span>
               </li>
             ))}
           </ul>

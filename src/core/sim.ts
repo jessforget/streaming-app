@@ -15,8 +15,36 @@ export const SIM_DEVICES: { video: InputDevice[]; audio: InputDevice[] } = {
     { id: 'usb-capture', name: 'USB HDMI capture' }
   ],
   audio: [
-    { id: 'atem-mini-audio', name: 'Blackmagic Design (ATEM Mini, USB audio)' },
-    { id: 'usb-mic', name: 'USB microphone' }
+    { id: 'atem-mini-audio', name: 'Blackmagic Design (ATEM Mini, USB audio)', driver: 'wasapi', channels: 2 },
+    { id: 'usb-mic', name: 'USB microphone', driver: 'wasapi', channels: 2 },
+    {
+      id: 'zoom-l12',
+      name: 'ZOOM L-12 (ASIO)',
+      driver: 'asio',
+      channels: 14,
+      channelNames: [
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `Ch ${n}`),
+        'Ch 9/10 L',
+        'Ch 9/10 R',
+        'Ch 11/12 L',
+        'Ch 11/12 R',
+        'Master L',
+        'Master R'
+      ]
+    },
+    {
+      id: 'scarlett-asio',
+      name: 'Focusrite USB ASIO (Scarlett 18i20)',
+      driver: 'asio',
+      channels: 18,
+      channelNames: [
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `Analogue ${n}`),
+        'S/PDIF L',
+        'S/PDIF R',
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `ADAT ${n}`)
+      ]
+    },
+    { id: 'scarlett-1-2', name: 'Focusrite USB Audio · Analogue 1 + 2', driver: 'wasapi', channels: 2 }
   ]
 }
 
@@ -35,6 +63,8 @@ export class SimEngine implements Engine {
   dropRate = 0
 
   scenes = new Map<string, Scene>()
+  /** The devices this pretend PC can see; tests plug and unplug by editing it. */
+  devices = structuredClone(SIM_DEVICES)
 
   async init(state: AppState) {
     this.program = state.programSceneId
@@ -43,7 +73,7 @@ export class SimEngine implements Engine {
     await this.setAudioSources(state.audio)
   }
   async listDevices() {
-    return structuredClone(SIM_DEVICES)
+    return structuredClone(this.devices)
   }
   async setScene(scene: Scene) {
     this.scenes.set(scene.id, structuredClone(scene))

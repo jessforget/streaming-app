@@ -41,6 +41,14 @@ export interface AudioSource {
   kind: AudioKind
   /** For 'device' and 'video': which device (an id from state.inputs). */
   device?: string
+  /**
+   * For multichannel audio interfaces (Zoom L-12, Focusrite Scarlett): which
+   * input channels this mixer channel takes, counted from 1. One entry = a mono
+   * input (a mic), two = a stereo pair. Absent = the device's first pair.
+   */
+  channels?: number[]
+  /** Delay (or advance, if negative) this sound to line it up with the video, in milliseconds. */
+  syncOffsetMs: number
   /** 0 to 1 */
   volume: number
   muted: boolean
@@ -52,6 +60,36 @@ export interface AudioSource {
 export interface InputDevice {
   id: string
   name: string
+  /** Audio devices: how they're reached. ASIO lets you pick single channels of a multichannel interface. */
+  driver?: 'wasapi' | 'asio'
+  /** Audio devices: number of input channels, when known. */
+  channels?: number
+  /** Audio devices: each input channel's name from the driver ("Ch 1", "Analogue 3"), when it gives them. */
+  channelNames?: string[]
+}
+
+/**
+ * Windows names audio inputs "<what> (<device>)", for example
+ * "Microphone (2- ZOOM L-12 Audio)". Show the device first, the way people
+ * know it: "ZOOM L-12 Audio · Microphone".
+ */
+export function audioDeviceName(raw: string): string {
+  const m = /^(.*?)\s*\((?:\d+-\s*)?(.+)\)\s*$/.exec(raw.trim())
+  if (!m || !m[1]) return raw.trim()
+  return `${m[2].trim()} · ${m[1].trim()}`
+}
+
+/** Name of one input channel: the driver's name when known, else "Ch 3". */
+export function channelName(d: InputDevice | undefined, ch: number): string {
+  return d?.channelNames?.[ch - 1] ?? `Ch ${ch}`
+}
+
+/** Longest audio delay the app allows, in milliseconds (and -950 the most it can be moved earlier). */
+export const SYNC_OFFSET_RANGE = { min: -950, max: 5000 }
+
+/** How many input channels an audio device can offer the channel picker. */
+export function channelCount(d: InputDevice | undefined): number {
+  return d?.channels ?? (d?.driver === 'asio' ? 32 : 2)
 }
 
 export type Platform = 'youtube' | 'facebook' | 'instagram' | 'twitch' | 'kick' | 'custom'

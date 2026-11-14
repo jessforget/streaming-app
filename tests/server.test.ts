@@ -68,7 +68,7 @@ beforeEach(async () => {
   pairing = new PairingManager(new MemoryDeviceStore())
   controller.setDeviceAdmin(pairing)
   pairing.onChange((s) => controller.updateDevices(s))
-  await controller.start({ statsIntervalMs: 0 })
+  await controller.start({ statsIntervalMs: 0, devicePollMs: 0 })
   server = new ControlServer({ controller, pairing, port: 0, host: '127.0.0.1' })
   await server.start()
 })
