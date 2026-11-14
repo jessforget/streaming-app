@@ -58,6 +58,7 @@ async function main() {
       // the log is a convenience; never stop the show over it
     }
   }
+  engine.onLog = log
   controller.on('error', (m) => {
     console.warn(`! ${m}`)
     log(`! ${m}`)

@@ -24,14 +24,31 @@ interface Job {
   output?: FfmpegOutput
   waiting?: ReturnType<typeof setTimeout>
   file?: string
+  /** Stream keys, hidden from messages and the log. */
+  secrets: string[]
+  /** Reconnects in a row that did not stay up. */
+  tries: number
+  stats?: ReturnType<typeof setInterval>
 }
 
 /** How long the studio page has to start sending after Start, before we give up. */
 const MEDIA_WAIT_MS = 15_000
+/** Close code that tells the page to start sending again after a pause (the reason holds the pause, in ms). */
+export const MEDIA_RECONNECT_CODE = 4010
+/** A stream that stays up this long counts as back on; the next drop starts counting tries again. */
+const STABLE_MS = 30_000
+/** Waits before each reconnect. After the last one, the stream ends. */
+const RECONNECT_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 30_000, 30_000, 30_000, 30_000]
+/** No video out for this long means the connection is stuck. */
+const STALL_MS = 15_000
 
 export class BrowserEngine implements Engine {
   readonly name = 'browser'
   onOutputStopped?: (kind: Kind, reason: string) => void
+  /** Messages for the person at the main window (reconnecting, back on). */
+  onNotice?: (message: string) => void
+  /** Lines for app.log, to find out later why something happened. Never holds a stream key. */
+  onLog?: (line: string) => void
   private inputs: { video: InputDevice[]; audio: InputDevice[] } = { video: [], audio: [] }
   private studio = false
   private jobs = new Map<Kind, Job>()
@@ -64,20 +81,68 @@ export class BrowserEngine implements Engine {
     const job = this.jobs.get(kind)
     if (!job || job.output || !this.ffmpeg) return socket.close(1008, 'Not expecting video now')
     clearTimeout(job.waiting)
-    job.output = new FfmpegOutput(this.ffmpeg, job.args(codec), (error) => {
-      if (this.jobs.get(kind) !== job) return
-      this.jobs.delete(kind)
-      socket.close()
-      if (error) this.onOutputStopped?.(kind, error)
-    })
-    socket.on('message', (data: Buffer) => job.output?.write(data))
+    const isStream = kind === 'stream'
+    const output = new FfmpegOutput(
+      this.ffmpeg,
+      job.args(codec),
+      (error) => {
+        if (this.jobs.get(kind) !== job || job.output !== output) return
+        job.output = undefined
+        clearInterval(job.stats)
+        if (!error) {
+          this.jobs.delete(kind)
+          socket.close()
+          return
+        }
+        this.onLog?.(`${kind} ffmpeg stopped: ${error} | ${output.lastLines.slice(-5).join(' / ')}`)
+        const upFor = Date.now() - output.startedAt
+        if (upFor > STABLE_MS) job.tries = 0
+        const delay = isStream ? RECONNECT_DELAYS_MS[job.tries] : undefined
+        if (delay === undefined) {
+          this.jobs.delete(kind)
+          socket.close()
+          const why = isStream && job.tries > 0 ? `The stream ended after ${job.tries} tries to reconnect. ${error}` : error
+          this.onLog?.(`${kind} gave up: ${why}`)
+          this.onOutputStopped?.(kind, isStream ? `${why} Check the internet connection, or start a new live event on the platform.` : why)
+          return
+        }
+        job.tries++
+        this.onLog?.(`stream reconnect ${job.tries}/${RECONNECT_DELAYS_MS.length} in ${delay / 1000}s`)
+        this.onNotice?.(`Stream dropped (${error.replace(/\.$/, '')}). Reconnecting in ${delay / 1000} s…`)
+        // The page waits, then opens a new connection with a fresh encoder; that starts ffmpeg again.
+        socket.close(MEDIA_RECONNECT_CODE, String(delay))
+        job.waiting = setTimeout(() => {
+          if (this.jobs.get(kind) !== job || job.output) return
+          this.jobs.delete(kind)
+          this.onOutputStopped?.(kind, 'The main window did not send video again after the stream dropped. Reload it and go live again.')
+        }, delay + MEDIA_WAIT_MS)
+      },
+      { secrets: job.secrets, stallMs: isStream ? STALL_MS : 0, stopOnTargetFailure: isStream }
+    )
+    job.output = output
+    if (isStream && job.tries > 0) {
+      const tries = job.tries
+      setTimeout(() => {
+        if (job.output === output && output.progress.frames > 0) {
+          this.onNotice?.('Stream is back on.')
+          this.onLog?.(`stream back on after ${tries} tries`)
+        }
+      }, 8_000)
+    }
+    // While live, note the numbers every 30 seconds: slow encoding or a slow upload shows up here.
+    job.stats = setInterval(() => {
+      const p = output.progress
+      const backlog = Math.round(output.backlog / 1024)
+      this.onLog?.(`${kind} fps=${p.fps} speed=${p.speed} kbps=${p.kbps} dropped=${p.dropped} backlogKB=${backlog}`)
+    }, 30_000)
+    socket.on('message', (data: Buffer) => output.write(data))
     socket.on('close', () => {
       // The page stopped sending: finish the file or stream cleanly.
-      if (this.jobs.get(kind) === job) void job.output?.stop()
+      if (this.jobs.get(kind) === job && job.output === output) void output.stop()
     })
   }
 
-  private begin(kind: Kind, args: (codec: string) => string[], file?: string) {
+  private begin(kind: Kind, args: (codec: string) => string[], file?: string, secrets: string[] = []) {
     if (!this.ffmpeg) {
       throw new CommandError('ffmpeg is missing, so the app cannot stream or record. Run npm install again, or install ffmpeg.')
     }
@@ -85,7 +150,7 @@ export class BrowserEngine implements Engine {
       throw new CommandError('Open the main window on this PC first (http://localhost:7420). It runs the cameras and the sound.')
     }
     if (this.jobs.has(kind)) return
-    const job: Job = { args, file }
+    const job: Job = { args, file, secrets, tries: 0 }
     job.waiting = setTimeout(() => {
       if (this.jobs.get(kind) !== job || job.output) return
       this.jobs.delete(kind)
@@ -99,6 +164,7 @@ export class BrowserEngine implements Engine {
     if (!job) return
     this.jobs.delete(kind)
     clearTimeout(job.waiting)
+    clearInterval(job.stats)
     await job.output?.stop()
   }
 
@@ -126,7 +192,8 @@ export class BrowserEngine implements Engine {
   async setMuted() {}
 
   async startStream(targets: StreamTarget[], preset: QualityPreset) {
-    this.begin('stream', () => streamArgs(targets, preset, this.encoder))
+    this.onLog?.(`stream to ${targets.map((t) => t.url).join(', ')} with ${this.encoder}, ${preset.width}x${preset.height} ${preset.fps}fps ${preset.videoKbps}kbps`)
+    this.begin('stream', () => streamArgs(targets, preset, this.encoder), undefined, targets.map((t) => t.key))
   }
   async stopStream() {
     await this.finish('stream')

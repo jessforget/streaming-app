@@ -58,6 +58,7 @@ export class Controller extends Emitter<Events> {
     this.s = structuredClone(opts.initial)
     for (const d of this.s.stream.destinations) d.hasKey = this.keys.has(d.id)
     // The engine says when an output stops on its own (connection lost, the studio page closed).
+    this.engine.onNotice = (message) => this.emit('error', message)
     this.engine.onOutputStopped = (kind, reason) => {
       if (kind === 'stream' && this.s.stream.live) {
         this.s.stream.live = false

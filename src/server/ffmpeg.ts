@@ -52,7 +52,8 @@ function encoderArgs(encoder: string, preset: QualityPreset): string[] {
   const gop = ['-g', String(preset.fps * 2), '-keyint_min', String(preset.fps * 2)]
   switch (encoder) {
     case 'h264_nvenc':
-      return ['-c:v', encoder, '-preset', 'p5', '-tune', 'll', '-rc', 'cbr', ...rate, ...gop]
+      // No extra keyframes on scene changes: YouTube wants one exactly every 2 seconds.
+      return ['-c:v', encoder, '-preset', 'p5', '-tune', 'll', '-rc', 'cbr', '-no-scenecut', '1', '-forced-idr', '1', '-profile:v', 'high', ...rate, ...gop]
     case 'h264_qsv':
       return ['-c:v', encoder, '-preset', 'veryfast', ...rate, ...gop]
     case 'h264_amf':
@@ -84,7 +85,7 @@ export function streamArgs(targets: StreamTarget[], preset: QualityPreset, encod
   const wide = targets.some((t) => !t.vertical)
   const slave = (t: StreamTarget) => {
     const select = vertical && wide ? `:select=\\'v:${t.vertical ? 1 : 0},a\\'` : ''
-    return `[f=flv${select}:onfail=ignore]${teeEscape(ingestAddress(t))}`
+    return `[f=flv${select}:flvflags=no_duration_filesize:onfail=ignore]${teeEscape(ingestAddress(t))}`
   }
   const tall = 'crop=trunc(ih*9/16/2)*2:ih,scale=720:1280,setsar=1,format=yuv420p'
   const video =
@@ -112,23 +113,60 @@ export function recordArgs(file: string, format: 'mp4' | 'mkv', codec: string, p
   return [...INPUT, ...PROGRESS, '-map', '0:v:0', '-map', '0:a:0?', ...video, ...audio, ...container, '-y', file]
 }
 
+const MAX_BACKLOG_BYTES = 48 * 1024 * 1024
+
 export interface OutputProgress {
   frames: number
   dropped: number
   fps: number
   speed: number
+  /** Kbit/s that ffmpeg is sending, as it reports it. */
+  kbps: number
+}
+
+/** Stream keys must never reach the screen or the log: ffmpeg prints the full address on errors. */
+export function redact(text: string, secrets: string[]): string {
+  let out = text
+  for (const k of secrets) if (k) out = out.split(k).join('****')
+  return out
+}
+
+export interface OutputOptions {
+  /** Texts to hide in error messages and the log (stream keys). */
+  secrets?: string[]
+  /** Stop ffmpeg when no frame has gone out for this long (a stuck connection). 0 = off. */
+  stallMs?: number
+  /** For a stream with several platforms: stop as soon as one platform is lost, so it can reconnect. */
+  stopOnTargetFailure?: boolean
 }
 
 /** One running ffmpeg, fed by the studio page. */
 export class FfmpegOutput {
-  readonly progress: OutputProgress = { frames: 0, dropped: 0, fps: 0, speed: 0 }
+  readonly progress: OutputProgress = { frames: 0, dropped: 0, fps: 0, speed: 0, kbps: 0 }
+  readonly startedAt = Date.now()
   private proc: ChildProcess
   private stopping = false
+  private failure: string | null = null
   private errors: string[] = []
   private ended: Promise<void>
+  private watchdog?: ReturnType<typeof setInterval>
+  private secrets: string[]
 
-  constructor(ffmpeg: string, args: string[], onExit: (error: string | null) => void) {
+  constructor(ffmpeg: string, args: string[], onExit: (error: string | null) => void, opts: OutputOptions = {}) {
+    this.secrets = opts.secrets ?? []
     this.proc = spawn(ffmpeg, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    if (opts.stallMs) {
+      let lastFrames = -1
+      let lastMove = Date.now()
+      this.watchdog = setInterval(() => {
+        if (this.progress.frames !== lastFrames) {
+          lastFrames = this.progress.frames
+          lastMove = Date.now()
+        } else if (Date.now() - lastMove > opts.stallMs!) {
+          this.fail('The stream stopped moving: no video went out for a while.')
+        }
+      }, 1000)
+    }
     let buf = ''
     this.proc.stdout!.on('data', (d: Buffer) => {
       buf += d.toString()
@@ -140,10 +178,19 @@ export class FfmpegOutput {
         else if (k === 'drop_frames') this.progress.dropped = Number(v) || 0
         else if (k === 'fps') this.progress.fps = Number(v) || 0
         else if (k === 'speed') this.progress.speed = parseFloat(v) || 0
+        else if (k === 'bitrate') this.progress.kbps = parseFloat(v) || 0
       }
     })
     this.proc.stderr!.on('data', (d: Buffer) => {
-      for (const line of d.toString().split('\n')) if (line.trim()) this.errors.push(line.trim())
+      for (const raw of d.toString().split('\n')) {
+        const line = redact(raw.trim(), this.secrets)
+        if (!line) continue
+        this.errors.push(line)
+        // The tee output keeps going when one platform drops; we would rather reconnect it.
+        if (opts.stopOnTargetFailure && /Slave muxer #\d+ failed|All tee outputs failed/i.test(line)) {
+          this.fail(plainError(this.errors))
+        }
+      }
       this.errors = this.errors.slice(-20)
     })
     this.proc.stdin!.on('error', () => {
@@ -151,24 +198,52 @@ export class FfmpegOutput {
     })
     this.ended = new Promise((resolve) => {
       this.proc.on('exit', (code) => {
+        clearInterval(this.watchdog)
         resolve()
-        onExit(this.stopping || code === 0 ? null : plainError(this.errors))
+        if (this.failure) onExit(this.failure)
+        else onExit(this.stopping || code === 0 ? null : plainError(this.errors))
       })
       this.proc.on('error', (e) => {
+        clearInterval(this.watchdog)
         resolve()
         onExit(`Could not start ffmpeg: ${e.message}`)
       })
     })
   }
 
+  /** ffmpeg's last lines, keys hidden. */
+  get lastLines(): string[] {
+    return [...this.errors]
+  }
+
+  /** Bytes from the page waiting for ffmpeg: grows when the encoder can't keep up. */
+  get backlog(): number {
+    return this.proc.stdin?.writableLength ?? 0
+  }
+
   write(chunk: Buffer) {
-    if (!this.stopping && this.proc.stdin?.writable) this.proc.stdin.write(chunk)
+    if (this.stopping || !this.proc.stdin?.writable) return
+    // Over ~20 seconds of video waiting means the encoder fell behind for good: start over rather than pile up memory.
+    if (this.proc.stdin.writableLength > MAX_BACKLOG_BYTES) {
+      this.fail('The video encoder fell behind (the PC or graphics card is too busy).')
+      return
+    }
+    this.proc.stdin.write(chunk)
+  }
+
+  /** Give up on this run with a reason (the exit handler reports it). */
+  private fail(reason: string) {
+    if (this.stopping || this.failure) return
+    this.failure = reason
+    clearInterval(this.watchdog)
+    this.proc.kill('SIGKILL')
   }
 
   /** Finish cleanly: close the input so ffmpeg writes the end of the file, then wait. */
   async stop() {
     if (this.stopping) return this.ended
     this.stopping = true
+    clearInterval(this.watchdog)
     this.proc.stdin?.end()
     const timer = setTimeout(() => this.proc.kill('SIGKILL'), 8000)
     await this.ended
@@ -182,8 +257,8 @@ export function plainError(lines: string[]): string {
   if (/Connection refused|Network is unreachable|No route to host|Name or service not known|getaddrinfo/i.test(text)) {
     return "The stream stopped: couldn't reach the platform. Check the internet connection and the server address."
   }
-  if (/Input\/output error|Broken pipe|Connection reset|end of file/i.test(text)) {
-    return 'The stream stopped: the platform closed the connection. Check the stream key, or start a new live event.'
+  if (/Input\/output error|Broken pipe|Connection reset|end of file|Slave muxer #\d+ failed/i.test(text)) {
+    return 'The platform closed the connection.'
   }
   if (/No such file or directory|Permission denied/i.test(text)) {
     return "Couldn't write the recording. Check the recordings folder in Settings."

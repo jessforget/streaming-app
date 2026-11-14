@@ -52,6 +52,8 @@ export interface Engine {
   report?(r: { fps: number; audioLevels: Record<string, number> }): void
   /** Set by the controller: called when a stream or recording stops by itself, with a plain-words reason. */
   onOutputStopped?: (kind: 'stream' | 'record', reason: string) => void
+  /** Set by the controller: a message for the people running the show (for example, reconnecting). */
+  onNotice?: (message: string) => void
 }
 
 /** Stream keys. Kept out of AppState so they are never sent to devices. */

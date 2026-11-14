@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { QUALITY_PRESETS } from '../src/shared/presets'
 import type { StreamTarget } from '../src/core/ports'
-import { FfmpegOutput, findFfmpeg, ingestAddress, plainError, recordArgs, streamArgs } from '../src/server/ffmpeg'
+import { EventEmitter } from 'node:events'
+import { BrowserEngine, MEDIA_RECONNECT_CODE } from '../src/server/browserEngine'
+import { FfmpegOutput, findFfmpeg, ingestAddress, plainError, recordArgs, redact, streamArgs } from '../src/server/ffmpeg'
 
 const preset = QUALITY_PRESETS.low
 const target = (over: Partial<StreamTarget>): StreamTarget => ({
@@ -25,7 +27,7 @@ describe('ffmpeg arguments', () => {
   it('encodes once and sends to every platform, with a keyframe every 2 seconds', () => {
     const args = streamArgs([target({}), target({ platform: 'facebook', url: 'rtmps://fb/rtmp' })], preset, 'libx264')
     expect(args).toContain('tee')
-    expect(args.at(-1)).toBe('[f=flv:onfail=ignore]rtmp://a.rtmp.youtube.com/live2/abcd-1234|[f=flv:onfail=ignore]rtmps://fb/rtmp/abcd-1234')
+    expect(args.at(-1)).toBe('[f=flv:flvflags=no_duration_filesize:onfail=ignore]rtmp://a.rtmp.youtube.com/live2/abcd-1234|[f=flv:flvflags=no_duration_filesize:onfail=ignore]rtmps://fb/rtmp/abcd-1234')
     expect(args[args.indexOf('-g') + 1]).toBe(String(preset.fps * 2))
     expect(args.filter((a) => a === '-c:v')).toHaveLength(1)
   })
@@ -51,7 +53,11 @@ describe('ffmpeg arguments', () => {
 
   it('explains failures in plain words', () => {
     expect(plainError(['rtmp://x: Connection refused'])).toMatch(/couldn't reach the platform/)
-    expect(plainError(['av_interleaved_write_frame(): Broken pipe'])).toMatch(/stream key/)
+    expect(plainError(['av_interleaved_write_frame(): Broken pipe'])).toMatch(/closed the connection/)
+  })
+
+  it('hides stream keys', () => {
+    expect(redact('rtmp://x/live2/abcd-1234: Input/output error', ['abcd-1234'])).toBe('rtmp://x/live2/****: Input/output error')
   })
 })
 
@@ -100,4 +106,32 @@ describe.skipIf(!ffmpeg)('ffmpeg for real', () => {
     expect(probe(join(dir, 'wide.flv'))).toMatch(new RegExp(`${preset.width}x${preset.height}`))
     expect(probe(join(dir, 'tall.flv'))).toMatch(/720x1280/)
   }, 60_000)
+
+  it('asks the main window to reconnect when the platform drops, and hides the key', async () => {
+    const engine = new BrowserEngine(ffmpeg!, 'libx264')
+    engine.setStudio(true)
+    const notices: string[] = []
+    const logs: string[] = []
+    engine.onNotice = (m) => notices.push(m)
+    engine.onLog = (l) => logs.push(l)
+    engine.onOutputStopped = () => notices.push('stopped')
+    // Nothing listens on port 9, so the "platform" refuses at once.
+    await engine.startStream([target({ url: 'rtmp://127.0.0.1:9/live2', key: 'secret-key-42' })], preset)
+    const socket = Object.assign(new EventEmitter(), {
+      closed: null as null | { code?: number; reason?: string },
+      close(code?: number, reason?: string) {
+        this.closed = { code, reason }
+      }
+    })
+    engine.handleMedia(socket as never, 'stream', 'vp8')
+    const data = webm()
+    for (let i = 0; i < data.length; i += 16_384) socket.emit('message', data.subarray(i, i + 16_384))
+    for (let i = 0; i < 100 && !socket.closed; i++) await new Promise((r) => setTimeout(r, 100))
+    expect(socket.closed?.code).toBe(MEDIA_RECONNECT_CODE)
+    expect(Number(socket.closed?.reason)).toBeGreaterThan(0)
+    expect(notices[0]).toMatch(/Reconnecting/)
+    expect(notices).not.toContain('stopped')
+    expect([...notices, ...logs].join('\n')).not.toContain('secret-key-42')
+    await engine.stopStream()
+  }, 30_000)
 })
