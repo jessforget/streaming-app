@@ -37,6 +37,16 @@ export const PHONE_PAGE = `<!doctype html>
   .tip { font-size:13px; color:var(--muted); margin:0; }
   .check { flex-direction:row; align-items:center; gap:10px; color:var(--fg); }
   .check input { width:22px; height:22px; }
+  #land { display:none; }
+  /* Phone turned sideways: picture on the left, controls on the right. */
+  @media (orientation: landscape) and (max-height: 600px) {
+    main { max-width:none; height:100vh; height:100dvh; display:grid; grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr); grid-template-rows: auto 1fr; gap:8px 14px; padding:8px calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)); }
+    h1 { display:none; }
+    .preview { grid-column:1; grid-row:1 / span 2; align-self:center; max-height:calc(100dvh - 16px); }
+    .controls { grid-column:2; grid-row:1 / span 2; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-bottom:8px; }
+    button { padding:12px; }
+    input, select { padding:9px; }
+  }
 </style>
 </head>
 <body>
@@ -47,6 +57,7 @@ export const PHONE_PAGE = `<!doctype html>
     <canvas id="out" width="1280" height="720"></canvas>
     <span id="badge" class="badge">Not started</span>
   </div>
+  <div class="controls">
   <div class="status" id="status">Name this camera, then press Start.</div>
   <label>Camera name (shows in the app)
     <input id="name" maxlength="40" autocomplete="off">
@@ -68,8 +79,10 @@ export const PHONE_PAGE = `<!doctype html>
   <label class="check"><input type="checkbox" id="mic" checked> Send the phone's microphone too</label>
   <label class="check"><input type="checkbox" id="flip"> Picture upside down? Turn it over</label>
   <button id="start">Start camera</button>
+  <button id="land" class="secondary">Full screen, sideways</button>
   <p class="tip">Hold the phone sideways for a full 16:9 picture (1920 × 1080 at 1080p). It turns the right way up by itself, even with auto-rotate off. Held upright, the picture gets black bars at the sides.</p>
-  <p class="tip">Keep this page open and the phone unlocked while you're live. Plug the phone into power for long shows.</p>
+  <p class="tip" id="rotTip">Keep this page open and the phone unlocked while you're live. Plug the phone into power for long shows.</p>
+  </div>
 </main>
 <script>
 (function () {
@@ -342,6 +355,24 @@ export const PHONE_PAGE = `<!doctype html>
   }
 
   $('start').addEventListener('click', function () { if (running) stop(); else start(); });
+
+  // Android: full screen locked sideways, so the page turns even with auto-rotate off.
+  // iPhones can't lock a web page sideways: turning off Portrait Orientation Lock lets it turn.
+  var canLock = !isIphone && screen.orientation && typeof screen.orientation.lock === 'function' && document.documentElement.requestFullscreen;
+  if (canLock) $('land').style.display = 'block';
+  else if (isIphone) $('rotTip').textContent += ' To turn this page sideways too, turn off Portrait Orientation Lock in Control Centre.';
+  $('land').addEventListener('click', function () {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(function () {});
+      return;
+    }
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+      .then(function () { return screen.orientation.lock('landscape'); })
+      .catch(function () { status('This phone did not allow turning the page. Turn on auto-rotate instead.', true); });
+  });
+  document.addEventListener('fullscreenchange', function () {
+    $('land').textContent = document.fullscreenElement ? 'Leave full screen' : 'Full screen, sideways';
+  });
 
   // Changing the camera, quality or microphone while running: open it again and reconnect.
   ['facing', 'quality', 'mic'].forEach(function (k) {
