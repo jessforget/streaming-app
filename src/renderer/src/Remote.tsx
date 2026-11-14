@@ -50,7 +50,7 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
                 >
                   {s.name}
                   {live && <small>On air</small>}
-                  {next && <small>Next</small>}
+                  {next && <small>Preview</small>}
                 </button>
               )
             })}
@@ -60,7 +60,7 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
             disabled={!preview || preview.id === state.programSceneId}
             onClick={() => run('scene.goLive')}
           >
-            Go Live Scene{preview ? `: ${preview.name}` : ''}
+            Transition{preview ? `: ${preview.name}` : ''}
           </button>
           {preview && preview.layers.length > 0 && (
             <>

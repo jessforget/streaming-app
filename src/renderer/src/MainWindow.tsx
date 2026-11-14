@@ -133,34 +133,38 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
   const onCount = state.stream.destinations.filter((d) => d.enabled).length
   const same = preview.id === program.id
   return (
-    <div className="monitors">
-      <section className="monitor program" aria-label="Live">
-        <div className="monitor-head">
-          <span className="badge live">{state.stream.live ? 'ON AIR' : 'LIVE PICTURE'}</span>
-          <strong>{program.name}</strong>
-          <span className="muted small push">
-            {state.stream.live ? `Live ${liveFor} on ${onCount} platform${onCount === 1 ? '' : 's'}` : 'Not streaming'}
-          </span>
-        </div>
-        {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
-      </section>
-      <section className="monitor next" aria-label="Next">
-        <div className="monitor-head">
-          <span className="badge next">NEXT</span>
-          <strong>{preview.name}</strong>
-        </div>
-        {studio ? <LiveCanvas canvas={studio.compositor.preview} next /> : <ScenePicture scene={preview} state={state} next />}
-        <div className="segmented wide" role="group" aria-label="Transition">
+    <div className="monitors-wrap">
+      <div className="monitors">
+        <section className="monitor preview" aria-label="Preview">
+          <div className="monitor-head">
+            <span className="badge next">PREVIEW</span>
+            <strong>{preview.name}</strong>
+          </div>
+          {studio ? <LiveCanvas canvas={studio.compositor.preview} next /> : <ScenePicture scene={preview} state={state} next />}
+        </section>
+        <section className="monitor program" aria-label="Live">
+          <div className="monitor-head">
+            <span className="badge live">{state.stream.live ? 'ON AIR' : 'LIVE'}</span>
+            <strong>{program.name}</strong>
+            <span className="muted small push">
+              {state.stream.live ? `Live ${liveFor} on ${onCount} platform${onCount === 1 ? '' : 's'}` : 'Not streaming'}
+            </span>
+          </div>
+          {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
+        </section>
+      </div>
+      <div className="transition-bar">
+        <div className="segmented wide" role="group" aria-label="Transition type">
           {(['cut', 'fade'] as const).map((k) => (
             <button key={k} className={state.transition.kind === k ? 'on' : ''} aria-pressed={state.transition.kind === k} onClick={() => run('transition.set', { kind: k })}>
               {k === 'cut' ? 'Cut' : `Fade ${state.transition.durationMs / 1000} s`}
             </button>
           ))}
         </div>
-        <button className="take" onClick={() => run('scene.goLive')} disabled={same}>
-          {same ? 'Already on air' : `Take ${preview.name} to air`}
+        <button className="take" onClick={() => run('scene.goLive')} disabled={same} title={same ? 'Preview and Live show the same scene' : `Put ${preview.name} on air`}>
+          Transition
         </button>
-      </section>
+      </div>
     </div>
   )
 }
@@ -233,7 +237,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
       <div className="section-head">
         <h2>Scenes</h2>
         <span className="muted small">
-          Click to put in Next, double-click to take it to air, drag to change the order. Cameras are switched on the ATEM.
+          Click to put in Preview, double-click to put it on air, drag to change the order. Cameras are switched on the ATEM.
         </span>
       </div>
       <div className="scene-grid">
@@ -255,7 +259,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
               <span className="scene-name">
                 <span>{s.name}</span>
                 {live && <em className="tag live">ON AIR</em>}
-                {next && <em className="tag next">NEXT</em>}
+                {next && <em className="tag next">PREVIEW</em>}
               </span>
             </button>
           )

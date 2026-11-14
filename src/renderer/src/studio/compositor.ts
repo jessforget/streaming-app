@@ -55,8 +55,9 @@ export class Compositor {
       this.program.width = w
       this.program.height = h
     }
-    this.preview.width = 640
-    this.preview.height = Math.round((640 * h) / w)
+    // Preview is shown as big as Live, so it gets a sharper picture (still drawn every other frame).
+    this.preview.width = 960
+    this.preview.height = Math.round((960 * h) / w)
   }
 
   update(state: AppState) {

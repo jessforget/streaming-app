@@ -175,10 +175,14 @@ button.end-live { background: var(--live); border-color: var(--live); color: var
 .stage { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
 .side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 
-.monitors { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.monitors-wrap { display: flex; flex-direction: column; gap: 12px; }
+/* Preview and Live side by side, the same size (like OBS's Studio Mode). */
+.monitors { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .monitor { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.monitor.program { flex: 2 1 420px; }
-.monitor.next { flex: 1 1 260px; }
+.transition-bar { display: flex; gap: 12px; align-items: stretch; justify-content: center; }
+.transition-bar .segmented { flex: 0 1 280px; align-items: stretch; }
+.transition-bar .segmented button { place-items: center; }
+.transition-bar .take { flex: 0 1 320px; }
 .monitor-head { display: flex; align-items: center; gap: 10px; min-height: 26px; }
 .monitor-head strong { font-family: var(--display); font-size: 18px; }
 .push { margin-left: auto; }
