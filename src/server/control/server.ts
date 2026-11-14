@@ -100,6 +100,7 @@ const MIME: Record<string, string> = {
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2'
 }
 
@@ -394,7 +395,17 @@ export class ControlServer {
     const dir = this.opts.staticDir
     if (!dir) return void res.writeHead(404).end('Pages not built. Run npm run build.')
     const file =
-      path === '/' ? 'index.html' : path === '/remote' ? 'remote.html' : path === '/demo' ? 'demo.html' : path.startsWith('/assets/') ? path.slice(1) : null
+      path === '/'
+        ? 'index.html'
+        : path === '/remote'
+          ? 'remote.html'
+          : path === '/demo'
+            ? 'demo.html'
+            : path === '/app.webmanifest' || path === '/remote.webmanifest'
+              ? path.slice(1)
+              : path.startsWith('/assets/') || path.startsWith('/icons/')
+                ? path.slice(1)
+                : null
     if (!file) return void res.writeHead(404).end('Not found')
     const full = normalize(join(dir, file))
     if (!full.startsWith(normalize(dir) + sep)) return void res.writeHead(403).end()

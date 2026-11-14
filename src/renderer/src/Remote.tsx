@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Bridge } from './bridge/bridge'
 import { WsBridge } from './bridge/wsBridge'
+import { InstallButton } from './install'
 import { HealthPill, Notice } from './parts'
 import { useApp, useElapsed } from './useApp'
 
@@ -17,6 +18,7 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
         {state.stream.live ? <span className="pill live-pill">LIVE {liveFor}</span> : <span className="pill">Off air</span>}
         <HealthPill stats={stats} />
         <div className="remote-top-actions">
+          <InstallButton allowFullscreen />
           <button
             className={state.recording.active ? 'danger' : ''}
             onClick={() => run(state.recording.active ? 'record.stop' : 'record.start')}

@@ -441,3 +441,16 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 .scene-picker legend { padding: 0 4px; font-size: 13px; color: var(--muted); }
 .scene-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 12px; padding-left: 22px; }
 label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+
+/* Install app */
+.install-wrap { position: relative; display: inline-flex; }
+.install-tip { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: 260px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; line-height: 1.4; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+/* Installed as an app: keep clear of the notch and the home bar. */
+@media (display-mode: standalone) {
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+}
+/* Tablet remote held upright: one column, scenes first. */
+@media (orientation: portrait) and (max-width: 1024px) {
+  .remote-grid { grid-template-columns: 1fr; }
+  .remote-scenes { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+}

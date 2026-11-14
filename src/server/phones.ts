@@ -36,6 +36,8 @@ export interface PhoneOffer {
 
 export interface PhoneHubOptions {
   dataDir: string
+  /** The built interface, for the app icons. */
+  staticDir?: string
   port?: number
   log?: (line: string) => void
 }
@@ -171,6 +173,39 @@ export class PhoneHub {
       if (url.pathname === '/') return void res.writeHead(302, { Location: '/cam' }).end()
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Referrer-Policy': 'no-referrer' })
       return void res.end(PHONE_PAGE)
+    }
+    // "Add to Home Screen": the camera page opens like an app, with no address bar.
+    if (req.method === 'GET' && url.pathname === '/cam.webmanifest') {
+      const start = url.searchParams.get('t') === this.token ? `/cam#${this.token}` : '/cam'
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json' })
+      return void res.end(
+        JSON.stringify({
+          id: '/cam',
+          name: 'Phone camera',
+          short_name: 'Camera',
+          start_url: start,
+          scope: '/cam',
+          display: 'fullscreen',
+          orientation: 'any',
+          background_color: '#0e1014',
+          theme_color: '#0e1014',
+          icons: [
+            { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          ]
+        })
+      )
+    }
+    const icon = /^\/icons\/([a-z0-9-]+\.png)$/.exec(url.pathname)
+    if (req.method === 'GET' && icon && this.opts.staticDir) {
+      try {
+        const body = readFileSync(join(this.opts.staticDir, 'icons', icon[1]))
+        res.writeHead(200, { 'Content-Type': 'image/png' })
+        return void res.end(body)
+      } catch {
+        return void res.writeHead(404).end()
+      }
     }
     if (req.method === 'POST' && url.pathname === '/cam/bye') {
       const body = await readBody(req)

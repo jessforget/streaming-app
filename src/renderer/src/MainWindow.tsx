@@ -3,6 +3,7 @@ import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
+import { InstallButton } from './install'
 import { HealthPill, Notice, ScenePicture } from './parts'
 import { Settings, type SettingsTab } from './Settings'
 import type { Studio } from './studio/studio'
@@ -103,6 +104,7 @@ function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; o
         </button>
       </div>
       <div className="topbar-actions">
+        <InstallButton />
         <button className={`rec ${state.recording.active ? 'danger' : ''}`} onClick={() => run(state.recording.active ? 'record.stop' : 'record.start')}>
           <span className="rec-dot" aria-hidden="true" />
           {state.recording.active ? `Stop rec ${recFor}` : 'Record'}

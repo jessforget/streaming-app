@@ -77,7 +77,7 @@ async function main() {
   await controller.start({ devicePollMs: 0 })
 
   // Phones as cameras: their own HTTPS address, because phones only open the camera on HTTPS pages.
-  const phones = new PhoneHub({ dataDir: dir, port: port + 1, log })
+  const phones = new PhoneHub({ dataDir: dir, port: port + 1, log, staticDir: join(__dirname, '../../out/web') })
   let phonesOn = true
   try {
     await phones.start()

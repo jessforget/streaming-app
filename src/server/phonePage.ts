@@ -11,6 +11,11 @@ export const PHONE_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1014">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Camera">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <title>Phone camera</title>
 <style>
   :root { color-scheme: dark; --bg:#0e1014; --panel:#171a21; --line:#2c323d; --fg:#e8eaee; --muted:#9ba4b4; --accent:#4c8dff; --live:#f2555a; --good:#3fb37f; --warn:#e7b13a; }
@@ -80,6 +85,7 @@ export const PHONE_PAGE = `<!doctype html>
   <label class="check"><input type="checkbox" id="flip"> Picture upside down? Turn it over</label>
   <button id="start">Start camera</button>
   <button id="land" class="secondary">Full screen, sideways</button>
+  <button id="install" class="secondary" style="display:none">Install as an app</button>
   <p class="tip">Hold the phone sideways for a full 16:9 picture (1920 × 1080 at 1080p). It turns the right way up by itself, even with auto-rotate off. Held upright, the picture gets black bars at the sides.</p>
   <p class="tip" id="rotTip">Keep this page open and the phone unlocked while you're live. Plug the phone into power for long shows.</p>
   </div>
@@ -94,6 +100,19 @@ export const PHONE_PAGE = `<!doctype html>
     set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   };
   if (token) store.set('cam-token', token); else token = store.get('cam-token') || '';
+  // Its own manifest, so "Add to Home Screen" opens straight onto this camera, with no address bar.
+  if (token) {
+    var man = document.createElement('link');
+    man.rel = 'manifest';
+    man.href = '/cam.webmanifest?t=' + encodeURIComponent(token);
+    document.head.appendChild(man);
+  }
+  var installEvent = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    installEvent = e;
+    $('install').style.display = 'block';
+  });
   var id = store.get('cam-id');
   if (!id) {
     var a = new Uint8Array(8); crypto.getRandomValues(a);
@@ -361,6 +380,18 @@ export const PHONE_PAGE = `<!doctype html>
   var canLock = !isIphone && screen.orientation && typeof screen.orientation.lock === 'function' && document.documentElement.requestFullscreen;
   if (canLock) $('land').style.display = 'block';
   else if (isIphone) $('rotTip').textContent += ' To turn this page sideways too, turn off Portrait Orientation Lock in Control Centre.';
+  $('install').addEventListener('click', function () {
+    if (!installEvent) return;
+    installEvent.prompt();
+    installEvent = null;
+    $('install').style.display = 'none';
+  });
+  var asApp = window.matchMedia('(display-mode: fullscreen)').matches || window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (!asApp) {
+    $('rotTip').textContent += isIphone
+      ? ' For a clean full-screen camera with no address bar: tap Share, then Add to Home Screen, and open it from the new icon.'
+      : ' For a clean full-screen camera: Chrome menu (⋮), Add to Home screen, then open it from the new icon. Or use Full screen, sideways.';
+  }
   $('land').addEventListener('click', function () {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(function () {});
