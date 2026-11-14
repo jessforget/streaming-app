@@ -193,7 +193,7 @@ export class BrowserEngine implements Engine {
 
   async startStream(targets: StreamTarget[], preset: QualityPreset) {
     this.onLog?.(`stream to ${targets.map((t) => t.url).join(', ')} with ${this.encoder}, ${preset.width}x${preset.height} ${preset.fps}fps ${preset.videoKbps}kbps`)
-    this.begin('stream', () => streamArgs(targets, preset, this.encoder), undefined, targets.map((t) => t.key))
+    this.begin('stream', (codec) => streamArgs(targets, preset, this.encoder, codec), undefined, targets.map((t) => t.key))
   }
   async stopStream() {
     await this.finish('stream')

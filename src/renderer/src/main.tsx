@@ -19,6 +19,7 @@ function App() {
   const [status, setStatus] = useState<{ s: Status; detail?: string }>({ s: 'connecting' })
   const [studio, setStudio] = useState<Studio | null>(null)
   const studioRef = useRef<Studio | null>(null)
+  const creating = useRef(false)
   const [elsewhere, setElsewhere] = useState(false)
 
   useEffect(() => {
@@ -26,13 +27,18 @@ function App() {
       setStatus({ s, detail })
       if (s !== 'connected') return
       setElsewhere(!bridge.studio)
-      if (bridge.studio && !studioRef.current) {
-        const st = new Studio(bridge)
-        studioRef.current = st
-        // For checks from the browser console: http://localhost:7420/#debug
-        if (location.hash === '#debug') (window as unknown as { studio: Studio }).studio = st
-        setStudio(st)
-        void st.start()
+      if (bridge.studio && !studioRef.current && !creating.current) {
+        // Finding the graphics card takes a moment, so the studio is made asynchronously.
+        creating.current = true
+        void Studio.create(bridge).then((st) => {
+          creating.current = false
+          if (!bridge.studio || studioRef.current) return st.stop()
+          studioRef.current = st
+          // For checks from the browser console: http://localhost:7420/#debug
+          if (location.hash === '#debug') (window as unknown as { studio: Studio }).studio = st
+          setStudio(st)
+          void st.start()
+        })
       } else if (!bridge.studio && studioRef.current) {
         studioRef.current.stop()
         studioRef.current = null

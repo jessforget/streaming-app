@@ -1,0 +1,241 @@
+<title>Graphics Card Speed Test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one control-room column; live preview on top, readouts below, verdict last. */
+:root {
+  --bg: #eef1f4; --panel: #ffffff; --fg: #15191e; --muted: #5a6470; --line: #d5dbe2;
+  --accent: #d1342f; --good: #1f8a4c; --warn: #b77700; --bad: #c0362c;
+  --display: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1216; --panel: #181d23; --fg: #e8ecf0; --muted: #93a0ad; --line: #2a323b;
+  --accent: #ff5a4f; --good: #3fc47a; --warn: #f0b23a; --bad: #ff6a5e; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1216; --panel: #181d23; --fg: #e8ecf0; --muted: #93a0ad; --line: #2a323b;
+  --accent: #ff5a4f; --good: #3fc47a; --warn: #f0b23a; --bad: #ff6a5e; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 40px; }
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 20px; }
+h1 { font-family: var(--display); font-size: 28px; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 65ch; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button { font: 600 15px var(--body); padding: 10px 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.screen { position: relative; background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9; max-width: 100%; }
+.screen canvas { width: 100%; height: 100%; display: block; }
+.tally { position: absolute; top: 10px; left: 10px; font: 600 12px var(--mono); letter-spacing: .08em; padding: 3px 8px; border-radius: 3px; background: #333; color: #fff; }
+.tally.on { background: #d1342f; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.stat { background: var(--panel); padding: 12px 14px; }
+.stat b { display: block; font: 600 22px var(--mono); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.verdict { border: 1px solid var(--line); border-left: 6px solid var(--muted); background: var(--panel); border-radius: 6px; padding: 14px 16px; display: grid; gap: 6px; }
+.verdict.good { border-left-color: var(--good); } .verdict.warn { border-left-color: var(--warn); } .verdict.bad { border-left-color: var(--bad); }
+.verdict h2 { font: 700 18px var(--display); margin: 0; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; font: 12px/1.5 var(--mono); overflow-x: auto; margin: 0; white-space: pre-wrap; }
+label { color: var(--muted); font-size: 14px; }
+select { font: 15px var(--body); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+</style>
+
+<main>
+  <h1>Graphics card speed test</h1>
+  <p>This draws a busy 1080p scene on the graphics card and compresses it with the card's video encoder, the same way the new version of the streaming app would. It runs for 20 seconds. Open it in Chrome or Edge on the streaming laptop, plug the laptop in, and close Premiere first.</p>
+
+  <div class="row">
+    <label for="mode">Test</label>
+    <select id="mode">
+      <option value="60">1080p, 60 fps, 6000 kbps</option>
+      <option value="30">1080p, 30 fps, 4500 kbps</option>
+      <option value="60-off">1080p60, off-screen copy (check 2)</option>
+      <option value="60-enc">1080p60, encoder only (check 3)</option>
+    </select>
+    <button id="go" class="primary">Start test</button>
+    <button id="copy" disabled>Copy results</button>
+  </div>
+
+  <div class="screen"><canvas id="view" width="1920" height="1080"></canvas><div id="tally" class="tally">READY</div></div>
+
+  <div class="stats">
+    <div class="stat"><b id="sDrawn">–</b><span>Frames drawn / sec</span></div>
+    <div class="stat"><b id="sEnc">–</b><span>Frames encoded / sec</span></div>
+    <div class="stat"><b id="sLag">–</b><span>Encoder wait (ms)</span></div>
+    <div class="stat"><b id="sKbps">–</b><span>Video kbps</span></div>
+    <div class="stat"><b id="sTime">–</b><span>Seconds left</span></div>
+  </div>
+
+  <div id="verdict" class="verdict"><h2>Not run yet</h2><p>Press Start test. The result appears here, then press Copy results and paste them in the chat.</p></div>
+  <pre id="log">Checking this browser…</pre>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $('log').textContent += '\n' + s; };
+const W = 1920, H = 1080, RUN_SECONDS = 20;
+const info = { browser: navigator.userAgent };
+let running = false;
+
+async function checkSupport() {
+  $('log').textContent = '';
+  log('WebGPU: ' + (navigator.gpu ? 'yes' : 'NO'));
+  if (navigator.gpu) {
+    try {
+      const a = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      const ai = a && (a.info || (a.requestAdapterInfo ? await a.requestAdapterInfo() : {}));
+      info.gpu = ai ? [ai.vendor, ai.architecture, ai.device, ai.description].filter(Boolean).join(' ') : 'none';
+      log('Graphics card: ' + (info.gpu || 'unknown (browser hides the name)'));
+    } catch (e) { log('Graphics card: error ' + e.message); }
+  }
+  log('WebCodecs: ' + ('VideoEncoder' in window ? 'yes' : 'NO'));
+  if ('VideoEncoder' in window) {
+    for (const fps of [60, 30]) {
+      const cfg = { codec: 'avc1.640032', width: W, height: H, framerate: fps, bitrate: 6e6, latencyMode: 'realtime', avc: { format: 'annexb' } };
+      const hw = await VideoEncoder.isConfigSupported({ ...cfg, hardwareAcceleration: 'prefer-hardware' }).catch(() => ({ supported: false }));
+      const sw = await VideoEncoder.isConfigSupported({ ...cfg, hardwareAcceleration: 'prefer-software' }).catch(() => ({ supported: false }));
+      info['hw' + fps] = hw.supported; info['sw' + fps] = sw.supported;
+      log(`H.264 1080p${fps} on the graphics card: ${hw.supported ? 'yes' : 'NO'}   (on the processor: ${sw.supported ? 'yes' : 'no'})`);
+    }
+  }
+}
+
+const SHADER = `
+struct U { rect: vec4f, t: f32, kind: f32, pad: vec2f };
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(2) var smp: sampler;
+struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> O {
+  var c = array<vec2f,6>(vec2f(0,0),vec2f(1,0),vec2f(0,1),vec2f(0,1),vec2f(1,0),vec2f(1,1));
+  let q = c[i]; let xy = u.rect.xy + q * u.rect.zw;
+  var o: O; o.p = vec4f(xy.x * 2.0 - 1.0, 1.0 - xy.y * 2.0, 0.0, 1.0); o.uv = q; return o;
+}
+@fragment fn fs(i: O) -> @location(0) vec4f {
+  if (u.kind < 0.5) { // "camera": a moving, detailed picture (grain texture + motion) so the encoder works hard
+    let uv = i.uv + vec2f(u.t * 0.05, sin(u.t) * 0.03);
+    let grain = textureSample(tex, smp, uv * 7.0 + vec2f(u.t * 3.1, u.t * 1.7)).rgb;
+    let sky = mix(vec3f(0.11, 0.23, 0.33), vec3f(0.42, 0.56, 0.31), i.uv.y);
+    let sun = 1.0 - smoothstep(0.08, 0.1, distance(i.uv, vec2f(fract(u.t * 0.15), 0.5 + 0.2 * sin(u.t * 2.0))));
+    let stripes = 0.5 + 0.5 * sin((i.uv.x + i.uv.y) * 80.0 + u.t * 6.0);
+    return vec4f(mix(sky + 0.15 * stripes, vec3f(0.95, 0.82, 0.42), sun) * 0.8 + grain * 0.25, 1.0);
+  }
+  // graphics: soft-edged lower third with transparency
+  let a = smoothstep(0.0, 0.08, i.uv.x) * smoothstep(1.0, 0.92, i.uv.x) * 0.85;
+  return vec4f(vec3f(0.82, 0.2, 0.18) * (0.7 + 0.3 * i.uv.y), a);
+}`;
+
+async function run() {
+  if (running) return;
+  if (!navigator.gpu || !('VideoEncoder' in window)) { setVerdict('bad', 'This browser can\'t run the test', 'It needs WebGPU and WebCodecs. Use the latest Chrome or Edge.'); return; }
+  running = true; $('go').disabled = true; $('copy').disabled = true;
+  const mode = $('mode').value, fps = parseInt(mode, 10), kbps = fps === 60 ? 6000 : 4500;
+  const route = mode.endsWith('-off') ? 'offscreen' : mode.endsWith('-enc') ? 'encoder-only' : 'canvas';
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  const device = await adapter.requestDevice();
+  const off = route === 'offscreen' ? new OffscreenCanvas(W, H) : null;
+  const ctx = (off || $('view')).getContext('webgpu');
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format, alphaMode: 'opaque' });
+  const mod = device.createShaderModule({ code: SHADER });
+  const pipe = device.createRenderPipeline({ layout: 'auto',
+    vertex: { module: mod, entryPoint: 'vs' },
+    fragment: { module: mod, entryPoint: 'fs', targets: [{ format, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } }] } });
+  const smp = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat', addressModeV: 'repeat' });
+  // Random grain texture (made once) that the "camera" layers move across, so every frame is full of detail.
+  const N = 256, noise = new Uint8Array(N * N * 4);
+  for (let i = 0; i < noise.length; i++) noise[i] = Math.random() * 255;
+  const tex = device.createTexture({ size: [N, N], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+  device.queue.writeTexture({ texture: tex }, noise, { bytesPerRow: N * 4 }, [N, N]);
+  const texs = [tex];
+  // Layers: full-screen camera, picture-in-picture camera, two graphics.
+  const layers = [
+    { rect: [0, 0, 1, 1], kind: 0, tex: 0 }, { rect: [0.66, 0.06, 0.3, 0.3], kind: 0, tex: 0 },
+    { rect: [0.05, 0.76, 0.6, 0.13], kind: 1, tex: 0 }, { rect: [0.05, 0.9, 0.35, 0.06], kind: 1, tex: 0 }];
+  const ubufs = layers.map(() => device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
+  const groups = layers.map((l, i) => device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: ubufs[i] } }, { binding: 1, resource: texs[l.tex].createView() }, { binding: 2, resource: smp }] }));
+
+  let encoded = 0, bytes = 0, drawn = 0, lagSum = 0, lagN = 0, errors = '';
+  const sentAt = new Map();
+  const enc = new VideoEncoder({
+    output: (chunk) => { encoded++; bytes += chunk.byteLength; const s = sentAt.get(chunk.timestamp); if (s) { lagSum += performance.now() - s; lagN++; sentAt.delete(chunk.timestamp); } },
+    error: (e) => { errors += e.message + ' '; } });
+  const hw = info['hw' + fps];
+  enc.configure({ codec: 'avc1.640032', width: W, height: H, framerate: fps, bitrate: kbps * 1000, bitrateMode: 'constant', latencyMode: 'realtime',
+    hardwareAcceleration: hw ? 'prefer-hardware' : 'no-preference', avc: { format: 'annexb' } });
+  const bases = []; let copyMs = 0, copies = 0;
+  log(`\nRoute: ${route}`);
+  log(`Running 1080p${fps} at ${kbps} kbps, encoder: ${hw ? 'graphics card' : 'browser default'}`);
+  $('tally').textContent = 'LIVE TEST'; $('tally').classList.add('on');
+
+  const t0 = performance.now(), frameMs = 1000 / fps, samples = [];
+  let next = t0, dropped = 0, sec = { d: 0, e: 0, b: 0, at: t0 };
+  await new Promise((done) => {
+    function frame(now) {
+      try { step(now) } catch (e) { errors += e.message + ' '; done() }
+    }
+    function step(now) {
+      const elapsed = (now - t0) / 1000;
+      if (elapsed >= RUN_SECONDS) return done();
+      if (now + 2 >= next) {
+        next += frameMs; if (now - next > frameMs * 2) next = now + frameMs; // fell behind: don't try to catch up
+        const t = elapsed;
+        layers.forEach((l, i) => device.queue.writeBuffer(ubufs[i], 0, new Float32Array([...l.rect, t, l.kind, 0, 0])));
+        const ce = device.createCommandEncoder();
+        const pass = ce.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+        pass.setPipeline(pipe);
+        groups.forEach((g) => { pass.setBindGroup(0, g); pass.draw(6); });
+        pass.end(); device.queue.submit([ce.finish()]);
+        drawn++;
+        if (enc.encodeQueueSize > 4) dropped++; // encoder can't keep up: skip like OBS does
+        else {
+          const ts = Math.round(drawn * 1e6 / fps);
+          const c0 = performance.now();
+          let vf;
+          if (route === 'offscreen') { const bmp = off.transferToImageBitmap(); vf = new VideoFrame(bmp, { timestamp: ts }); bmp.close(); }
+          else if (route === 'encoder-only') { if (bases.length < 8) bases.push(new VideoFrame($('view'), { timestamp: 0 })); vf = new VideoFrame(bases[drawn % bases.length], { timestamp: ts }); }
+          else vf = new VideoFrame($('view'), { timestamp: ts });
+          copyMs += performance.now() - c0; copies++;
+          sentAt.set(ts, performance.now());
+          enc.encode(vf, { keyFrame: drawn % (fps * 2) === 1 }); vf.close();
+        }
+      }
+      if (now - sec.at >= 1000) {
+        const k = 1000 / (now - sec.at), d = (drawn - sec.d) * k, e = (encoded - sec.e) * k, b = (bytes - sec.b) * 8 / 1000 * k;
+        if (elapsed > 3) samples.push({ d, e, b, lag: lagN ? lagSum / lagN : 0 });
+        $('sDrawn').textContent = d.toFixed(1); $('sEnc').textContent = e.toFixed(1); $('sKbps').textContent = Math.round(b);
+        $('sLag').textContent = lagN ? (lagSum / lagN).toFixed(1) : '–'; $('sTime').textContent = Math.max(0, Math.ceil(RUN_SECONDS - elapsed));
+        lagSum = 0; lagN = 0; sec = { d: drawn, e: encoded, b: bytes, at: now };
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+  await enc.flush().catch(() => {}); enc.close();
+  $('tally').textContent = 'DONE'; $('tally').classList.remove('on'); $('sTime').textContent = '0';
+
+  const avg = (k) => samples.reduce((s, x) => s + x[k], 0) / Math.max(1, samples.length);
+  const low = Math.min(...samples.map((s) => s.e));
+  bases.forEach((b) => b.close());
+  const r = { test: `1080p${fps} ${route}`, copyMsPerFrame: +(copyMs / Math.max(1, copies)).toFixed(2), drawnPerSec: +avg('d').toFixed(1), encodedPerSec: +avg('e').toFixed(1), worstSecond: +low.toFixed(1), encoderWaitMs: +avg('lag').toFixed(1), kbps: Math.round(avg('b')), skippedFrames: dropped, errors: errors || 'none', ...info };
+  log(JSON.stringify(r, null, 2));
+  window.__result = r;
+  const target = fps * 0.97;
+  if (!hw) setVerdict('warn', `The browser won't let the graphics card encode ${fps} fps`, `It encoded on the processor instead (about ${Math.round(r.encodedPerSec)} fps). Copy the results into the chat; the desktop version can switch the card's encoder on itself.`);
+  else if (r.encodedPerSec >= target && low >= fps * 0.9 && !errors) setVerdict('good', `Passed: steady ${fps} fps at 1080p`, 'The graphics card keeps up. Press Copy results and paste them in the chat.');
+  else if (r.encodedPerSec >= fps * 0.85 && !errors) setVerdict('warn', `Close: about ${Math.round(r.encodedPerSec)} of ${fps} fps`, 'Nearly there. Try again with the laptop plugged in and other apps closed, then copy the results into the chat.');
+  else setVerdict('bad', `Too slow: about ${Math.round(r.encodedPerSec)} of ${fps} fps`, 'Copy the results into the chat so Claude can look at what held it back.');
+  running = false; $('go').disabled = false; $('copy').disabled = false;
+}
+
+function setVerdict(kind, title, text) { const v = $('verdict'); v.className = 'verdict ' + kind; v.innerHTML = ''; const h = document.createElement('h2'); h.textContent = title; const p = document.createElement('p'); p.textContent = text; v.append(h, p); }
+
+$('go').addEventListener('click', () => run().catch((e) => { log('Error: ' + e.message); setVerdict('bad', 'The test stopped with an error', e.message); running = false; $('go').disabled = false; $('copy').disabled = false; }));
+$('copy').addEventListener('click', async () => {
+  const text = $('log').textContent;
+  try { await navigator.clipboard.writeText(text); $('copy').textContent = 'Copied'; }
+  catch { const range = document.createRange(); range.selectNodeContents($('log')); const s = getSelection(); s.removeAllRanges(); s.addRange(range); $('copy').textContent = 'Selected, press Ctrl+C'; }
+});
+checkSupport();
+</script>
