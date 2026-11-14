@@ -1,5 +1,5 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
 import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf } from '../../shared/state'
 import { deviceName } from './parts'
@@ -100,13 +100,13 @@ export function SceneTools({ state, run, scene }: { state: AppState; run: Run; s
 }
 
 /** The source list for one scene, like OBS's Sources panel. */
-export function SourceList({ state, run, scene, picker }: { state: AppState; run: Run; scene: Scene; picker?: ReactNode }) {
+export function SourceList({ state, run, scene }: { state: AppState; run: Run; scene: Scene }) {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   return (
     <div className="layers">
       <div className="panel-head">
-        {picker ?? <h2>Sources in {scene.name}</h2>}
+        <h2>Sources in {scene.name}</h2>
         {!adding && (
           <button className="small" onClick={() => setAdding(true)}>
             + Add
@@ -274,9 +274,7 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
       ...(kind === 'video' && { device: v.device }),
       ...(kind === 'text' && { text: v.text }),
       ...((kind === 'image' || kind === 'media' || kind === 'browser') && v.url && { url: v.url }),
-      placement: v.placement,
-      // A camera goes behind the titles and graphics already in the scene.
-      ...(kind === 'video' && { at: 'bottom' as const })
+      placement: v.placement
     })
     if (ok) onDone()
   }
