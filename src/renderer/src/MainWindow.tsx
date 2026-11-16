@@ -414,7 +414,7 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
   )
 }
 
-const LIBRARY_OPEN_KEY = 'scene-library-open'
+const LIBRARY_OPEN_KEY = 'scene-library-open-v2'
 
 function SceneStrip({ state, run }: { state: AppState; run: Run }) {
   const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
@@ -479,12 +479,14 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
             <SceneCardBody scene={dragged} state={state} {...tally(dragged)} />
           </div>
         )}
-        <SceneTools state={state} run={run} scene={preview} />
+        <SceneTools state={state} run={run} scene={preview} only="edit" />
       </section>
       <SceneLibrary
         state={state}
         run={run}
         scenes={stored}
+        inShow={inShow}
+        showGrid={grid}
         ref={library}
         dropping={!!dragged && !!drag?.toLibrary}
         dropBlocked={!!dragged && dragged.id === state.programSceneId}
@@ -518,9 +520,106 @@ function useRemembered(key: string, initial: boolean): [boolean, (v: boolean) =>
  * arrow remembers how you left it), so the main row stays short. Nothing in
  * here is deleted: a stored scene keeps all its sources.
  */
-function SceneLibrary(props: { state: AppState; run: Run; scenes: Scene[]; ref: RefObject<HTMLElement | null>; dropping: boolean; dropBlocked: boolean }) {
-  const { state, run, scenes, ref, dropping, dropBlocked } = props
-  const [open, setOpen] = useRemembered(LIBRARY_OPEN_KEY, false)
+/**
+ * Drag a scene from the Scene library up into "In this show". Drops at the
+ * card nearest the pointer; a short press is still a click.
+ */
+function useLibraryDrag(run: Run, inShow: Scene[], all: Scene[], showGrid: RefObject<HTMLElement | null>) {
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number; dx: number; dy: number; w: number; h: number; over: number | null } | null>(null)
+  const start = useRef<{ id: string; x: number; y: number; pointer: number; rect: DOMRect } | null>(null)
+  const moved = useRef(false)
+  const latest = useRef(drag)
+  latest.current = drag
+  // Where in the show row it would land, or null when not over the row.
+  const slotAt = (x: number, y: number) => {
+    const g = showGrid.current
+    if (!g) return null
+    const box = g.getBoundingClientRect()
+    if (x < box.left - 20 || x > box.right + 20 || y < box.top - 30 || y > box.bottom + 30) return null
+    let best = inShow.length
+    let bestD = Infinity
+    for (const card of g.querySelectorAll<HTMLElement>('[data-scene-index]')) {
+      const r = card.getBoundingClientRect()
+      const d = Math.hypot((x - (r.left + r.width / 2)) / r.width, (y - (r.top + r.height / 2)) / r.height)
+      if (d < bestD) {
+        bestD = d
+        // Left half of a card: in front of it; right half: after it.
+        best = Number(card.dataset.sceneIndex) + (x > r.left + r.width / 2 ? 1 : 0)
+      }
+    }
+    return best
+  }
+  const follow = (e: PointerEvent | ReactPointerEvent) => {
+    const s = start.current
+    if (!s || s.pointer !== e.pointerId) return
+    if (!moved.current) {
+      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 8) return
+      moved.current = true
+    }
+    setDrag({ id: s.id, x: e.clientX, y: e.clientY, dx: s.x - s.rect.left, dy: s.y - s.rect.top, w: s.rect.width, h: s.rect.height, over: slotAt(e.clientX, e.clientY) })
+  }
+  const finish = async () => {
+    const s = start.current
+    start.current = null
+    const d = latest.current
+    if (!s || !moved.current || !d) return
+    setDrag(null)
+    if (d.over === null) return
+    const target = inShow[d.over]
+    const ok = await run('scene.store', { sceneId: s.id, stored: false })
+    if (!ok) return
+    // Put it just before the card it was dropped on (the app keeps one list of all scenes).
+    const others = all.filter((x) => x.id !== s.id)
+    const index = target ? others.findIndex((x) => x.id === target.id) : others.length
+    await run('scene.move', { sceneId: s.id, index })
+  }
+  useEffect(() => {
+    const up = () => void finish()
+    const move = (e: PointerEvent) => follow(e)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointermove', move)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointermove', move)
+    }
+  })
+  const props = (id: string) => ({
+    onPointerDown: (e: ReactPointerEvent) => {
+      if (e.button !== 0) return
+      start.current = { id, x: e.clientX, y: e.clientY, pointer: e.pointerId, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() }
+      moved.current = false
+    },
+    onClickCapture: (e: ReactMouseEvent) => {
+      if (moved.current) {
+        e.stopPropagation()
+        e.preventDefault()
+        moved.current = false
+      }
+    }
+  })
+  return { drag, props }
+}
+
+function SceneLibrary(props: {
+  state: AppState
+  run: Run
+  scenes: Scene[]
+  inShow: Scene[]
+  showGrid: RefObject<HTMLElement | null>
+  ref: RefObject<HTMLElement | null>
+  dropping: boolean
+  dropBlocked: boolean
+}) {
+  const { state, run, scenes, inShow, showGrid, ref, dropping, dropBlocked } = props
+  // Open unless you tucked it away; the arrow remembers.
+  const [open, setOpen] = useRemembered(LIBRARY_OPEN_KEY, true)
+  const { drag, props: dragProps } = useLibraryDrag(run, inShow, state.scenes, showGrid)
+  const dragged = drag ? scenes.find((s) => s.id === drag.id) : undefined
+  useEffect(() => {
+    // Light up the show row while a library scene is over it.
+    showGrid.current?.classList.toggle('drop-here', !!dragged && drag?.over !== null)
+  }, [dragged, drag?.over, showGrid])
+  const preview = state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]
   const [find, setFind] = useState('')
   const q = find.trim().toLowerCase()
   const shown = scenes.filter((s) => s.name.toLowerCase().includes(q))
@@ -534,11 +633,12 @@ function SceneLibrary(props: { state: AppState; run: Run; scenes: Scene[]; ref: 
           <h2>Scene library</h2>
           <span className="count">{scenes.length}</span>
         </button>
+        <SceneTools state={state} run={run} scene={preview} only="add" />
         {dropping ? (
           <span className="small">{dropBlocked ? 'This scene is on air, so it stays in the show.' : 'Let go to put it away here.'}</span>
         ) : open ? (
           <>
-            <span className="muted small">Scenes you aren't using in this show. Nothing here is deleted.</span>
+            <span className="muted small">Drag a scene up into "In this show" to use it. Nothing here is deleted.</span>
             {scenes.length > 4 && (
               <input
                 id="scene-library-find"
@@ -562,9 +662,10 @@ function SceneLibrary(props: { state: AppState; run: Run; scenes: Scene[]; ref: 
             return (
               <div key={s.id} className="library-item">
                 <button
-                  className={`scene-card ${next ? 'tally-next' : ''}`}
+                  className={`scene-card ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
                   aria-pressed={next}
-                  title="Click to put in Preview, double-click to put it on air"
+                  title="Drag up into In this show. Click to put in Preview, double-click to put it on air."
+                  {...dragProps(s.id)}
                   onClick={() => run('scene.preview', { sceneId: s.id })}
                   onDoubleClick={() => run('scene.program', { sceneId: s.id })}
                 >
@@ -578,9 +679,18 @@ function SceneLibrary(props: { state: AppState; run: Run; scenes: Scene[]; ref: 
           })}
           {!shown.length && (
             <p className="muted small library-empty">
-              {scenes.length ? 'No scene matches that name.' : 'Empty. Drag a scene here, or pick one and press "Put in library".'}
+              {scenes.length ? 'No scene matches that name.' : 'Empty. Press "+ Add scene", or drag a scene here from "In this show".'}
             </p>
           )}
+        </div>
+      )}
+      {dragged && drag && (
+        <div
+          className={`scene-card floating ${drag.over === null ? '' : 'to-show'}`}
+          style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h }}
+          aria-hidden="true"
+        >
+          <SceneCardBody scene={dragged} state={state} live={false} next={false} />
         </div>
       )}
     </section>

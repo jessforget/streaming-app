@@ -250,7 +250,8 @@ export class Controller extends Emitter<Events> {
       }
 
       case 'scene.add': {
-        const scene: Scene = { id: this.newId('scene'), name: name(P, 'name'), layers: [] }
+        // New scenes start in the Scene library; drag them into "In this show" when needed.
+        const scene: Scene = { id: this.newId('scene'), name: name(P, 'name'), layers: [], stored: true }
         this.s.scenes.push(scene)
         await this.engine.setScene(scene)
         this.changed()

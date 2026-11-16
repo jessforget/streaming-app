@@ -41,7 +41,8 @@ const AUDIO_KIND_LABEL: Record<AudioKind, string> = {
 }
 
 /** Add, rename and remove scenes. Acts on the scene queued in Preview. */
-export function SceneTools({ state, run, scene }: { state: AppState; run: Run; scene: Scene }) {
+/** Buttons under the scenes. `only: 'add'` is just "+ Add scene" (in the Scene library); `only: 'edit'` leaves it out. */
+export function SceneTools({ state, run, scene, only }: { state: AppState; run: Run; scene: Scene; only?: 'add' | 'edit' }) {
   const [mode, setMode] = useState<'none' | 'add' | 'rename'>('none')
   const [text, setText] = useState('')
   const onAir = scene.id === state.programSceneId
@@ -81,11 +82,15 @@ export function SceneTools({ state, run, scene }: { state: AppState; run: Run; s
       </form>
     )
   }
+  const add = (
+    <button className="small" onClick={() => setMode('add')} title="New scenes go in the Scene library">
+      + Add scene
+    </button>
+  )
+  if (only === 'add') return add
   return (
     <div className="tool-row">
-      <button className="small" onClick={() => setMode('add')}>
-        + Add scene
-      </button>
+      {only !== 'edit' && add}
       <button
         className="ghost small"
         onClick={() => {

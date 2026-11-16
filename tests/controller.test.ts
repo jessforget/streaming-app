@@ -197,6 +197,8 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
 
   it('adds, renames and removes scenes, but never the one on air', async () => {
     const r = (await t.c.run('local', 'scene.add', { name: 'Interview' })) as { sceneId: string }
+    // New scenes start in the Scene library.
+    expect(t.c.state.scenes.find((s) => s.id === r.sceneId)?.stored).toBe(true)
     await t.c.run('local', 'scene.rename', { sceneId: r.sceneId, name: 'Two-shot' })
     expect(t.c.state.scenes.at(-1)).toMatchObject({ id: r.sceneId, name: 'Two-shot', layers: [] })
     await expect(t.c.run('local', 'scene.remove', { sceneId: t.c.state.programSceneId })).rejects.toThrow('on air')
