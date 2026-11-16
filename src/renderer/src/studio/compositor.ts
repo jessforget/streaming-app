@@ -3,13 +3,18 @@
  * full quality, and the Preview picture smaller. Sources are drawn back to
  * front: the bottom of the source list first, the top last (in front).
  */
+import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
+
+/** Phones and network cameras: their video comes over the network, not from a device on this PC. */
+const linked = (id: string) => id.startsWith(PHONE_PREFIX) || id.startsWith(NET_PREFIX)
 
 /** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
 const stopTracks = (id: string, stream?: MediaStream) => {
-  if (!id.startsWith(PHONE_PREFIX)) stream?.getTracks().forEach((t) => t.stop())
+  if (!linked(id)) stream?.getTracks().forEach((t) => t.stop())
 }
 
 type Drawable = HTMLVideoElement | HTMLImageElement
@@ -40,6 +45,19 @@ export class Compositor {
   /** When each scene last went on air (for countdowns in minutes). */
   protected liveAt = new Map<string, number>()
   private onAir = new Set<string>()
+
+  /**
+   * A capture device on this PC that is open: the frame rate it runs at, and the most it can do
+   * (an ATEM set to 1080p25 can't do more than 25). Null if it isn't open.
+   */
+  deviceRate(id: string): { fps: number; max: number } | null {
+    if (linked(id)) return null
+    const track = this.videos.get(id)?.stream?.getVideoTracks()[0]
+    if (!track || track.readyState !== 'live') return null
+    const fps = track.getSettings().frameRate ?? 0
+    const max = (track.getCapabilities?.().frameRate as { max?: number } | undefined)?.max ?? fps
+    return fps > 0 ? { fps, max } : null
+  }
 
   /** The playing element of a video file, for its sound. */
   mediaElement(url: string): HTMLVideoElement | null {
@@ -80,6 +98,14 @@ export class Compositor {
     }
     this.shownProgram = state.programSceneId
     this.syncSources(state)
+    // The frame rate changed (25 <-> 30): ask the cameras on this PC for the new one, where they can.
+    const fps = presetFor(state.stream.quality, state.stream.family).fps
+    if (before && presetFor(before.stream.quality, before.stream.family).fps !== fps) {
+      for (const [id, v] of this.videos) {
+        if (linked(id) || id.startsWith('media:')) continue
+        void v.stream?.getVideoTracks()[0]?.applyConstraints({ frameRate: { ideal: fps } }).catch(() => {})
+      }
+    }
     // Scenes that just went on air: start their countdowns, and play their one-shot videos from the top.
     const onAir = scenesOnAir(state)
     for (const id of onAir) {
@@ -169,11 +195,11 @@ export class Compositor {
     Object.assign(el, { muted: true, playsInline: true, autoplay: true })
     const entry: { el: HTMLVideoElement; stream?: MediaStream; failed?: boolean } = { el }
     this.videos.set(id, entry)
-    if (id.startsWith(PHONE_PREFIX)) {
+    if (linked(id)) {
       const stream = this.phoneStream(id)
       if (!stream) {
         entry.failed = true
-        this.problems.set(id, 'Phone not connected')
+        this.problems.set(id, id.startsWith(NET_PREFIX) ? 'Network camera not connected' : 'Phone not connected')
         return
       }
       entry.stream = stream
@@ -182,7 +208,7 @@ export class Compositor {
       this.problems.delete(id)
       return
     }
-    const fps = state.stream.quality === 'high' ? 60 : 30
+    const fps = presetFor(state.stream.quality, state.stream.family).fps
     navigator.mediaDevices
       .getUserMedia({ video: { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: fps } } })
       .then((stream) => {
@@ -366,7 +392,7 @@ export class Compositor {
   /** A phone connected again or left: open it afresh on the next update. */
   refreshPhones() {
     for (const [id, v] of this.videos) {
-      if (!id.startsWith(PHONE_PREFIX)) continue
+      if (!linked(id)) continue
       v.el.srcObject = null
       this.videos.delete(id)
       this.problems.delete(id)

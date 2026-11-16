@@ -20,6 +20,8 @@ import { BrowserEngine } from './browserEngine'
 import { ControlServer } from './control/server'
 import { PairingManager } from './control/pairing'
 import { findFfmpeg, pickEncoder } from './ffmpeg'
+import { NetCamHub } from './netcams'
+import { DEFAULT_RTMP_PORT, RtmpReceiver } from './rtmp'
 import { PhoneHub } from './phones'
 import { DeviceFile, FileKeyStore, SetupFile, files } from './storage'
 
@@ -87,8 +89,23 @@ async function main() {
     log(`phone cameras off: ${errorText(e)}`)
   }
 
+  // Cameras that stream to the app (RTMP, any brand): one address for all, each shows up by itself.
+  const rtmp = new RtmpReceiver({ port: Number(process.env.STREAMING_RTMP_PORT) || DEFAULT_RTMP_PORT, host: process.env.STREAMING_RTMP_HOST || '0.0.0.0', log })
+  let rtmpOn = true
+  try {
+    await rtmp.start()
+  } catch (e) {
+    rtmpOn = false
+    console.warn(`Cameras can't stream to the app: port ${rtmp.port} is in use (${errorText(e)}).`)
+    log(`camera receiver off: ${errorText(e)}`)
+  }
+  // Network cameras: ffmpeg reads a Z CAM E2's stream; streaming cameras come through the receiver.
+  const netcams = new NetCamHub(join(dir, 'netcams.json'), ffmpeg, log, rtmpOn ? rtmp : null)
+
   const server = new ControlServer({
     phones: phonesOn ? phones : undefined,
+    netcams,
+    rtmpPort: rtmpOn ? rtmp.port : 0,
     controller,
     pairing,
     port,
@@ -123,7 +140,8 @@ async function main() {
   for (const url of server.urls()) console.log(`  Tablet remote (same network):          ${url}/remote`)
   console.log(`  Companion app / stream deck:            ws://<this-pc>:${server.port}/ws   (test page: /test)`)
   if (phonesOn) console.log(`  Phone cameras (scan the QR in Settings):  ${phones.links()[0].replace(/#.*/, '')}`)
-  console.log(ffmpeg ? `  Video encoder: ${encoder}` : '  ffmpeg not found: streaming and recording are off until it is installed.')
+  if (rtmpOn) console.log(`  Cameras that live stream (any brand):    rtmp://${server.urls()[0].replace(/^http:\/\/|:\d+$/g, '')}:${rtmp.port}/live  (any stream key)`)
+  console.log(ffmpeg ?`  Video encoder: ${encoder}` : '  ffmpeg not found: streaming and recording are off until it is installed.')
   console.log(`  Settings saved in ${dir}`)
   console.log('Press Ctrl+C to stop.\n')
 
@@ -131,6 +149,7 @@ async function main() {
     await controller.stop().catch(() => {})
     await server.stop().catch(() => {})
     await phones.stop().catch(() => {})
+    await rtmp.stop().catch(() => {})
     process.exit(0)
   }
   process.on('SIGINT', stop)

@@ -454,3 +454,8 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
   .remote-grid { grid-template-columns: 1fr; }
   .remote-scenes { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
+
+/* Settings: the Done button at the bottom, always in view. */
+.modal-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
+.modal-foot button.primary { background: var(--good); border-color: var(--good); color: var(--on-good); padding: 0 22px; }
+

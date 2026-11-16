@@ -21,6 +21,13 @@ export interface EngineStats {
   droppedFrames: number
   totalFrames: number
   audioLevels: Record<string, number>
+  /**
+   * While streaming: is video really going out to the platforms? 'sending' = the platform accepted
+   * the stream and video is flowing; 'connecting' = not yet; 'stuck' = nothing went out for a while.
+   */
+  streamOut?: 'connecting' | 'sending' | 'stuck'
+  /** Kbit/s going out to the platforms, as ffmpeg reports it. */
+  streamKbps?: number
 }
 
 /** Video engine: capture, compositing, encoding, streaming, recording. */
@@ -45,6 +52,8 @@ export interface Engine {
   startRecording(folder: string, format: 'mp4' | 'mkv', preset: QualityPreset): Promise<void>
   stopRecording(): Promise<void>
   readStats(): EngineStats
+  /** Ask a platform whether it accepts this stream key, without sending any video. */
+  checkStreamKey?(serverUrl: string, key: string): Promise<{ ok: boolean; message: string }>
   shutdown(): Promise<void>
   /** The page that draws the video reports which devices its browser can open. */
   setInputs?(inputs: AppState['inputs']): void

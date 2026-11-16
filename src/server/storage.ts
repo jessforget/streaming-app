@@ -27,6 +27,7 @@ function writeJson(file: string, value: unknown, mode = 0o644) {
 /** The parts of the state worth keeping between sessions. */
 type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'> & {
   quality: AppState['stream']['quality']
+  frameRate?: AppState['stream']['frameRate']
   destinations: AppState['stream']['destinations']
   recordFolder: string
   recordFormat: AppState['recording']['format']
@@ -56,6 +57,9 @@ export class SetupFile {
       stream: {
         ...base.stream,
         quality: saved.quality ?? base.stream.quality,
+        frameRate: saved.frameRate ?? base.stream.frameRate,
+        // Until the cameras are measured: the fixed choice, else 30/60.
+        family: saved.frameRate === 'pal' ? 'pal' : base.stream.family,
         destinations: base.stream.destinations.map((d) => ({
           ...d,
           ...saved.destinations?.find((x) => x.id === d.id)
@@ -76,6 +80,7 @@ export class SetupFile {
       transition: s.transition,
       audio: s.audio.map((a) => ({ ...a, level: 0 })),
       quality: s.stream.quality,
+      frameRate: s.stream.frameRate,
       destinations: s.stream.destinations,
       recordFolder: s.recording.folder,
       recordFormat: s.recording.format,

@@ -71,7 +71,14 @@ export function ingestAddress(t: StreamTarget): string {
 /** Characters that mean something to ffmpeg's tee output must be escaped in each address. */
 const teeEscape = (s: string) => s.replace(/[\\|[\]]/g, (c) => `\\${c}`)
 
-const INPUT = ['-hide_banner', '-loglevel', 'error', '-fflags', '+genpts', '-thread_queue_size', '1024', '-i', 'pipe:0']
+const INPUT = ['-hide_banner', '-loglevel', process.env.STREAMING_FFMPEG_LOGLEVEL || 'error', '-fflags', '+genpts', '-thread_queue_size', '1024', '-i', 'pipe:0']
+/**
+ * The browser's H.264 has no B-frames, so each picture's decode time is its show time. The page's
+ * file (Matroska) only stores show times, and without this ffmpeg could not work out the decode
+ * times: every picture went out 1 ms after the last, so YouTube got almost no video ("No data").
+ */
+const COPY_TIMESTAMPS = 'setts=dts=PTS'
+
 const PROGRESS = ['-progress', 'pipe:1', '-stats_period', '1', '-nostats']
 
 /**
@@ -103,8 +110,8 @@ export function streamArgs(targets: StreamTarget[], preset: QualityPreset, encod
   let video: string[]
   if (ready && wide) {
     video = vertical
-      ? ['-filter_complex', `[0:v]fps=${preset.fps},${tall}[tall]`, '-map', '0:v:0', '-map', '[tall]', '-c:v:0', 'copy', ...perStream(encoderArgs(encoder, tallPreset), 1)]
-      : ['-map', '0:v:0', '-c:v', 'copy']
+      ? ['-filter_complex', `[0:v]fps=${preset.fps},${tall}[tall]`, '-map', '0:v:0', '-map', '[tall]', '-c:v:0', 'copy', '-bsf:v:0', COPY_TIMESTAMPS, ...perStream(encoderArgs(encoder, tallPreset), 1)]
+      : ['-map', '0:v:0', '-c:v', 'copy', '-bsf:v', COPY_TIMESTAMPS]
   } else {
     video =
       vertical && wide
@@ -146,6 +153,8 @@ export interface OutputProgress {
   speed: number
   /** Kbit/s that ffmpeg is sending, as it reports it. */
   kbps: number
+  /** How far into the output ffmpeg is, in microseconds. */
+  outUs: number
 }
 
 /** Stream keys must never reach the screen or the log: ffmpeg prints the full address on errors. */
@@ -166,7 +175,7 @@ export interface OutputOptions {
 
 /** One running ffmpeg, fed by the studio page. */
 export class FfmpegOutput {
-  readonly progress: OutputProgress = { frames: 0, dropped: 0, fps: 0, speed: 0, kbps: 0 }
+  readonly progress: OutputProgress = { frames: 0, dropped: 0, fps: 0, speed: 0, kbps: 0, outUs: 0 }
   readonly startedAt = Date.now()
   private proc: ChildProcess
   private stopping = false
@@ -180,11 +189,15 @@ export class FfmpegOutput {
     this.secrets = opts.secrets ?? []
     this.proc = spawn(ffmpeg, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     if (opts.stallMs) {
-      let lastFrames = -1
+      // ffmpeg gives no frame count when it copies the video (the graphics card's, the usual case),
+      // only how far into the stream it is. Watching frames alone stopped every such stream after
+      // 15 seconds, so watch both.
+      let last = ''
       let lastMove = Date.now()
       this.watchdog = setInterval(() => {
-        if (this.progress.frames !== lastFrames) {
-          lastFrames = this.progress.frames
+        const now = `${this.progress.frames}/${this.progress.outUs}`
+        if (now !== last) {
+          last = now
           lastMove = Date.now()
         } else if (Date.now() - lastMove > opts.stallMs!) {
           this.fail('The stream stopped moving: no video went out for a while.')
@@ -203,6 +216,7 @@ export class FfmpegOutput {
         else if (k === 'fps') this.progress.fps = Number(v) || 0
         else if (k === 'speed') this.progress.speed = parseFloat(v) || 0
         else if (k === 'bitrate') this.progress.kbps = parseFloat(v) || 0
+        else if (k === 'out_time_us') this.progress.outUs = Number(v) || 0
       }
     })
     this.proc.stderr!.on('data', (d: Buffer) => {

@@ -47,7 +47,19 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           </section>
         </aside>
       </div>
-      {settings && <Settings state={state} run={run} tab={settings} onTab={setSettings} onClose={() => setSettings(null)} />}
+      {settings && (
+        <Settings
+          state={state}
+          run={run}
+          tab={settings}
+          onTab={setSettings}
+          onClose={() => setSettings(null)}
+          testKey={async (id) => {
+            const r = await bridge.command('settings.testDestination', { id })
+            return r.ok ? (r.data as { ok: boolean; message: string }) : { ok: false, message: r.error ?? 'Could not check the key.' }
+          }}
+        />
+      )}
     </div>
   )
 }

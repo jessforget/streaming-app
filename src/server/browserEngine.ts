@@ -16,6 +16,7 @@ import type { QualityPreset } from '../shared/presets'
 import type { AppState, InputDevice } from '../shared/state'
 import type { Engine, EngineStats, StreamTarget } from '../core/ports'
 import { FfmpegOutput, recordArgs, streamArgs } from './ffmpeg'
+import { checkStreamKey } from './rtmp'
 
 type Kind = 'stream' | 'record'
 
@@ -55,6 +56,8 @@ export class BrowserEngine implements Engine {
   private page = { fps: 0, audioLevels: {} as Record<string, number> }
   private cpuBefore = cpuTimes()
   private cpu = 0
+  /** When the stream's position last moved (for "is it really going out"). */
+  private lastOut: { us: number; at: number; output?: FfmpegOutput } = { us: 0, at: 0 }
 
   constructor(
     private readonly ffmpeg: string | null,
@@ -123,7 +126,7 @@ export class BrowserEngine implements Engine {
     if (isStream && job.tries > 0) {
       const tries = job.tries
       setTimeout(() => {
-        if (job.output === output && output.progress.frames > 0) {
+        if (job.output === output && (output.progress.frames > 0 || output.progress.outUs > 0)) {
           this.onNotice?.('Stream is back on.')
           this.onLog?.(`stream back on after ${tries} tries`)
         }
@@ -135,7 +138,16 @@ export class BrowserEngine implements Engine {
       const backlog = Math.round(output.backlog / 1024)
       this.onLog?.(`${kind} fps=${p.fps} speed=${p.speed} kbps=${p.kbps} dropped=${p.dropped} backlogKB=${backlog}`)
     }, 30_000)
-    socket.on('message', (data: Buffer) => output.write(data))
+    // Binary messages are the video file; text messages are the page's own notes for app.log.
+    let received = 0
+    socket.on('message', (data: Buffer, isBinary?: boolean) => {
+      if (isBinary === false) return this.onLog?.(`${kind} page: ${String(data).slice(0, 400)}`)
+      received += data.length
+      output.write(data)
+    })
+    setTimeout(() => {
+      if (job.output === output) this.onLog?.(`${kind} after 6s: ${Math.round(received / 1024)} KB from the page, ffmpeg at ${Math.round(output.progress.outUs / 1000)} ms`)
+    }, 6_000)
     socket.on('close', () => {
       // The page stopped sending: finish the file or stream cleanly.
       if (this.jobs.get(kind) === job && job.output === output) void output.stop()
@@ -217,6 +229,10 @@ export class BrowserEngine implements Engine {
     this.page = r
   }
 
+  checkStreamKey(serverUrl: string, key: string) {
+    return checkStreamKey(serverUrl, key)
+  }
+
   readStats(): EngineStats {
     const now = cpuTimes()
     const busy = now.busy - this.cpuBefore.busy
@@ -226,12 +242,29 @@ export class BrowserEngine implements Engine {
     const stream = this.jobs.get('stream')?.output?.progress
     const record = this.jobs.get('record')?.output?.progress
     const p = stream ?? record
+    // Is the stream really going out? ffmpeg only writes once the platform accepted the stream,
+    // so its position moving means the platform is getting video.
+    let streamOut: EngineStats['streamOut']
+    const out = this.jobs.get('stream')?.output
+    const streamJob = this.jobs.get('stream')
+    if (streamJob) {
+      const now = Date.now()
+      if (out && out.progress.outUs !== this.lastOut.us) this.lastOut = { us: out.progress.outUs, at: now, output: out }
+      else if (out && this.lastOut.output !== out) this.lastOut = { us: out.progress.outUs, at: out.startedAt, output: out }
+      if (out && out.progress.outUs > 0 && now - this.lastOut.at < 4_000) streamOut = 'sending'
+      // Already reconnecting after a drop: the platform isn't getting it.
+      else if (streamJob.tries > 0) streamOut = 'stuck'
+      else if (out && out.progress.outUs === 0 && now - out.startedAt < STALL_MS) streamOut = 'connecting'
+      else streamOut = out ? 'stuck' : 'connecting'
+    }
     return {
       fps: p?.fps || this.page.fps,
       cpu: this.cpu,
       droppedFrames: p?.dropped ?? 0,
       totalFrames: p?.frames ?? 0,
-      audioLevels: this.page.audioLevels
+      audioLevels: this.page.audioLevels,
+      streamOut,
+      streamKbps: stream?.kbps ?? 0
     }
   }
 

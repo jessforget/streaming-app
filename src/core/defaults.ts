@@ -92,6 +92,9 @@ export function defaultState(): AppState {
       live: false,
       startedAt: null,
       quality: 'low',
+      frameRate: 'auto',
+      cameras: { family: null, note: '' },
+      family: 'ntsc',
       destinations: [
         { id: 'youtube', platform: 'youtube', enabled: true, hasKey: false, vertical: false },
         { id: 'facebook', platform: 'facebook', enabled: false, hasKey: false, vertical: false },

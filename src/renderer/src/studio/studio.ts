@@ -8,7 +8,7 @@
  * - mixes the sound,
  * - sends the result to the app's server while streaming or recording.
  */
-import { QUALITY_PRESETS } from '../../../shared/presets'
+import { QUALITY_PRESETS, cameraRate, presetFor } from '../../../shared/presets'
 import type { AppState } from '../../../shared/state'
 import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
@@ -17,6 +17,7 @@ import { GpuCompositor } from './gpuCompositor'
 import { GpuOutput, gpuEncodeSupported } from './gpuOutput'
 import { Mixer } from './mixer'
 import { Output } from './output'
+import { NetCams } from './netcams'
 import { PhoneCams } from './phones'
 
 /**
@@ -51,6 +52,8 @@ const GPU_FAILED_KEY = 'streaming-app:gpu-failed-early'
 export class Studio {
   readonly mixer = new Mixer()
   readonly phones = new PhoneCams()
+  /** Network cameras, like a Z CAM E2 on the router. */
+  readonly netcams = new NetCams()
   private state: AppState | null = null
   private outputs: Partial<Record<'stream' | 'record', Output | GpuOutput>> = {}
   /** Which qualities the graphics card can encode (checked once at the start). */
@@ -128,7 +131,7 @@ export class Studio {
     console.info(`[studio] ${this.engineInfo}`)
     this.clock = workerClock(this.fps, () => this.tick())
     // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
-    this.compositor.phoneStream = (id) => this.phones.stream(id)
+    this.compositor.phoneStream = (id) => this.phones.stream(id) ?? this.netcams.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
     this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
@@ -138,17 +141,46 @@ export class Studio {
       if (this.state) this.update(this.state)
       void this.reportDevices()
     })
+    // Network cameras: listed once their picture arrives, like phones.
+    let netShown = ''
+    this.netcams.subscribe(() => {
+      const now = this.netcams.devices().video.map((d) => d.id).join(',')
+      if (now === netShown) return
+      netShown = now
+      this.compositor.refreshPhones()
+      if (this.state) this.update(this.state)
+      void this.reportDevices()
+    })
+    void this.netcams.load()
     await this.reportDevices()
     this.offDevices = onDeviceChange(() => void this.reportDevices())
     this.reportTimer = setInterval(() => {
       void this.bridge.command('studio.report', { fps: this.measured, audioLevels: this.mixer.levels() })
+      this.reportCameraRate()
     }, 1000)
+  }
+
+  private lastCameraRate = ''
+
+  /**
+   * What frame rate the cameras in the scenes send, so the app can stream at the same one
+   * (a 25 fps camera in a 30 fps stream shows some pictures twice, which looks like dropped frames).
+   * Told to the app only when it changes.
+   */
+  private reportCameraRate() {
+    const st = this.state
+    if (!st) return
+    const r = cameraRate(st, (id) => this.netcams.fps(id), (id) => this.compositor.deviceRate(id))
+    const key = `${r.family}|${r.note}`
+    if (key === this.lastCameraRate) return
+    this.lastCameraRate = key
+    void this.bridge.command('studio.cameraRate', r).catch(() => (this.lastCameraRate = ''))
   }
 
   /** Called by the screen on every state change. */
   update(state: AppState) {
     this.state = state
-    const preset = QUALITY_PRESETS[state.stream.quality]
+    const preset = presetFor(state.stream.quality, state.stream.family)
     if (!state.stream.live && !state.recording.active) this.compositor.setSize(preset.width, preset.height)
     if (preset.fps !== this.fps) {
       this.fps = preset.fps
@@ -166,7 +198,7 @@ export class Studio {
     if (on && !running && this.state) {
       this.mixer.resume()
       const quality = this.state.stream.quality
-      const preset = QUALITY_PRESETS[quality]
+      const preset = presetFor(quality, this.state.stream.family)
       const onProblem = (m: string) => this.notice(m)
       // Encoded once on the graphics card and passed on as is, when it can; otherwise the browser's recorder as before.
       this.outputs[kind] = this.gpuEncode.get(quality)
@@ -237,7 +269,11 @@ export class Studio {
     try {
       const inputs = await listDevices()
       const phones = this.phones.devices()
-      await this.bridge.command('inputs.report', { video: [...inputs.video, ...phones.video], audio: [...inputs.audio, ...phones.audio] })
+      const net = this.netcams.devices()
+      await this.bridge.command('inputs.report', {
+        video: [...inputs.video, ...phones.video, ...net.video],
+        audio: [...inputs.audio, ...phones.audio]
+      })
     } catch {
       this.notice('Could not list the cameras and audio devices. Allow camera and microphone access for this page.')
     }
@@ -305,6 +341,7 @@ export class Studio {
     this.offDevices?.()
     this.offPhoneOffers?.()
     this.phones.close()
+    this.netcams.close()
     if (this.reportTimer) clearInterval(this.reportTimer)
     for (const o of Object.values(this.outputs)) o?.stop()
     this.compositor.close()

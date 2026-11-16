@@ -18,7 +18,7 @@ import {
   type Role
 } from '../shared/protocol'
 import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
-import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, requiredUploadKbps } from '../shared/presets'
+import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
 import { IDLE_STATS } from './defaults'
@@ -56,7 +56,10 @@ export class Controller extends Emitter<Events> {
     this.devices = opts.devices
     this.now = opts.now ?? (() => Date.now())
     this.s = structuredClone(opts.initial)
-    for (const d of this.s.stream.destinations) d.hasKey = this.keys.has(d.id)
+    for (const d of this.s.stream.destinations) {
+      d.hasKey = this.keys.has(d.id)
+      d.keyEnd = keyEnd(this.keys.get(d.id))
+    }
     // The engine says when an output stops on its own (connection lost, the studio page closed).
     this.engine.onNotice = (message) => this.emit('error', message)
     this.engine.onOutputStopped = (kind, reason) => {
@@ -195,7 +198,7 @@ export class Controller extends Emitter<Events> {
       case 'record.start': {
         if (this.s.recording.active) return this.s
         const r = this.s.recording
-        await this.engine.startRecording(r.folder, r.format, QUALITY_PRESETS[this.s.stream.quality])
+        await this.engine.startRecording(r.folder, r.format, this.preset())
         r.active = true
         r.startedAt = this.now()
         return this.changed()
@@ -228,8 +231,18 @@ export class Controller extends Emitter<Events> {
         this.s.stream.quality = q
         return this.changed()
       }
+      case 'settings.setFrameRate': {
+        const f = P.frameRate
+        if (f !== 'auto' && f !== 'pal' && f !== 'ntsc') throw new CommandError('frameRate must be auto, pal or ntsc')
+        if (this.s.stream.live || this.s.recording.active) throw new CommandError('Stop streaming and recording first')
+        this.s.stream.frameRate = f
+        this.refreshFamily()
+        return this.changed()
+      }
       case 'settings.setDestination':
         return this.setDestination(P)
+      case 'settings.testDestination':
+        return this.testDestination(P)
       case 'settings.setRecordFolder': {
         if (this.s.recording.active) throw new CommandError('Stop recording first')
         this.s.recording.folder = str(P, 'folder')
@@ -413,6 +426,16 @@ export class Controller extends Emitter<Events> {
         this.engine.report?.({ fps: typeof P.fps === 'number' ? P.fps : 0, audioLevels: levels })
         return null
       }
+      case 'studio.cameraRate': {
+        const family = P.family === 'pal' || P.family === 'ntsc' ? P.family : null
+        const note = typeof P.note === 'string' ? P.note.slice(0, 200) : ''
+        const st = this.s.stream
+        if (st.cameras.family === family && st.cameras.note === note) return null
+        st.cameras = { family, note }
+        this.refreshFamily()
+        this.changed()
+        return null
+      }
       case 'inputs.refresh':
         await this.refreshInputs()
         return this.changed()
@@ -450,14 +473,28 @@ export class Controller extends Emitter<Events> {
       const info = PLATFORMS[d.platform]
       const key = this.keys.get(d.id)
       if (!key) throw new CommandError(`Add your ${info.label} stream key in Go Live settings`)
-      const url = info.needsServerUrl ? d.serverUrl : info.ingestUrl
+      const url = d.serverUrl || info.ingestUrl
       if (!url) throw new CommandError(`Add the ${info.label} server address in Go Live settings`)
       targets.push({ destinationId: d.id, platform: d.platform, url, key, vertical: d.vertical })
     }
-    await this.engine.startStream(targets, QUALITY_PRESETS[this.s.stream.quality])
+    await this.engine.startStream(targets, this.preset())
     this.s.stream.live = true
     this.s.stream.startedAt = this.now()
     return this.changed()
+  }
+
+  /** Ask the platform whether it knows the saved key, without going live. */
+  private async testDestination(P: Record<string, unknown>): Promise<{ ok: boolean; message: string }> {
+    const id = str(P, 'id')
+    const d = this.s.stream.destinations.find((x) => x.id === id)
+    if (!d) throw new CommandError(`No platform with id ${id}`)
+    const info = PLATFORMS[d.platform]
+    const key = this.keys.get(d.id)
+    if (!key) return { ok: false, message: `No ${info.label} stream key saved yet. Paste it and press Save key first.` }
+    const url = d.serverUrl || info.ingestUrl
+    if (!url) return { ok: false, message: `Add the ${info.label} server address first.` }
+    if (!this.engine.checkStreamKey) return { ok: false, message: 'Checking keys is not available in practice mode.' }
+    return this.engine.checkStreamKey(url, key)
   }
 
   private setDestination(P: Record<string, unknown>) {
@@ -476,11 +513,13 @@ export class Controller extends Emitter<Events> {
     if (P.serverUrl !== undefined) {
       const url = String(P.serverUrl).trim()
       if (url && !/^rtmps?:\/\//i.test(url)) throw new CommandError('Server address must start with rtmp:// or rtmps://')
-      d.serverUrl = url || undefined
+      // Same as the built-in address (or blank): keep following the built-in one.
+      d.serverUrl = url && url !== PLATFORMS[d.platform].ingestUrl ? url : undefined
     }
     if (P.streamKey !== undefined) {
       this.keys.set(d.id, String(P.streamKey).trim())
       d.hasKey = this.keys.has(d.id)
+      d.keyEnd = keyEnd(this.keys.get(d.id))
     }
     return this.changed()
   }
@@ -570,6 +609,23 @@ export class Controller extends Emitter<Events> {
         health = 'warning'
         message = 'Your computer is working hard. Close other apps or pick a lower quality.'
       }
+      // The stream's own word on whether the platforms are getting it, before anything else.
+      if (this.s.stream.live && raw.streamOut) {
+        const names = this.s.stream.destinations
+          .filter((d) => d.enabled)
+          .map((d) => PLATFORMS[d.platform].label)
+          .join(' and ')
+        if (raw.streamOut === 'connecting') {
+          health = 'warning'
+          message = `Connecting to ${names}…`
+        } else if (raw.streamOut === 'stuck') {
+          health = 'bad'
+          message = `Not reaching ${names}. The app keeps trying; check the stream key (Settings, Test key) and the internet.`
+        } else if (health === 'good') {
+          const mbps = raw.streamKbps ? `, ${(raw.streamKbps / 1000).toFixed(1)} Mbps` : ''
+          message = `Connected to ${names}, sending video${mbps}`
+        }
+      }
     }
     this.s.stats = {
       health,
@@ -586,6 +642,24 @@ export class Controller extends Emitter<Events> {
 
   private resetStatsIfIdle() {
     if (!this.s.stream.live && !this.s.recording.active) this.s.stats = { ...IDLE_STATS, audioLevels: this.s.stats.audioLevels }
+    this.refreshFamily()
+  }
+
+  /**
+   * Pick 25/50 or 30/60 frames a second: the person's fixed choice, or what the cameras send.
+   * Never while streaming or recording (the picture would change speed mid-stream); it catches
+   * up when both stop. Cameras that disagree keep the current one.
+   */
+  private refreshFamily() {
+    const st = this.s.stream
+    if (st.live || this.s.recording.active) return
+    if (st.frameRate !== 'auto') st.family = st.frameRate
+    else if (st.cameras.family) st.family = st.cameras.family
+  }
+
+  /** The quality and frame rate the stream and recording use now. */
+  private preset() {
+    return presetFor(this.s.stream.quality, this.s.stream.family)
   }
 
   // ---------- Helpers ----------
@@ -836,4 +910,9 @@ function bool(P: Record<string, unknown>, key: string): boolean {
 
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+/** The last 4 characters of a stream key, so it can be matched against the platform's (the rest stays secret). */
+function keyEnd(key: string | undefined): string | undefined {
+  return key && key.length > 8 ? key.slice(-4) : undefined
 }
