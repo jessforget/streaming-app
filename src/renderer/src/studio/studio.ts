@@ -65,6 +65,7 @@ export class Studio {
   private lastMeasure = performance.now()
   private offDevices: (() => void) | null = null
   private offPhoneOffers: (() => void) | null = null
+  private offGraphics: (() => void) | null = null
   private reportTimer: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<() => void>()
   private media: MediaStream | null = null
@@ -152,6 +153,7 @@ export class Studio {
       void this.reportDevices()
     })
     void this.netcams.load()
+    this.offGraphics = this.watchGraphics()
     await this.reportDevices()
     this.offDevices = onDeviceChange(() => void this.reportDevices())
     this.reportTimer = setInterval(() => {
@@ -265,6 +267,27 @@ export class Studio {
     }
   }
 
+  /** Say once when a gfx laptop drops off, and again when its graphics are back. */
+  private watchGraphics() {
+    const feeds = this.compositor.graphics
+    const before = new Map<string, string>()
+    return feeds.subscribe(() => {
+      const st = this.state
+      if (!st) return
+      for (const l of st.scenes.flatMap((x) => x.layers)) {
+        const status = feeds.statusOf(l, st)
+        if (!status || (l.kind !== 'graphics' && l.kind !== 'browser')) continue
+        const key = l.url ?? ''
+        const was = before.get(key)
+        if (was === status) continue
+        before.set(key, status)
+        const host = (l.url ?? '').replace(/^https?:\/\//i, '').split('/')[0]
+        if (status === 'unreachable' && was === 'connected') this.notice(`Lost the graphics from ${host}. The stream keeps going; graphics come back by themselves when the gfx laptop is back.`)
+        if (status === 'connected' && was === 'unreachable') this.notice(`Graphics from ${host} are back.`)
+      }
+    })
+  }
+
   private async reportDevices() {
     try {
       const inputs = await listDevices()
@@ -340,6 +363,8 @@ export class Studio {
     this.clock?.stop()
     this.offDevices?.()
     this.offPhoneOffers?.()
+    this.offGraphics?.()
+    this.compositor.graphics.close()
     this.phones.close()
     this.netcams.close()
     if (this.reportTimer) clearInterval(this.reportTimer)

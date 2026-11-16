@@ -11,13 +11,21 @@ export type LayerKind =
   | 'image'
   | 'text'
   | 'browser'
+  | 'graphics'
   | 'media'
   | 'color'
   | 'countdown'
   | 'slideshow'
   | 'scene'
 
-export const LAYER_KINDS: LayerKind[] = ['video', 'image', 'media', 'text', 'color', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+
+/** The sizes a Graphics (network) page can be drawn at. */
+export type GraphicsSize = '1080p' | '720p'
+export const GRAPHICS_SIZES: Record<GraphicsSize, { width: number; height: number; label: string }> = {
+  '1080p': { width: 1920, height: 1080, label: '1920 x 1080' },
+  '720p': { width: 1280, height: 720, label: '1280 x 720' }
+}
 
 /** Where a source sits in the picture. Full = fills it; the rest are boxes and text spots. */
 export type Placement = 'full' | 'center' | 'lower-third' | 'top' | 'top-right' | 'bottom-right' | 'top-left'
@@ -54,7 +62,7 @@ export interface Layer {
   device?: string
   /** Text layers: shown text. `{field.name}` is replaced by that data field's value. */
   text?: string
-  /** Image, media and browser layers: file path or URL. Slideshow: a folder of pictures. */
+  /** Image, media and browser layers: file path or URL. Graphics: the gfx app's page. Slideshow: a folder of pictures. */
   url?: string
   /** Media: play again from the start when it ends. Default on. */
   loop?: boolean
@@ -71,6 +79,12 @@ export interface Layer {
   seconds?: number
   /** Scene inside a scene: which scene to show. */
   sceneId?: string
+  /**
+   * Graphics (network) and browser sources: the size the page is drawn at
+   * (default 1080p), and its frame rate (absent = the same as the stream).
+   */
+  size?: GraphicsSize
+  fps?: number
 }
 
 export interface Scene {

@@ -10,6 +10,7 @@
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { boxFor, Compositor } from './compositor'
+import type { GraphicsFeed } from './graphics'
 
 type Rect = { x: number; y: number; w: number; h: number }
 /** Maps a scene's own w×h picture into the canvas being drawn (for a scene inside a scene). */
@@ -223,9 +224,14 @@ export class GpuCompositor extends Compositor {
         const b = boxFor(placementOf(l), w, h)
         const inT: Transform = { ox: T.ox + b.x * T.sx, oy: T.oy + b.y * T.sy, sx: (T.sx * b.w) / w, sy: (T.sy * b.h) / h }
         this.collect(ops, inner, s, w, h, depth + 1, inT, intersect(clip, map(b)), alpha)
+      } else if (l.kind === 'graphics' || l.kind === 'browser') {
+        const feed = this.graphics.feedFor(l, s)
+        const texture = feed ? this.feedTexture(feed) : null
+        if (!feed || !texture) continue
+        ops.push({ kind: 'tex', rect: map(fitInside(feed.canvas.width, feed.canvas.height, placementOf(l), w, h)), clip, alpha, texture })
       } else {
         const src = this.drawableFor(l)
-        if (!src) continue
+        if (!src || src instanceof HTMLCanvasElement) continue
         const isVideo = src instanceof HTMLVideoElement
         const sw = isVideo ? src.videoWidth : src.naturalWidth
         const sh = isVideo ? src.videoHeight : src.naturalHeight
@@ -347,6 +353,43 @@ export class GpuCompositor extends Compositor {
       this.gpuImages.set(img, 'failed')
       return null
     }
+  }
+
+  private feedTextures = new WeakMap<GraphicsFeed, { texture: GPUTexture; version: number }>()
+
+  /**
+   * A graphics page's picture on the graphics card. Only the part that changed
+   * since the last frame is copied, so a still lower third costs nothing.
+   */
+  private feedTexture(feed: GraphicsFeed): GPUTexture | null {
+    const { width: w, height: h } = feed.canvas
+    if (!w || !h) return null
+    let t = this.feedTextures.get(feed)
+    if (!t || t.texture.width !== w || t.texture.height !== h) {
+      t?.texture.destroy()
+      const texture = this.device.createTexture({
+        size: [w, h],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      })
+      t = { texture, version: -1 }
+      this.feedTextures.set(feed, t)
+      feed.dirty = { x: 0, y: 0, w, h }
+    }
+    if (t.version !== feed.version && feed.dirty) {
+      const d = feed.dirty
+      const x = Math.max(0, Math.floor(d.x))
+      const y = Math.max(0, Math.floor(d.y))
+      const dw = Math.min(w - x, Math.ceil(d.w))
+      const dh = Math.min(h - y, Math.ceil(d.h))
+      if (dw > 0 && dh > 0) {
+        const data = feed.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, dw, dh).data
+        this.device.queue.writeTexture({ texture: t.texture, origin: [x, y] }, data, { bytesPerRow: dw * 4 }, [dw, dh])
+      }
+      feed.dirty = null
+      t.version = feed.version
+    }
+    return t.texture
   }
 
   /** Text, drawn with the same look as the canvas version, redrawn only when the words change. */

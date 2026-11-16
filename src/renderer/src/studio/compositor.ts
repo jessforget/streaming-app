@@ -6,6 +6,7 @@
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { graphicsFeeds } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
 
@@ -17,7 +18,7 @@ const stopTracks = (id: string, stream?: MediaStream) => {
   if (!linked(id)) stream?.getTracks().forEach((t) => t.stop())
 }
 
-type Drawable = HTMLVideoElement | HTMLImageElement
+type Drawable = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
 
 /** The address the browser loads a picture or video file from: through the app, for files on this PC. */
 export function fileUrl(path: string): string {
@@ -45,6 +46,8 @@ export class Compositor {
   /** When each scene last went on air (for countdowns in minutes). */
   protected liveAt = new Map<string, number>()
   private onAir = new Set<string>()
+  /** Graphics (network) pages: shared with the source list, which shows their status lights. */
+  readonly graphics = graphicsFeeds
 
   /**
    * A capture device on this PC that is open: the frame rate it runs at, and the most it can do
@@ -135,6 +138,7 @@ export class Compositor {
         if ((l.kind === 'screen' || l.kind === 'window') && !this.displays.has(l.id)) this.waiting.add(l.id)
       }
     }
+    this.graphics.sync(state)
     for (const id of devices) if (!this.videos.has(id)) this.openDevice(id, state)
     for (const [id, v] of this.videos) {
       if (!id.startsWith('media:') && !devices.has(id)) {
@@ -340,7 +344,8 @@ export class Compositor {
       if (!pics.length) return null
       return pics[Math.floor(Date.now() / 1000 / Math.max(1, l.seconds ?? 5)) % pics.length]
     }
-    return null // browser sources need the desktop version
+    if ((l.kind === 'graphics' || l.kind === 'browser') && this.state) return this.graphics.feedFor(l, this.state)?.canvas ?? null
+    return null
   }
 
   private ready(el: HTMLVideoElement | undefined) {
@@ -348,8 +353,8 @@ export class Compositor {
   }
 
   private drawPicture(ctx: CanvasRenderingContext2D, src: Drawable, place: Placement, w: number, h: number) {
-    const sw = src instanceof HTMLVideoElement ? src.videoWidth : src.naturalWidth
-    const sh = src instanceof HTMLVideoElement ? src.videoHeight : src.naturalHeight
+    const sw = src instanceof HTMLVideoElement ? src.videoWidth : src instanceof HTMLCanvasElement ? src.width : src.naturalWidth
+    const sh = src instanceof HTMLVideoElement ? src.videoHeight : src instanceof HTMLCanvasElement ? src.height : src.naturalHeight
     const box = boxFor(place, w, h)
     // Fit inside the box, keeping its shape.
     const k = Math.min(box.w / sw, box.h / sh)

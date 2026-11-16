@@ -85,6 +85,10 @@ export interface CommandMap {
     seconds?: number
     /** Scene sources: which scene to show inside this one. */
     showScene?: string
+    /** Graphics (network): the size its page is drawn at. */
+    size?: '1080p' | '720p'
+    /** Graphics (network): its frame rate; 0 = the same as the stream. */
+    fps?: number
   }
   'layer.remove': { sceneId: string; layerId: string }
   'layer.move': { sceneId: string; layerId: string; direction: 'up' | 'down' }
@@ -105,6 +109,10 @@ export interface CommandMap {
     seconds?: number
     /** Scene sources: which scene to show inside this one. */
     showScene?: string
+    /** Graphics (network): the size its page is drawn at. */
+    size?: '1080p' | '720p'
+    /** Graphics (network): its frame rate; 0 = the same as the stream. */
+    fps?: number
   }
   'audio.add': {
     name: string

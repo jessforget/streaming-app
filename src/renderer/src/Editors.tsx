@@ -2,6 +2,8 @@
 import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
 import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, scenesOnAir } from '../../shared/state'
+import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
+import { GraphicsCheck, GraphicsDetail } from './GraphicsParts'
 import { deviceName } from './parts'
 import type { Run } from './useApp'
 
@@ -10,6 +12,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   image: 'Image',
   text: 'Text',
   browser: 'Browser',
+  graphics: 'Graphics (network)',
   media: 'Video file',
   screen: 'Screen',
   window: 'Window',
@@ -24,6 +27,7 @@ const KIND_HELP: Record<LayerKind, string> = {
   image: 'A picture or logo from a file',
   text: 'Words on screen. {field} shows data from the companion app',
   browser: 'A web page, such as an alerts overlay (needs the desktop version: the web version can’t draw web pages into the video)',
+  graphics: 'Graphics from your gfx app on another computer. The gfx app controls what shows; this app only shows it',
   media: 'A video file, such as an intro or a promo. It can loop, and its sound can play while its scene is on air',
   screen: 'Everything on one of this PC’s screens',
   window: 'One app window on this PC',
@@ -208,6 +212,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
 
 function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
   const kind = KIND_LABEL[layer.kind]
+  if (layer.kind === 'graphics' || layer.kind === 'browser') return <GraphicsDetail state={state} layer={layer} label={kind} />
   if (layer.kind === 'video') {
     const name = deviceName(state, layer.device)
     return <span className={`layer-text ${name ? '' : 'warn-text'}`}>{`${kind} · ${name ?? 'device not found'}`}</span>
@@ -258,6 +263,38 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Text
           <input value={v.text} maxLength={500} placeholder="e.g. {guest.name}" onChange={(e) => set('text', e.target.value)} />
         </label>
+      )}
+      {kind === 'graphics' && (
+        <>
+          <label>
+            Address of the graphics page
+            <input value={v.url} placeholder="http://192.168.101.50:8080/live" inputMode="url" onChange={(e) => set('url', e.target.value)} />
+            <small className="muted">Your gfx app shows this address. Give the gfx laptop a fixed address on the router so it never changes.</small>
+          </label>
+          <div className="two-cols">
+            <label>
+              Size
+              <select value={v.size} onChange={(e) => set('size', e.target.value)}>
+                {Object.entries(GRAPHICS_SIZES).map(([k, d]) => (
+                  <option key={k} value={k}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Frame rate
+              <select value={v.fps} onChange={(e) => set('fps', e.target.value)}>
+                <option value="">Same as stream</option>
+                <option value="25">25</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+          </div>
+          <GraphicsCheck state={state} url={v.url} size={v.size} fps={v.fps} />
+        </>
       )}
       {(kind === 'image' || kind === 'media' || kind === 'browser' || kind === 'slideshow') && (
         <label>
@@ -368,6 +405,10 @@ interface Fields {
   minutes: string
   seconds: string
   showScene: string
+  /** Graphics: '1080p' or '720p'. */
+  size: string
+  /** Graphics: frames a second, '' = the same as the stream. */
+  fps: string
 }
 type SetField = <K extends keyof Fields>(k: K, value: Fields[K] | string | boolean) => void
 
@@ -386,7 +427,9 @@ function useFields(layer: Partial<Layer> & { placement: Placement }) {
     until: layer.until ?? '19:30',
     minutes: String(layer.minutes ?? 5),
     seconds: String(layer.seconds ?? 5),
-    showScene: layer.sceneId ?? ''
+    showScene: layer.sceneId ?? '',
+    size: layer.size ?? '1080p',
+    fps: layer.fps ? String(layer.fps) : ''
   })
   // "Copy as path" in File Explorer adds quotes.
   const set: SetField = (k, value) => setV((old) => ({ ...old, [k]: k === 'url' && typeof value === 'string' ? value.replace(/^\s*"|"\s*$/g, '') : value }))
@@ -416,6 +459,8 @@ function kindFields(kind: LayerKind, v: Fields) {
       }
     case 'scene':
       return v.showScene ? { showScene: v.showScene } : {}
+    case 'graphics':
+      return { ...(v.url.trim() && { url: v.url.trim() }), size: (v.size === '720p' ? '720p' : '1080p') as GraphicsSize, fps: Number(v.fps) || 0 }
     default:
       return {}
   }
@@ -428,7 +473,7 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
     setKind(k)
     set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
   }
-  const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene)
+  const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene) || (kind === 'graphics' && !v.url.trim())
   const add = async () => {
     const ok = await run('layer.add', {
       sceneId: scene.id,

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graphics control</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0e1014; color: #e8eaee; font: 16px/1.4 'Segoe UI', system-ui, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 16px; }
+  h1 { margin: 0; font-size: 20px; }
+  label { display: grid; gap: 6px; font-size: 13px; color: #9ba4b4; }
+  input { font: inherit; color: #e8eaee; background: #171a21; border: 1px solid #2c323d; border-radius: 8px; padding: 10px 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font: inherit; font-weight: 600; min-height: 52px; border-radius: 8px; border: 1px solid #2c323d; background: #1b1f27; color: #e8eaee; cursor: pointer; }
+  button.show { background: #3fb37f; border-color: #3fb37f; color: #08170f; }
+  .state { font-size: 14px; color: #9ba4b4; }
+  .state b { color: #e8eaee; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lower third</h1>
+  <label>Name <input id="name" maxlength="80"></label>
+  <label>Title <input id="title" maxlength="120"></label>
+  <div class="row">
+    <button class="show" id="show">Show</button>
+    <button id="hide">Hide</button>
+  </div>
+  <p class="state" id="state">Connecting…</p>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id)
+  const send = (change) =>
+    fetch('/api/graphics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) })
+  $('show').onclick = () => send({ show: true, name: $('name').value, title: $('title').value })
+  $('hide').onclick = () => send({ show: false })
+  // Show what is on the graphics now (the same messages the graphics page gets).
+  let filled = false
+  new EventSource('/events').onmessage = (e) => {
+    const g = JSON.parse(e.data)
+    if (!filled) {
+      $('name').value = g.name
+      $('title').value = g.title
+      filled = true
+    }
+    $('state').innerHTML = ''
+    const b = document.createElement('b')
+    b.textContent = g.show ? `Showing: ${g.name}` : 'Hidden'
+    $('state').append('Graphics now: ', b)
+  }
+</script>
+</body>
+</html>

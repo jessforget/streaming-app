@@ -48,6 +48,14 @@ old way (2D canvas and the browser's recorder) by itself. Add `?engine=canvas`
 to the address to force the old way. `tools/gpu-test.html` is a 20-second speed
 test for a PC (also published as an artifact).
 
+## Graphics from another computer
+
+A gfx app on another computer can show its graphics in the stream: add its
+page as a **Graphics (network)** source (desktop version). The gfx app controls
+what shows; this app only shows it, see-through over the cameras. The rules for
+the page, and a sample gfx app to start from, are in
+[docs/GRAPHICS.md](docs/GRAPHICS.md).
+
 ## Phones as cameras
 
 Any Android phone or iPhone on the same network can be a camera, with no app to install:

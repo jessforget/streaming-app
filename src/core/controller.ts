@@ -759,6 +759,16 @@ export class Controller extends Emitter<Events> {
       if (typeof P.url !== 'string' || P.url.length > 2000) throw new CommandError('url must be text')
       layer.url = P.url.trim() || undefined
     }
+    if (layer.kind === 'graphics' && layer.url) layer.url = graphicsUrl(layer.url)
+    if (P.size !== undefined) {
+      if (P.size === null || P.size === '') layer.size = undefined
+      else if (!(P.size === '1080p' || P.size === '720p')) throw new CommandError('size must be 1080p or 720p')
+      else layer.size = P.size
+    }
+    if (P.fps !== undefined) {
+      // 0 or empty: the same as the stream.
+      layer.fps = P.fps === null || P.fps === '' || P.fps === 0 ? undefined : num(P, 'fps', 1, 60)
+    }
     if (P.placement !== undefined) {
       if (!PLACEMENTS.includes(P.placement as Placement)) throw new CommandError(`placement must be one of ${PLACEMENTS.join(', ')}`)
       layer.placement = P.placement as Placement
@@ -817,6 +827,7 @@ export class Controller extends Emitter<Events> {
       image: 'Image',
       text: 'Text',
       browser: 'Browser overlay',
+      graphics: 'Graphics',
       media: 'Media file',
       color: 'Color',
       countdown: 'Countdown',
@@ -887,6 +898,22 @@ export class Controller extends Emitter<Events> {
     if (!this.devices) throw new CommandError('Device pairing is not available')
     return this.devices
   }
+}
+
+/**
+ * A gfx app's address, as people type it: "192.168.101.50:8080/live" works
+ * too (http:// is added). Only web addresses can be graphics pages.
+ */
+export function graphicsUrl(raw: string): string {
+  const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    throw new CommandError('That address doesn’t look right. It should look like http://192.168.101.50:8080/live')
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new CommandError('The address must start with http:// or https://')
+  return url
 }
 
 function str(P: Record<string, unknown>, key: string): string {

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graphics</title>
+<style>
+  /* The rules for a graphics page: see-through background, laid out at 1920 x 1080. */
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  .lower-third {
+    position: absolute; left: 96px; bottom: 120px;
+    transform: translateX(-140%); transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .lower-third.on { transform: translateX(0); }
+  .name {
+    background: #f2f2f2; color: #111; font-size: 52px; font-weight: 700;
+    padding: 14px 36px; border-radius: 10px 10px 0 0; display: inline-block;
+  }
+  .title {
+    background: #2563d9; color: #fff; font-size: 30px; font-weight: 500;
+    padding: 10px 36px; border-radius: 0 0 10px 10px;
+  }
+</style>
+</head>
+<body>
+<div class="lower-third" id="l3">
+  <div class="name" id="name"></div>
+  <div class="title" id="title"></div>
+</div>
+<script>
+  // The gfx app's server tells this page what to show. If the connection drops, it reconnects by itself.
+  const l3 = document.getElementById('l3')
+  const events = new EventSource('/events')
+  events.onmessage = (e) => {
+    const g = JSON.parse(e.data)
+    document.getElementById('name').textContent = g.name
+    document.getElementById('title').textContent = g.title
+    l3.classList.toggle('on', g.show)
+  }
+</script>
+</body>
+</html>
