@@ -416,6 +416,7 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
         {live && <em className="tag live">ON AIR</em>}
         {next && <em className="tag next">PREVIEW</em>}
       </span>
+      <SceneSounds scene={scene} state={state} studio={studio} />
     </>
   )
 }
@@ -738,8 +739,8 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
 }
 
 /** One sound channel, as a row: name, device, meter, volume, mute. */
-function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
-  const { a, state, level, studio, run, onEdit } = props
+/** Where a sound comes from, by the device's real name, and whether its device is missing. */
+function soundFrom(a: AudioSource, state: AppState) {
   const dev = [...state.inputs.audio, ...state.inputs.video].find((d) => d.id === a.device)
   // A mic channel with no device picked uses Windows' default mic.
   const usesDefault = a.kind === 'device' && !a.device
@@ -752,12 +753,55 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
         : usesDefault
           ? 'Windows default mic'
           : (dev?.name ?? 'Unplugged')
+  const chs = a.channels ? (a.channels.length === 1 ? `input ${a.channels[0]}` : `inputs ${a.channels.join(' + ')}`) : ''
+  return { from, chs, unplugged }
+}
+
+/**
+ * The sound that plays when this scene is on air, under its card: one line
+ * each with the real device and a small meter. Sound set to every scene is
+ * counted in one line, so it doesn't repeat on every card.
+ */
+function SceneSounds({ scene, state, studio }: { scene: Scene; state: AppState; studio: Studio | null }) {
+  const own = state.audio.filter((a) => a.scenes?.includes(scene.id))
+  const every = state.audio.filter((a) => !a.scenes)
+  if (!own.length && !every.length) return null
+  return (
+    <span className="scene-sounds">
+      {own.map((a) => {
+        const { from, chs, unplugged } = soundFrom(a, state)
+        const where = [from, chs].filter(Boolean).join(' ')
+        return (
+          <span key={a.id} className={`scene-sound ${a.muted ? 'muted' : ''} ${unplugged ? 'missing' : ''}`} title={`${a.name} · ${where}${a.muted ? ' (muted)' : ''}`}>
+            <span className="sound-icon" aria-hidden="true">
+              {a.kind === 'video' ? '▣' : a.kind === 'file' ? '♪' : a.kind === 'desktop' ? '▭' : '●'}
+            </span>
+            <span className="sound-label">
+              <span>{a.name}</span>
+              <small>{where}</small>
+            </span>
+            <span className="hmeter">{studio ? <LiveMeter studio={studio} id={a.id} horizontal /> : <span className="meter" style={{ width: `${Math.round(a.level * 100)}%` }} />}</span>
+          </span>
+        )
+      })}
+      {every.length > 0 && (
+        <span className="scene-sound-every" title={`In every scene: ${every.map((a) => a.name).join(', ')}`}>
+          {own.length ? '+ ' : ''}
+          {every.length} in every scene
+        </span>
+      )}
+    </span>
+  )
+}
+
+function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
+  const { a, state, level, studio, run, onEdit } = props
+  const { from, chs, unplugged } = soundFrom(a, state)
   // Sound follows the scene: heard only while one of its scenes is on air.
   const onAir = audible(a, scenesOnAir(state))
   const where = a.scenes
     ? a.scenes.map((id) => state.scenes.find((x) => x.id === id)?.name).filter(Boolean).join(', ')
     : 'Every scene'
-  const chs = a.channels ? (a.channels.length === 1 ? `input ${a.channels[0]}` : `inputs ${a.channels.join(' + ')}`) : ''
   return (
     <div className={`strip ${a.muted ? 'muted' : ''} ${onAir ? '' : 'off-air'}`}>
       <div className="strip-head">

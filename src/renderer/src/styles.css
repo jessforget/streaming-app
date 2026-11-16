@@ -498,3 +498,19 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .modal-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
 .modal-foot button.primary { background: var(--good); border-color: var(--good); color: var(--on-good); padding: 0 22px; }
 
+
+/* Sound on each scene card: what plays when that scene is on air. */
+.scene-sounds { display: flex; flex-direction: column; gap: 3px; padding: 0 10px 8px; margin-top: -2px; }
+.scene-sound { display: grid; grid-template-columns: 12px minmax(0, 1fr) 34px; gap: 6px; align-items: center; font-size: 12px; font-weight: 500; }
+.scene-sound .sound-icon { color: var(--muted); font-size: 9px; text-align: center; }
+.scene-sound .sound-label { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.scene-sound .sound-label > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-sound .sound-label small { color: var(--muted); font-size: 11px; }
+.scene-sound .hmeter { position: relative; height: 5px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.scene-sound .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; height: 100%; width: 0; border-radius: 3px; background: var(--good); transition: none; }
+.scene-sound.muted .sound-label span { color: var(--muted); text-decoration: line-through; }
+.scene-sound.muted .sound-icon { color: var(--live); }
+.scene-sound.muted .meter { opacity: 0.2; }
+.scene-sound.missing .sound-label, .scene-sound.missing .sound-label small, .scene-sound.missing .sound-icon { color: var(--warn); }
+.scene-sound-every { font-size: 11px; color: var(--muted); }
+.library-item .scene-sounds { padding: 0 8px 6px; }
