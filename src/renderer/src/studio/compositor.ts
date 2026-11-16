@@ -270,6 +270,26 @@ export class Compositor {
     }
   }
 
+  /**
+   * Draw a small picture of a scene for its scene card. Cheap: a few frames a
+   * second at thumbnail size, on the processor's 2D canvas, from the same
+   * open cameras and files as Live and Preview.
+   */
+  drawThumbnail(sceneId: string, canvas: HTMLCanvasElement): boolean {
+    const s = this.state
+    const scene = s?.scenes.find((x) => x.id === sceneId)
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!s || !scene || !ctx) return false
+    // Text sizes follow the output picture, so draw at its scale and shrink.
+    const w = this.program.width || 1280
+    const h = this.program.height || 720
+    ctx.save()
+    ctx.scale(canvas.width / w, canvas.height / h)
+    this.drawScene(ctx, scene, s, w, h)
+    ctx.restore()
+    return true
+  }
+
   private drawScene(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number, depth = 0) {
     const alpha = ctx.globalAlpha
     // Fill with black first so a fade reveals the new scene, not the old one through it. (Not for a scene inside a scene.)

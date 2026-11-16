@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
@@ -7,7 +7,7 @@ import { InstallButton } from './install'
 import { HealthPill, Notice, ScenePicture } from './parts'
 import { Settings, type SettingsTab } from './Settings'
 import type { Studio } from './studio/studio'
-import { LiveCanvas, LiveMeter, StudioBar } from './studio/StudioParts'
+import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
 import { useApp, useElapsed, type Run } from './useApp'
 
 /**
@@ -15,6 +15,9 @@ import { useApp, useElapsed, type Run } from './useApp'
  * video and sound); in the mockup there is no studio and the monitors show a
  * drawing of each scene instead.
  */
+/** The studio, for the live pictures on the scene cards (none in the mockup or on a tablet). */
+const StudioContext = createContext<Studio | null>(null)
+
 export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; studioElsewhere?: boolean }) {
   const { bridge, studio = null, studioElsewhere = false } = props
   const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
@@ -30,7 +33,9 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
       <div className="workspace">
         <main className="stage">
           <Monitors state={state} run={run} studio={studio} />
-          <SceneStrip state={state} run={run} />
+          <StudioContext.Provider value={studio}>
+            <SceneStrip state={state} run={run} />
+          </StudioContext.Provider>
         </main>
         <aside className="side">
           <section className="panel">
@@ -402,9 +407,10 @@ function useSlide(container: RefObject<HTMLElement | null>, key: string) {
 }
 
 function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppState; live: boolean; next: boolean }) {
+  const studio = useContext(StudioContext)
   return (
     <>
-      <ScenePicture scene={scene} state={state} />
+      {studio ? <SceneThumb studio={studio} sceneId={scene.id} /> : <ScenePicture scene={scene} state={state} />}
       <span className="scene-name">
         <span>{scene.name}</span>
         {live && <em className="tag live">ON AIR</em>}

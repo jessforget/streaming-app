@@ -275,6 +275,7 @@ button.take:disabled { background: var(--panel-2); color: var(--muted); opacity:
 .use-scene { position: absolute; top: 6px; right: 6px; padding: 2px 8px; font-size: 12px; background: rgba(0, 0, 0, 0.65); border-color: transparent; color: #fff; }
 .library-empty { grid-column: 1 / -1; margin: 0; }
 .library-item .tag { display: none; }
+.scene-thumb { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; }
 .library-item .scene-card { touch-action: pan-y; user-select: none; }
 .library-head .inline-form { margin: 0; }
 .library-item:has(.dragging) .use-scene { visibility: hidden; }

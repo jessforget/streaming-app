@@ -13,6 +13,24 @@ export function LiveCanvas({ canvas, live, next }: { canvas: HTMLCanvasElement; 
   return <div ref={ref} className={`picture live-video ${live ? 'is-live' : ''} ${next ? 'is-next' : ''}`} />
 }
 
+/**
+ * A live picture of a scene on its scene card: 2 frames a second at 256x144,
+ * so a row of cards costs next to nothing next to Live and Preview.
+ */
+export function SceneThumb({ studio, sceneId, live, next }: { studio: Studio; sceneId: string; live?: boolean; next?: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const draw = () => {
+      if (document.hidden || !ref.current) return
+      studio.compositor.drawThumbnail(sceneId, ref.current)
+    }
+    draw()
+    const t = setInterval(draw, 500)
+    return () => clearInterval(t)
+  }, [studio, sceneId])
+  return <canvas ref={ref} width={256} height={144} className={`picture scene-thumb ${live ? 'is-live' : ''} ${next ? 'is-next' : ''}`} />
+}
+
 /** An audio meter that reads the mixer directly, many times a second, without redrawing the page. */
 export function LiveMeter({ studio, id, horizontal }: { studio: Studio; id: string; horizontal?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
