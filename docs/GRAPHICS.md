@@ -37,8 +37,14 @@ Works in the desktop version (`npm run desktop`, or "Start Streaming App
 
 ## Sample gfx app
 
-`examples/gfx-app` is a tiny gfx app to start from: a lower third that slides
-in, and a control page to type a name and show or hide it. No installs needed:
+`examples/gfx-app` is a tiny gfx app to start from: a lower third, and a
+control page to type a name and show or hide it. The control page also sets
+the look: four styles (Classic, Bold block, Minimal, News strip), font,
+position, name and title size, length (fits the words, or a share of the
+width), accent / box / text colours, how long it stays on, and the animation
+(slide, fade, wipe). The look is saved in `gfx-settings.json` next to the
+server. Fonts picked as "a font on the streaming PC" come from the streaming
+PC, because that is where the page is drawn. No installs needed:
 
 ```
 node examples/gfx-app/server.cjs

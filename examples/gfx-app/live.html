@@ -3,41 +3,132 @@
 <head>
 <meta charset="utf-8">
 <title>Graphics</title>
+<!-- Fonts to pick from on the control page. A "font on this PC" uses the streaming PC's own fonts (the page is drawn there). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Montserrat:wght@400;500;700;800&family=Roboto+Slab:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   /* The rules for a graphics page: see-through background, laid out at 1920 x 1080. */
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; }
 
-  .lower-third {
-    position: absolute; left: 96px; bottom: 120px;
-    transform: translateX(-140%); transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  :root {
+    --font: Inter; --name-size: 52px; --title-size: 30px; --width: auto;
+    --accent: #2563d9; --box: #f2f2f2; --text: #111111;
   }
-  .lower-third.on { transform: translateX(0); }
-  .name {
-    background: #f2f2f2; color: #111; font-size: 52px; font-weight: 700;
-    padding: 14px 36px; border-radius: 10px 10px 0 0; display: inline-block;
-  }
-  .title {
-    background: #2563d9; color: #fff; font-size: 30px; font-weight: 500;
-    padding: 10px 36px; border-radius: 0 0 10px 10px;
-  }
+  .place { position: absolute; bottom: 120px; }
+  .place.left { left: 96px; }
+  .place.right { right: 96px; }
+  .place.center { left: 50%; transform: translateX(-50%); }
+
+  .l3 { font-family: var(--font), 'Segoe UI', system-ui, sans-serif; width: var(--width); transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 500ms ease, clip-path 600ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .place.right .l3 { margin-left: auto; }
+
+  /* In and out. */
+  .anim-slide .l3 { transform: translateX(-140%); }
+  .place.right.anim-slide .l3 { transform: translateX(140%); }
+  .place.center.anim-slide .l3 { transform: translateY(160%); }
+  .anim-fade .l3 { opacity: 0; }
+  .anim-wipe .l3 { clip-path: inset(0 100% 0 0); }
+  /* Shown: wins over every hidden spot above (they are more specific). */
+  .place.on .l3 { transform: none !important; opacity: 1 !important; clip-path: inset(0 0 0 0) !important; }
+
+  /* 1. Classic: name bar over a colour title bar. */
+  .classic .name { display: inline-block; min-width: 100%; box-sizing: border-box; background: var(--box); color: var(--text); font-size: var(--name-size); font-weight: 700; padding: 0.27em 0.7em; border-radius: 10px 10px 0 0; }
+  .classic .title { background: var(--accent); color: #fff; font-size: var(--title-size); font-weight: 500; padding: 0.33em 1.2em; border-radius: 0 0 10px 10px; }
+  .classic .l3 { display: inline-flex; flex-direction: column; }
+  .classic .l3[style*='width'] .name { min-width: 0; }
+
+  /* 2. Bold block: a box with a colour stripe, name in capitals. */
+  .block .l3 { display: inline-flex; background: color-mix(in srgb, var(--box) 90%, transparent); border-left: 14px solid var(--accent); padding: 0.3em 0.9em 0.35em 0.6em; box-sizing: border-box; }
+  .block .inner { display: flex; flex-direction: column; gap: 2px; }
+  .block .name { font-size: var(--name-size); font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.15; }
+  .block .title { font-size: var(--title-size); font-weight: 500; color: color-mix(in srgb, var(--text) 80%, transparent); }
+
+  /* 3. Minimal: words only, a soft shadow and a thin colour line. */
+  .minimal .l3 { display: inline-flex; flex-direction: column; gap: 10px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75); }
+  .minimal .name { font-size: var(--name-size); font-weight: 700; color: var(--text); line-height: 1.1; }
+  .minimal .line { width: 96px; height: 5px; background: var(--accent); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+  .minimal .l3[style*='width'] .line { width: 100%; }
+  .minimal .title { font-size: var(--title-size); color: var(--text); opacity: 0.92; }
+  .place.center.minimal .l3 { align-items: center; text-align: center; }
+
+  /* 4. News strip: a band across the bottom with a LIVE tag. */
+  .place.news { left: 0; right: 0; transform: none; }
+  .news .l3 { display: flex; height: calc(var(--name-size) * 1.7); width: var(--width, 100%); }
+  .place.news.right .l3 { margin-left: auto; }
+  .place.news.center .l3 { margin: 0 auto; }
+  .news .tag { background: var(--accent); color: #fff; font-weight: 800; font-size: calc(var(--name-size) * 0.55); letter-spacing: 0.08em; display: flex; align-items: center; padding: 0 0.9em 0 3em; }
+  .place.news.right .tag, .place.news.center .tag { padding-left: 0.9em; }
+  .news .band { flex: 1; background: color-mix(in srgb, var(--box) 95%, transparent); display: flex; align-items: center; gap: 0.7em; padding: 0 1em; min-width: 0; }
+  .news .name { font-size: var(--name-size); font-weight: 700; color: var(--text); white-space: nowrap; }
+  .news .divider { width: 2px; height: 50%; background: color-mix(in srgb, var(--text) 30%, transparent); }
+  .news .title { font-size: var(--title-size); color: color-mix(in srgb, var(--text) 80%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
-<div class="lower-third" id="l3">
-  <div class="name" id="name"></div>
-  <div class="title" id="title"></div>
-</div>
+<div class="place" id="place"></div>
 <script>
   // The gfx app's server tells this page what to show. If the connection drops, it reconnects by itself.
-  const l3 = document.getElementById('l3')
-  const events = new EventSource('/events')
-  events.onmessage = (e) => {
-    const g = JSON.parse(e.data)
-    document.getElementById('name').textContent = g.name
-    document.getElementById('title').textContent = g.title
-    l3.classList.toggle('on', g.show)
+  const place = document.getElementById('place')
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag)
+    if (cls) e.className = cls
+    if (text !== undefined) e.textContent = text
+    return e
   }
+
+  /** The lower third's parts for one style. Only rebuilt when the style changes, so the animation can run. */
+  let builtStyle = ''
+  let parts = {}
+  function build(style) {
+    place.textContent = ''
+    const l3 = el('div', 'l3')
+    const name = el('div', 'name')
+    const title = el('div', 'title')
+    if (style === 'block') {
+      const inner = el('div', 'inner')
+      inner.append(name, title)
+      l3.append(inner)
+    } else if (style === 'minimal') {
+      l3.append(name, el('div', 'line'), title)
+    } else if (style === 'news') {
+      const band = el('div', 'band')
+      band.append(name, el('div', 'divider'), title)
+      l3.append(el('div', 'tag', 'LIVE'), band)
+    } else {
+      l3.append(name, title)
+    }
+    place.append(l3)
+    parts = { l3, name, title }
+    builtStyle = style
+  }
+
+  function show(g) {
+    const look = g.look
+    if (look.style !== builtStyle) {
+      // A new style: build it hidden, then let it animate in if it should show.
+      place.classList.remove('on')
+      build(look.style)
+    }
+    const root = document.documentElement.style
+    const font = look.font === 'custom' ? look.customFont || 'Segoe UI' : look.font
+    root.setProperty('--font', `'${font}'`)
+    root.setProperty('--name-size', `${look.nameSize}px`)
+    root.setProperty('--title-size', `${look.titleSize}px`)
+    root.setProperty('--accent', look.accent)
+    root.setProperty('--box', look.box)
+    root.setProperty('--text', look.text)
+    // Length: 0 = as long as the words, else that share of the picture's width.
+    if (look.length > 0) parts.l3.style.width = `${Math.round((1920 * look.length) / 100)}px`
+    else parts.l3.style.removeProperty('width')
+    parts.name.textContent = g.name
+    parts.title.textContent = g.title
+    const wasOn = place.classList.contains('on')
+    place.className = `place ${look.style} ${look.position} anim-${look.animation}${wasOn ? ' on' : ''}`
+    // Next frame, so a freshly built lower third starts from its hidden spot and animates in.
+    requestAnimationFrame(() => requestAnimationFrame(() => place.classList.toggle('on', g.show)))
+  }
+
+  new EventSource('/events').onmessage = (e) => show(JSON.parse(e.data))
 </script>
 </body>
 </html>
