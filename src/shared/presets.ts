@@ -1,4 +1,4 @@
-import type { Platform, Quality } from './state'
+import type { AppState, FpsFamily, Platform, Quality } from './state'
 
 export interface QualityPreset {
   label: string
@@ -77,6 +77,65 @@ export const PLATFORMS: Record<Platform, PlatformInfo> = {
 
 /** At most this many platforms at once (optional multistream). */
 export const MAX_DESTINATIONS = 3
+
+/**
+ * The quality with the frame rate in use: 25 instead of 30 (and 50 instead of 60)
+ * when the cameras send 25 or 50, so no picture is shown twice (that looks like dropped frames).
+ */
+export function presetFor(quality: Quality, family: FpsFamily = 'ntsc'): QualityPreset {
+  const p = QUALITY_PRESETS[quality]
+  if (family !== 'pal') return p
+  const fps = p.fps >= 50 ? 50 : 25
+  return { ...p, fps, summary: p.summary.replace(/\d+ fps/, `${fps} fps`).replace(' (like OBS)', '') }
+}
+
+/** 25, 50, 30, 60 (or 24, 29.97...) frames a second: which family it belongs to, or null if neither. */
+export function familyOf(fps: number): FpsFamily | null {
+  if (!(fps > 0)) return null
+  if (Math.abs(fps - 25) < 0.6 || Math.abs(fps - 50) < 1.2) return 'pal'
+  if (Math.abs(fps - 30) < 0.6 || Math.abs(fps - 60) < 1.2) return 'ntsc'
+  return null
+}
+
+const fpsText = (f: number) => `${Math.round(f * 100) / 100} fps`
+
+/**
+ * Which frame rate family the cameras in the scenes send.
+ *
+ * - Network cameras (Z CAM, RTMP cameras) send at their own fixed rate, measured on arrival.
+ * - A camera on this PC that can't go above 25 or 50 is set to that rate (an ATEM on 1080p25).
+ * - Other cameras on this PC (webcams) can run at either, so they don't decide.
+ *
+ * Cameras that disagree: family null, and the note names them so the person can pick.
+ */
+export function cameraRate(
+  state: Pick<AppState, 'scenes' | 'inputs'>,
+  netFps: (deviceId: string) => number,
+  deviceRate: (deviceId: string) => { fps: number; max: number } | null
+): { family: FpsFamily | null; note: string } {
+  const ids = new Set<string>()
+  for (const s of state.scenes) for (const l of s.layers) if (l.kind === 'video' && l.device) ids.add(l.device)
+  const fixed: { name: string; fps: number; family: FpsFamily }[] = []
+  let flexible = false
+  for (const id of ids) {
+    const name = (state.inputs.video.find((d) => d.id === id)?.name ?? id).replace(/ \(network\)$/, '')
+    if (id.startsWith('net:')) {
+      const fps = netFps(id)
+      const family = familyOf(fps)
+      if (family) fixed.push({ name, fps, family })
+      continue
+    }
+    const r = deviceRate(id)
+    if (!r) continue
+    if (familyOf(r.max) === 'pal') fixed.push({ name, fps: r.max, family: 'pal' })
+    else if (familyOf(r.fps)) flexible = true
+  }
+  const list = fixed.map((c) => `${c.name} ${fpsText(c.fps)}`).join(', ')
+  const families = new Set(fixed.map((c) => c.family))
+  if (families.size > 1) return { family: null, note: `Cameras differ: ${list}` }
+  if (families.size === 1) return { family: fixed[0].family, note: list }
+  return { family: flexible ? 'ntsc' : null, note: '' }
+}
 
 export function requiredUploadKbps(quality: Quality, enabledCount: number): number {
   const p = QUALITY_PRESETS[quality]

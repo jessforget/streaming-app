@@ -177,12 +177,18 @@ button.end-live { background: var(--live); border-color: var(--live); color: var
 
 .monitors-wrap { display: flex; flex-direction: column; gap: 12px; }
 /* Preview and Live side by side, the same size (like OBS's Studio Mode). */
-.monitors { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.monitor { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.transition-bar { display: flex; gap: 12px; align-items: stretch; justify-content: center; }
-.transition-bar .segmented { flex: 0 1 280px; align-items: stretch; }
-.transition-bar .segmented button { place-items: center; }
-.transition-bar .take { flex: 0 1 320px; }
+.monitors { display: grid; grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr); gap: 14px; align-items: center; }
+.monitor { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-self: start; }
+/* Cut / Fade and Transition sit between Preview and Live, like the T-bar on a vision mixer. */
+.transition-col { display: flex; flex-direction: column; gap: 10px; align-items: stretch; padding-top: 34px; }
+.segmented.stacked { display: flex; flex-direction: column; }
+.segmented.stacked button { min-height: 40px; place-items: center; }
+.segmented.stacked button + button { border-left: 0; border-top: 1px solid var(--line); }
+.transition-col .take { min-height: 96px; font-size: 18px; padding: 0 6px; }
+.key-hint {
+  align-self: center; font: 600 11px/1 var(--display); color: var(--muted); letter-spacing: 0.04em;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 4px 14px;
+}
 .monitor-head { display: flex; align-items: center; gap: 10px; min-height: 26px; }
 .monitor-head strong { font-family: var(--display); font-size: 18px; }
 .push { margin-left: auto; }
@@ -248,6 +254,33 @@ button.take:disabled { background: var(--panel-2); color: var(--muted); opacity:
 .tag.live { background: var(--live); color: var(--on-live); }
 .tag.next { background: var(--accent); color: var(--on-accent); }
 .tally-live { border-color: var(--live) !important; }
+
+/* Scene library: scenes put away for this show. One line when tucked away. */
+.scene-library { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 12px; }
+.scene-library.open { padding-bottom: 12px; }
+.scene-library.drop-here { border: 2px dashed var(--accent); background: var(--accent-bg); }
+.scene-library.drop-blocked { border: 2px dashed var(--live); }
+.library-head { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-height: 32px; }
+.library-head > span.small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-toggle { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 4px 6px 4px 0; color: var(--fg); }
+.library-toggle h2 { margin: 0; }
+.library-toggle .arrow { width: 14px; color: var(--muted); }
+.library-toggle .count { font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 10px; padding: 1px 8px; }
+.library-find { max-width: 220px; }
+.library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 10px; }
+.library-item { position: relative; display: flex; flex-direction: column; }
+.library-item .scene-card { opacity: 0.85; }
+.library-item .scene-card:hover, .library-item .scene-card.tally-next { opacity: 1; }
+.library-item .scene-name { font-size: 13px; min-height: 32px; padding: 6px 8px; }
+.use-scene { position: absolute; top: 6px; right: 6px; padding: 2px 8px; font-size: 12px; background: rgba(0, 0, 0, 0.65); border-color: transparent; color: #fff; }
+.library-empty { grid-column: 1 / -1; margin: 0; }
+.library-item .tag { display: none; }
+.scene-thumb { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; }
+.library-item .scene-card { touch-action: pan-y; user-select: none; }
+.library-head .inline-form { margin: 0; }
+.library-item:has(.dragging) .use-scene { visibility: hidden; }
+.scene-grid.drop-here { outline: 2px dashed var(--accent); outline-offset: 6px; border-radius: 10px; }
+.scene-card.floating.to-library { transform: scale(0.85); opacity: 0.8; }
 .tally-next { border-color: var(--accent) !important; }
 
 .panel { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--panel); }
@@ -419,6 +452,12 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 @media (max-width: 760px) {
   .remote-grid { grid-template-columns: 1fr; }
   .monitors { grid-template-columns: 1fr; }
+  .transition-col { flex-direction: row; padding-top: 0; }
+  .transition-col .segmented.stacked { flex-direction: row; flex: 1; }
+  .transition-col .segmented.stacked button { flex: 1; }
+  .transition-col .segmented.stacked button + button { border-top: 0; border-left: 1px solid var(--line); }
+  .transition-col .take { flex: 1; min-height: 56px; }
+  .key-hint { display: none; }
   .pairing { grid-template-columns: 1fr; }
   .qr { max-width: 200px; }
   .demo-tablet { border-width: 0; border-radius: 0; margin: 0; }
@@ -454,3 +493,24 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
   .remote-grid { grid-template-columns: 1fr; }
   .remote-scenes { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
+
+/* Settings: the Done button at the bottom, always in view. */
+.modal-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--panel); }
+.modal-foot button.primary { background: var(--good); border-color: var(--good); color: var(--on-good); padding: 0 22px; }
+
+
+/* Sound on each scene card: what plays when that scene is on air. */
+.scene-sounds { display: flex; flex-direction: column; gap: 3px; padding: 0 10px 8px; margin-top: -2px; }
+.scene-sound { display: grid; grid-template-columns: 12px minmax(0, 1fr) 34px; gap: 6px; align-items: center; font-size: 12px; font-weight: 500; }
+.scene-sound .sound-icon { color: var(--muted); font-size: 9px; text-align: center; }
+.scene-sound .sound-label { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.scene-sound .sound-label > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-sound .sound-label small { color: var(--muted); font-size: 11px; }
+.scene-sound .hmeter { position: relative; height: 5px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.scene-sound .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; height: 100%; width: 0; border-radius: 3px; background: var(--good); transition: none; }
+.scene-sound.muted .sound-label span { color: var(--muted); text-decoration: line-through; }
+.scene-sound.muted .sound-icon { color: var(--live); }
+.scene-sound.muted .meter { opacity: 0.2; }
+.scene-sound.missing .sound-label, .scene-sound.missing .sound-label small, .scene-sound.missing .sound-icon { color: var(--warn); }
+.scene-sound-every { font-size: 11px; color: var(--muted); }
+.library-item .scene-sounds { padding: 0 8px 6px; }

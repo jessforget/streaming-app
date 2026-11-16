@@ -197,6 +197,8 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
 
   it('adds, renames and removes scenes, but never the one on air', async () => {
     const r = (await t.c.run('local', 'scene.add', { name: 'Interview' })) as { sceneId: string }
+    // New scenes start in the Scene library.
+    expect(t.c.state.scenes.find((s) => s.id === r.sceneId)?.stored).toBe(true)
     await t.c.run('local', 'scene.rename', { sceneId: r.sceneId, name: 'Two-shot' })
     expect(t.c.state.scenes.at(-1)).toMatchObject({ id: r.sceneId, name: 'Two-shot', layers: [] })
     await expect(t.c.run('local', 'scene.remove', { sceneId: t.c.state.programSceneId })).rejects.toThrow('on air')
@@ -254,6 +256,25 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
     await t.c.run('local', 'scene.move', { sceneId: first, index: 0 })
     expect(ids()[0]).toBe(first)
     await expect(t.c.run('local', 'scene.move', { sceneId: first, index: 1.5 })).rejects.toThrow()
+  })
+
+  it('puts scenes away in the Scene library and brings them back', async () => {
+    const scenes = t.c.state.scenes
+    const live = t.c.state.programSceneId
+    const other = scenes.find((s) => s.id !== live)!
+    await t.c.run('local', 'scene.store', { sceneId: other.id, stored: true })
+    expect(t.c.state.scenes.find((s) => s.id === other.id)?.stored).toBe(true)
+    // Not deleted: it keeps its place and its sources.
+    expect(t.c.state.scenes).toHaveLength(scenes.length)
+    // The scene on air can't be put away.
+    await expect(t.c.run('local', 'scene.store', { sceneId: live, stored: true })).rejects.toThrow(/on air/)
+    // Putting a stored scene on air brings it back into the show.
+    await t.c.run('local', 'scene.program', { sceneId: other.id })
+    expect(t.c.state.scenes.find((s) => s.id === other.id)?.stored).toBeUndefined()
+    await t.c.run('local', 'scene.store', { sceneId: live, stored: true })
+    await t.c.run('local', 'scene.store', { sceneId: live, stored: false })
+    expect(t.c.state.scenes.find((s) => s.id === live)?.stored).toBeUndefined()
+    await expect(t.c.run('remote', 'scene.store', { sceneId: live, stored: true })).rejects.toBeInstanceOf(CommandError)
   })
 
   it('adds and removes audio channels, including a capture card’s sound', async () => {

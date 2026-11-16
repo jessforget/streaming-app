@@ -78,6 +78,11 @@ export interface Scene {
   name: string
   /** Top of the list is drawn in front. */
   layers: Layer[]
+  /**
+   * Put away in the Scene library: kept with all its sources, but left out of
+   * the "In this show" row and the tablet remote. Absent = in this show.
+   */
+  stored?: boolean
 }
 
 /**
@@ -210,6 +215,8 @@ export interface Destination {
   serverUrl?: string
   /** True when a stream key is saved. The key itself never leaves the streaming PC. */
   hasKey: boolean
+  /** The saved key's last 4 characters, to match against the platform's. */
+  keyEnd?: string
   /** Instagram streams in a vertical layout. */
   vertical: boolean
 }
@@ -253,6 +260,10 @@ export interface EngineInfo {
   note: string
 }
 
+/** 'pal' = 25 or 50 frames a second (Europe, Africa, Middle East...); 'ntsc' = 30 or 60. */
+export type FpsFamily = 'pal' | 'ntsc'
+export type FrameRateChoice = 'auto' | FpsFamily
+
 export interface AppState {
   setupName: string
   engine: EngineInfo
@@ -261,7 +272,18 @@ export interface AppState {
   programSceneId: string
   transition: { kind: 'cut' | 'fade'; durationMs: number }
   audio: AudioSource[]
-  stream: { live: boolean; startedAt: number | null; quality: Quality; destinations: Destination[] }
+  stream: {
+    live: boolean
+    startedAt: number | null
+    quality: Quality
+    destinations: Destination[]
+    /** The person's choice: match the cameras, or always 25/50 or 30/60 frames a second. */
+    frameRate: FrameRateChoice
+    /** What the cameras send, measured by the main window. family null = no camera to go by. */
+    cameras: { family: FpsFamily | null; note: string }
+    /** The frame rate family in use now. Only changes while not streaming or recording. */
+    family: FpsFamily
+  }
   recording: { active: boolean; startedAt: number | null; folder: string; format: 'mp4' | 'mkv' }
   /** Devices the PC can see, for the source and audio pickers. */
   inputs: { video: InputDevice[]; audio: InputDevice[] }

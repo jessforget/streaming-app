@@ -49,12 +49,16 @@ export interface CommandMap {
   'data.clear': { keys?: string[] }
   // Settings: only the on-screen interface may call these.
   'settings.setQuality': { quality: 'low' | 'medium' | 'high' }
+  /** 'auto' = match the cameras; 'pal' = 25/50 fps; 'ntsc' = 30/60 fps. */
+  'settings.setFrameRate': { frameRate: 'auto' | 'pal' | 'ntsc' }
   'settings.setDestination': {
     id: string
     enabled?: boolean
     serverUrl?: string
     streamKey?: string
   }
+  /** Check a platform's saved stream key without going live. Answers { ok, message }. */
+  'settings.testDestination': { id: string }
   'settings.setRecordFolder': { folder: string }
   // Editing scenes, sources and audio, like OBS. On-screen only, so a tap on a tablet can't break the layout.
   'scene.add': { name: string }
@@ -62,6 +66,8 @@ export interface CommandMap {
   'scene.rename': { sceneId: string; name: string }
   /** Move a scene to a new place in the list (0 = first). */
   'scene.move': { sceneId: string; index: number }
+  /** Put a scene away in the Scene library (stored: true), or bring it back into this show. */
+  'scene.store': { sceneId: string; stored: boolean }
   'layer.add': {
     sceneId: string
     kind: LayerKind
@@ -125,6 +131,8 @@ export interface CommandMap {
   }
   'inputs.report': { video: InputDevice[]; audio: InputDevice[] }
   'studio.report': { fps: number; audioLevels: Record<string, number> }
+  /** The main window measured the cameras' frame rates. family null = no camera to go by. */
+  'studio.cameraRate': { family: 'pal' | 'ntsc' | null; note: string }
   'audio.remove': { sourceId: string }
   'inputs.refresh': Record<string, never>
   'devices.setPairingOpen': { open: boolean }
@@ -155,12 +163,15 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'data.set': 'data',
   'data.clear': 'data',
   'settings.setQuality': 'admin',
+  'settings.setFrameRate': 'admin',
   'settings.setDestination': 'admin',
+  'settings.testDestination': 'admin',
   'settings.setRecordFolder': 'admin',
   'scene.add': 'admin',
   'scene.remove': 'admin',
   'scene.rename': 'admin',
   'scene.move': 'admin',
+  'scene.store': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',
@@ -169,6 +180,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'audio.update': 'admin',
   'inputs.report': 'admin',
   'studio.report': 'admin',
+  'studio.cameraRate': 'admin',
   'audio.remove': 'admin',
   'inputs.refresh': 'admin',
   'devices.setPairingOpen': 'admin',

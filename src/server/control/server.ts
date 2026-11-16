@@ -42,6 +42,14 @@ export interface ControlServerOptions {
     setStudio(send: ((offer: PhoneOffer) => void) | null): void
     answer(reqId: string, r: { sdp?: string; error?: string }): void
   }
+  /** Network cameras (a Z CAM on the router): their list, and their video for the main window. */
+  netcams?: {
+    list(): unknown[]
+    set(input: unknown): unknown[]
+    attach(socket: WebSocket, id: string): void
+  }
+  /** Where cameras stream to the app (RTMP); 0 when receiving is off. */
+  rtmpPort?: number
 }
 
 const MAX_MEDIA_MESSAGE_BYTES = 16 * 1024 * 1024
@@ -128,6 +136,9 @@ export class ControlServer {
         const kind = url.searchParams.get('kind') === 'record' ? 'record' : 'stream'
         const codec = (url.searchParams.get('codec') ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
         this.media.handleUpgrade(req, socket, head, (ws) => this.opts.onMedia!(ws, kind, codec))
+      } else if (url.pathname === '/netcam' && this.opts.netcams && isLocalRequest(req, this.boundPort)) {
+        const id = (url.searchParams.get('id') ?? '').replace(/[^a-z0-9-]/gi, '').slice(0, 40)
+        this.media.handleUpgrade(req, socket, head, (ws) => this.opts.netcams!.attach(ws, id))
       } else {
         socket.destroy()
       }
@@ -369,9 +380,23 @@ export class ControlServer {
     const path = url.pathname
     res.setHeader('X-Content-Type-Options', 'nosniff')
     res.setHeader('Cache-Control', 'no-store')
+    const local = isLocalRequest(req, this.boundPort)
+    if (path === '/api/netcams' && (req.method === 'GET' || req.method === 'POST')) {
+      // Only the main window on this PC lists or changes the network cameras.
+      if (!local || !this.opts.netcams) return void res.writeHead(403).end()
+      if (req.method === 'POST') {
+        if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return void res.writeHead(415).end()
+        const body = await readJson(req)
+        if (body === undefined) return void res.writeHead(400).end()
+        this.opts.netcams.set(body)
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      // This PC's addresses: a camera that sends to the app needs one of them.
+      const ips = this.urls().map((u) => new URL(u).hostname)
+      return void res.end(JSON.stringify({ cams: this.opts.netcams.list(), ips, rtmpPort: this.opts.rtmpPort ?? 0 }))
+    }
     if (req.method !== 'GET') return void res.writeHead(405).end()
 
-    const local = isLocalRequest(req, this.boundPort)
     // The main window is for the streaming PC itself; anyone else gets the tablet remote.
     if (path === '/' && !local) return void res.writeHead(302, { Location: '/remote' }).end()
     if (path === '/files') return this.serveLocalFile(local, url.searchParams.get('path') ?? '', res, req.headers.range)
@@ -467,4 +492,27 @@ export class ControlServer {
     res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': size })
     createReadStream(file).on('error', () => res.destroy()).pipe(res)
   }
+}
+
+/** A small JSON body (a settings list), or undefined if it is too big or not JSON. */
+function readJson(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (c: Buffer) => {
+      size += c.length
+      if (size > MAX_MESSAGE_BYTES) {
+        resolve(undefined)
+        req.destroy()
+      } else chunks.push(c)
+    })
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch {
+        resolve(undefined)
+      }
+    })
+    req.on('error', () => resolve(undefined))
+  })
 }

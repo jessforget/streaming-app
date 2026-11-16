@@ -44,6 +44,8 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
             {state.scenes.map((s) => {
               const live = s.id === state.programSceneId
               const next = s.id === state.previewSceneId && !live
+              // Scenes put away in the Scene library stay off the remote.
+              if (s.stored && !live && !next) return null
               return (
                 <button
                   key={s.id}
