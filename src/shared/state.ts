@@ -78,6 +78,11 @@ export interface Scene {
   name: string
   /** Top of the list is drawn in front. */
   layers: Layer[]
+  /**
+   * Put away in the Scene library: kept with all its sources, but left out of
+   * the "In this show" row and the tablet remote. Absent = in this show.
+   */
+  stored?: boolean
 }
 
 /**

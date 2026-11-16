@@ -256,6 +256,25 @@ describe('video and audio inputs (no camera switching, like OBS)', () => {
     await expect(t.c.run('local', 'scene.move', { sceneId: first, index: 1.5 })).rejects.toThrow()
   })
 
+  it('puts scenes away in the Scene library and brings them back', async () => {
+    const scenes = t.c.state.scenes
+    const live = t.c.state.programSceneId
+    const other = scenes.find((s) => s.id !== live)!
+    await t.c.run('local', 'scene.store', { sceneId: other.id, stored: true })
+    expect(t.c.state.scenes.find((s) => s.id === other.id)?.stored).toBe(true)
+    // Not deleted: it keeps its place and its sources.
+    expect(t.c.state.scenes).toHaveLength(scenes.length)
+    // The scene on air can't be put away.
+    await expect(t.c.run('local', 'scene.store', { sceneId: live, stored: true })).rejects.toThrow(/on air/)
+    // Putting a stored scene on air brings it back into the show.
+    await t.c.run('local', 'scene.program', { sceneId: other.id })
+    expect(t.c.state.scenes.find((s) => s.id === other.id)?.stored).toBeUndefined()
+    await t.c.run('local', 'scene.store', { sceneId: live, stored: true })
+    await t.c.run('local', 'scene.store', { sceneId: live, stored: false })
+    expect(t.c.state.scenes.find((s) => s.id === live)?.stored).toBeUndefined()
+    await expect(t.c.run('remote', 'scene.store', { sceneId: live, stored: true })).rejects.toBeInstanceOf(CommandError)
+  })
+
   it('adds and removes audio channels, including a capture card’s sound', async () => {
     const r = (await t.c.run('local', 'audio.add', { name: 'Capture', kind: 'video', device: 'usb-capture' })) as { sourceId: string }
     expect(t.c.state.audio.at(-1)).toMatchObject({ id: r.sourceId, kind: 'video', device: 'usb-capture' })

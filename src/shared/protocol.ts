@@ -66,6 +66,8 @@ export interface CommandMap {
   'scene.rename': { sceneId: string; name: string }
   /** Move a scene to a new place in the list (0 = first). */
   'scene.move': { sceneId: string; index: number }
+  /** Put a scene away in the Scene library (stored: true), or bring it back into this show. */
+  'scene.store': { sceneId: string; stored: boolean }
   'layer.add': {
     sceneId: string
     kind: LayerKind
@@ -169,6 +171,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.remove': 'admin',
   'scene.rename': 'admin',
   'scene.move': 'admin',
+  'scene.store': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

@@ -104,6 +104,20 @@ export function SceneTools({ state, run, scene }: { state: AppState; run: Run; s
       >
         Remove
       </button>
+      <button
+        className="ghost small"
+        disabled={onAir && !scene.stored}
+        onClick={() => run('scene.store', { sceneId: scene.id, stored: !scene.stored })}
+        title={
+          scene.stored
+            ? `Bring ${scene.name} back into this show`
+            : onAir
+              ? 'This scene is on air'
+              : `Put ${scene.name} away in the Scene library. Nothing is deleted.`
+        }
+      >
+        {scene.stored ? '↑ Use in this show' : '↓ Put in library'}
+      </button>
     </div>
   )
 }

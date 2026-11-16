@@ -90,6 +90,7 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `scene.add` | `{ "name": "Interview" }` → `{ "sceneId" }` |
 | `scene.rename` | `{ "sceneId", "name" }` |
 | `scene.move` | `{ "sceneId", "index" }`: move a scene card to a new place (0 = first) |
+| `scene.store` | `{ "sceneId", "stored": true \| false }`: put a scene away in the Scene library (kept, not deleted), or bring it back into this show. Not the scene on air. Stored scenes have `"stored": true` in the state. |
 | `scene.remove` | `{ "sceneId" }` (not the scene on air, not the last one) |
 | `layer.add` | `{ "sceneId", "kind": "video" \| "image" \| "media" \| "text" \| "color" \| "countdown" \| "slideshow" \| "scene" \| "screen" \| "window" \| "browser", "name"?, "device"?, "text"?, "url"?, "placement"?, "loop"?, "sound"?, "volume"?, "color"?, "until"?, "minutes"?, "seconds"?, "showScene"? }` → `{ "layerId" }`. New sources go on top. `media`: `loop` (default true), `sound` (play its sound while its scene is on air), `volume` 0–1. `color`: `"#rrggbb"`. `countdown`: `until` ("19:30") or `minutes` from when its scene goes on air; `text` with `{time}`. `slideshow`: `url` = a folder, `seconds` per picture. `scene`: `showScene` = the scene to show inside this one. |
 | `layer.update` | `{ "sceneId", "layerId", "name"?, "device"?, "text"?, "url"?, "placement"? }`. `placement`: `full`, `center`, `lower-third`, `top`, `top-left`, `top-right`, `bottom-right`. |

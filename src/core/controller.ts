@@ -285,6 +285,14 @@ export class Controller extends Emitter<Events> {
         list.splice(at, 0, scene)
         return this.changed()
       }
+      case 'scene.store': {
+        const scene = this.scene(str(P, 'sceneId'))
+        if (typeof P.stored !== 'boolean') throw new CommandError('stored must be true or false')
+        if (P.stored && scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
+        if (P.stored) scene.stored = true
+        else delete scene.stored
+        return this.changed()
+      }
       case 'scene.rename': {
         this.scene(str(P, 'sceneId')).name = name(P, 'name')
         return this.changed()
@@ -527,6 +535,8 @@ export class Controller extends Emitter<Events> {
   // ---------- Scenes ----------
 
   private async takeLive(scene: Scene) {
+    // A scene from the Scene library that goes on air joins this show.
+    delete scene.stored
     this.s.programSceneId = scene.id
     await this.engine.setProgramScene(scene.id, this.s.transition)
   }
