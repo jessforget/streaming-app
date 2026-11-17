@@ -63,6 +63,8 @@ export class Mixer {
   phoneStream: (id: string) => MediaStream | null = () => null
   /** The sound a network graphics source's page sends, if any (set by the studio). */
   graphicsStream: (layer: Layer) => MediaStream | null = () => null
+  /** A video a source's page handed over, playing here (set by the studio). */
+  graphicsVideo: (layer: Layer) => { n: number; el: HTMLVideoElement; sound: boolean } | null = () => null
   /** Remote WebRTC sound only flows into Web Audio while something plays it: a silent element per stream. */
   private pullers = new Map<string, HTMLAudioElement>()
   /** The playing element of a video file in a scene (set by the studio). */
@@ -173,11 +175,18 @@ export class Mixer {
     for (const scene of state.scenes) {
       for (const l of scene.layers) {
         if (l.kind !== 'graphics' || l.sound === false || seen.has(l.id)) continue
-        const stream = this.graphicsStream(l)
-        if (!stream?.getAudioTracks().length) continue
+        // A video the page handed over plays here: its sound comes from that. Otherwise, the sound the page sends.
+        const video = this.graphicsVideo(l)
+        const stream = video ? null : this.graphicsStream(l)
+        let device: string
+        if (video) {
+          if (!video.sound) continue
+          device = `${GFX_DEVICE}video:${video.n}`
+        } else if (stream?.getAudioTracks().length) device = GFX_DEVICE + stream.id
+        else continue
         seen.add(l.id)
         out.push({
-          a: { id: GFX_SOUND_PREFIX + l.id, name: `${l.name} (sound)`, kind: 'device', device: GFX_DEVICE + stream.id, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
+          a: { id: GFX_SOUND_PREFIX + l.id, name: `${l.name} (sound)`, kind: 'device', device, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
           on: l.visible && onAir.has(scene.id)
         })
       }
@@ -236,6 +245,25 @@ export class Mixer {
       if (id === 'desktop') {
         if (!this.desktop) return null
         stream = this.desktop
+      } else if (id.startsWith(`${GFX_DEVICE}video:`)) {
+        const n = Number(id.slice(`${GFX_DEVICE}video:`.length))
+        const el = this.state?.scenes
+          .flatMap((x) => x.layers)
+          .map((l) => (l.kind === 'graphics' ? this.graphicsVideo(l) : null))
+          .find((v) => v?.n === n)?.el
+        if (!el) return null
+        let node = this.mediaNodes.get(el)
+        if (!node) {
+          node = this.ctx.createMediaElementSource(el)
+          this.mediaNodes.set(el, node)
+        }
+        // Now its sound goes only through the mixer (not straight to the speakers).
+        el.muted = false
+        const splitter = this.ctx.createChannelSplitter(2)
+        node.channelCountMode = 'explicit'
+        node.channelCount = 2
+        node.connect(splitter)
+        return { node, splitter, channels: 2 }
       } else if (id.startsWith(GFX_DEVICE)) {
         const want = id.slice(GFX_DEVICE.length)
         const st = this.state?.scenes

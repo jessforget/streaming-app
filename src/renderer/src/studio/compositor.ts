@@ -6,7 +6,7 @@
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
-import { graphicsFeeds } from './graphics'
+import { graphicsFeeds, videoBox } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
 
@@ -378,6 +378,21 @@ export class Compositor {
         ctx.restore()
       } else {
         const src = this.drawableFor(l)
+        // A gfx app video handed over to play here: under the page's picture, where the page would show it.
+        const feed = (l.kind === 'graphics' || l.kind === 'browser') && src ? this.graphics.feedFor(l, s) : null
+        const v = feed?.video
+        if (feed && v && this.ready(v.el) && src instanceof HTMLCanvasElement) {
+          const page = fitRect(src.width, src.height, placementOf(l), w, h)
+          const k = page.w / src.width
+          const b = videoBox(v, src.width, src.height)
+          const r = { x: page.x + b.x * k, y: page.y + b.y * k, w: b.w * k, h: b.h * k }
+          ctx.fillStyle = '#000'
+          ctx.fillRect(r.x, r.y, r.w, r.h)
+          const f = Math.min(r.w / v.el.videoWidth, r.h / v.el.videoHeight)
+          const dw = v.el.videoWidth * f
+          const dh = v.el.videoHeight * f
+          ctx.drawImage(v.el, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh)
+        }
         if (src) this.drawPicture(ctx, src, placementOf(l), w, h)
       }
     }
@@ -401,7 +416,7 @@ export class Compositor {
     return null
   }
 
-  private ready(el: HTMLVideoElement | undefined) {
+  protected ready(el: HTMLVideoElement | undefined) {
     return el && el.readyState >= 2 && el.videoWidth > 0 ? el : null
   }
 
@@ -486,6 +501,17 @@ export class Compositor {
 }
 
 /** The box a placement stands for, in a w×h picture. */
+/** Where a w×h picture lands in a placement's box, keeping its shape. */
+export function fitRect(sw: number, sh: number, place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
+  const box = boxFor(place, w, h)
+  const k = Math.min(box.w / sw, box.h / sh)
+  const dw = sw * k
+  const dh = sh * k
+  const x = box.x + (box.w - dw) / 2
+  const y = place === 'full' || place === 'center' ? box.y + (box.h - dh) / 2 : box.y
+  return { x, y, w: dw, h: dh }
+}
+
 export function boxFor(place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
   const m = Math.round(h * 0.03)
   return place === 'full'

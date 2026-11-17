@@ -399,10 +399,10 @@ function startServer(opts = {}) {
         res.writeHead(416, { 'content-range': `bytes */${size}` })
         return res.end()
       }
-      res.writeHead(206, { 'content-type': type, 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${size}`, 'accept-ranges': 'bytes', 'cache-control': 'no-store' })
+      res.writeHead(206, { 'content-type': type, 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${size}`, 'accept-ranges': 'bytes', 'cache-control': 'no-store', 'access-control-allow-origin': '*' })
       return createReadStream(path, { start, end }).pipe(res)
     }
-    res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes', 'cache-control': 'no-store' })
+    res.writeHead(200, { 'content-type': type, 'content-length': size, 'accept-ranges': 'bytes', 'cache-control': 'no-store', 'access-control-allow-origin': '*' })
     createReadStream(path).pipe(res)
   }
 

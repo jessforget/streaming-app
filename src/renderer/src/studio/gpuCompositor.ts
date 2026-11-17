@@ -10,7 +10,7 @@
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { boxFor, Compositor } from './compositor'
-import type { GraphicsFeed } from './graphics'
+import { videoBox, type GraphicsFeed } from './graphics'
 
 type Rect = { x: number; y: number; w: number; h: number }
 /** Maps a scene's own w×h picture into the canvas being drawn (for a scene inside a scene). */
@@ -242,7 +242,20 @@ export class GpuCompositor extends Compositor {
         const feed = this.graphics.feedFor(l, s)
         const texture = feed ? this.feedTexture(feed) : null
         if (!feed || !texture) continue
-        ops.push({ kind: 'tex', rect: map(fitInside(feed.canvas.width, feed.canvas.height, placementOf(l), w, h)), clip, alpha, texture })
+        const page = fitInside(feed.canvas.width, feed.canvas.height, placementOf(l), w, h)
+        // A gfx app video handed over to play here: under the page's picture, where the page would show it.
+        const v = feed.video
+        if (v && this.ready(v.el)) {
+          const k = page.w / feed.canvas.width
+          const b = videoBox(v, feed.canvas.width, feed.canvas.height)
+          const r = { x: page.x + b.x * k, y: page.y + b.y * k, w: b.w * k, h: b.h * k }
+          ops.push({ kind: 'solid', rect: map(r), clip, alpha, color: [0, 0, 0, 1] })
+          const f = Math.min(r.w / v.el.videoWidth, r.h / v.el.videoHeight)
+          const dw = v.el.videoWidth * f
+          const dh = v.el.videoHeight * f
+          ops.push({ kind: 'ext', rect: map({ x: r.x + (r.w - dw) / 2, y: r.y + (r.h - dh) / 2, w: dw, h: dh }), clip, alpha, video: v.el })
+        }
+        ops.push({ kind: 'tex', rect: map(page), clip, alpha, texture })
       } else {
         const src = this.drawableFor(l)
         if (!src || src instanceof HTMLCanvasElement) continue

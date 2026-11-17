@@ -291,6 +291,29 @@ function setupGraphics(ipcMain, target) {
     done?.(answer)
   })
   require('./gfxfind.cjs').setupFind(ipcMain, fromMain)
+  // A page hands a video over: the main window plays it from the gfx app (/media/...) itself.
+  ipcMain.handle('gfx:video', (e, v) => {
+    const feed = [...feeds.values()].find((f) => !f.win.isDestroyed() && f.win.webContents === e.sender)
+    if (!feed || !v || typeof v.take !== 'string' || v.take.length > 200) throw new Error('Not a graphics page')
+    if (v.stop) {
+      send('gfx:video', { id: feed.id, take: v.take, stop: true })
+      return true
+    }
+    let u
+    try {
+      u = new URL(v.url)
+    } catch {
+      throw new Error('Not a video address')
+    }
+    if (u.origin !== originOf(feed.opts.url) || !u.pathname.startsWith('/media/')) throw new Error('The video must come from the gfx app')
+    send('gfx:video', { id: feed.id, take: v.take, url: u.href, shows: v.shows === 'box' ? 'box' : 'full', loop: v.loop === true, sound: v.sound !== false })
+    return true
+  })
+  ipcMain.on('gfx:video-ended', (e, m) => {
+    if (!fromMain(e) || !m) return
+    const feed = feeds.get(m.id)
+    if (feed && !feed.win.isDestroyed()) feed.win.webContents.send('gfx:video-ended', String(m.take))
+  })
   const originOf = (url) => {
     try {
       return new URL(url).origin

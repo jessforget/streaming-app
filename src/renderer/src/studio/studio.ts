@@ -147,6 +147,7 @@ export class Studio {
       if (!st || !back || !this.liveBefore || this.liveBefore === st.programSceneId || !st.scenes.some((s) => s.id === this.liveBefore)) return
       void this.bridge.command('scene.program', { sceneId: this.liveBefore }).catch(() => {})
     }
+    this.mixer.graphicsVideo = (l) => (this.state ? this.compositor.graphics.videoFor(l, this.state) : null)
     this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
     this.phones.subscribe(() => {
@@ -301,7 +302,7 @@ export class Studio {
       if (!st) return
       const now = st.scenes
         .flatMap((x) => x.layers)
-        .map((l) => (l.kind === 'graphics' ? (feeds.audioFor(l, st)?.id ?? '') : ''))
+        .map((l) => (l.kind === 'graphics' ? `${feeds.audioFor(l, st)?.id ?? ''}/${feeds.videoFor(l, st)?.n ?? ''}` : ''))
         .join(',')
       if (now === sounds) return
       sounds = now

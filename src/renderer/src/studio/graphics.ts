@@ -28,12 +28,42 @@ export interface GraphicsFrame {
   data: Uint8Array
 }
 
+/** A page asks the streaming app to play one of its videos (or stop it). */
+export interface GraphicsVideoMsg {
+  id: string
+  take: string
+  stop?: boolean
+  url?: string
+  shows?: 'full' | 'box'
+  loop?: boolean
+  sound?: boolean
+}
+
+/** A video a graphics page handed over: where it shows on the page (page pixels). */
+export interface GraphicsVideo {
+  /** Unique per handed-over video (its sound channel opens afresh for each). */
+  n: number
+  take: string
+  el: HTMLVideoElement
+  shows: 'full' | 'box'
+  sound: boolean
+}
+
+/** Where a handed-over video sits on the page, in the page's pixels (as the gfx app's page lays it out). */
+export function videoBox(v: GraphicsVideo, pageW: number, pageH: number): Rect {
+  if (v.shows === 'box') return { x: pageW - 96 - 768, y: pageH - 120 - 432, w: 768, h: 432 }
+  return { x: 0, y: 0, w: pageW, h: pageH }
+}
+
 interface DesktopGraphics {
   sync(list: { id: string; url: string; width: number; height: number; fps: number; live?: boolean }[]): void
   reload(id: string): void
   onFrame(fn: (f: GraphicsFrame) => void): () => void
   onStatus(fn: (s: { id: string; status: GraphicsStatus }) => void): () => void
   onClear(fn: (s: { id: string }) => void): () => void
+  /** A gfx app video, played here instead of in the page (smooth, on the graphics card). */
+  onVideo?(fn: (v: GraphicsVideoMsg) => void): () => void
+  videoEnded?(id: string, take: string): void
   /** Desktop versions from before sound came along don't have these. */
   onAudioOffer?(fn: (o: { id: string; req: number; sdp: string }) => void): () => void
   audioAnswer?(req: number, answer: { sdp?: string; error?: string }): void
@@ -91,6 +121,8 @@ export class GraphicsFeed {
   dirty: Rect | null = null
   /** The page's sound (a video's), when it sends it. */
   audio: MediaStream | null = null
+  /** A video the page handed over, playing here. */
+  video: GraphicsVideo | null = null
   pc: RTCPeerConnection | null = null
 
   constructor(
@@ -131,6 +163,14 @@ export class GraphicsFeed {
   }
 }
 
+let videoCount = 0
+
+function stopVideo(v: GraphicsVideo) {
+  v.el.pause()
+  v.el.removeAttribute('src')
+  v.el.load()
+}
+
 function union(a: Rect | null, b: Rect): Rect {
   if (!a) return b
   const x = Math.min(a.x, b.x)
@@ -169,6 +209,33 @@ export class GraphicsFeeds {
       this.desktop.onClear(({ id }) => this.feeds.get(id)?.clear())
     )
     if (this.desktop.onAudioOffer) this.offs.push(this.desktop.onAudioOffer((o) => void this.answerAudio(o)))
+    if (this.desktop.onVideo) this.offs.push(this.desktop.onVideo((v) => this.playVideo(v)))
+  }
+
+  /** Play a page's video here (or stop it). Its picture is drawn under the page's; its sound goes to the mixer. */
+  private playVideo(m: GraphicsVideoMsg) {
+    const feed = this.feeds.get(m.id)
+    if (!feed) return
+    const old = feed.video
+    if (m.stop) {
+      if (old?.take !== m.take) return
+      feed.video = null
+      stopVideo(old)
+      this.changed()
+      return
+    }
+    if (!m.url) return
+    if (old) stopVideo(old)
+    const el = document.createElement('video')
+    // The gfx app allows it (CORS), so the picture can be drawn on the graphics card and streamed.
+    el.crossOrigin = 'anonymous'
+    Object.assign(el, { src: m.url, loop: m.loop === true, muted: true, playsInline: true, preload: 'auto' })
+    el.addEventListener('ended', () => {
+      if (feed.video?.el === el) this.desktop?.videoEnded?.(m.id, m.take)
+    })
+    void el.play().catch(() => {})
+    feed.video = { n: ++videoCount, take: m.take, el, shows: m.shows === 'box' ? 'box' : 'full', sound: m.sound !== false }
+    this.changed()
   }
 
   /** A page sends its sound: take it in (one connection per page; a new one replaces the old). */
@@ -206,6 +273,12 @@ export class GraphicsFeeds {
   }
 
   /** A source's sound from its page, when the page sends one. */
+  /** The video a source's page handed over, playing here (its sound goes to the mixer). */
+  videoFor(l: Layer, state: AppState): GraphicsVideo | null {
+    const spec = feedSpec(l, state)
+    return (spec && this.feeds.get(spec.key)?.video) || null
+  }
+
   audioFor(l: Layer, state: AppState): MediaStream | null {
     const spec = feedSpec(l, state)
     return (spec && this.feeds.get(spec.key)?.audio) || null
@@ -238,6 +311,8 @@ export class GraphicsFeeds {
     for (const key of [...this.feeds.keys()]) {
       if (specs.has(key)) continue
       this.feeds.get(key)?.pc?.close()
+      const v = this.feeds.get(key)?.video
+      if (v) stopVideo(v)
       this.feeds.delete(key)
       changed = true
     }
@@ -331,7 +406,10 @@ export class GraphicsFeeds {
     this.offs.forEach((off) => off())
     this.offs = []
     this.started = false
-    for (const f of this.feeds.values()) f.pc?.close()
+    for (const f of this.feeds.values()) {
+      f.pc?.close()
+      if (f.video) stopVideo(f.video)
+    }
     this.feeds.clear()
     this.wanted = []
     this.lastSent = ''

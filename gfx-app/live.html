@@ -20,6 +20,8 @@
   .media.on { opacity: 1; }
   .media.full { inset: 0; background: #000; }
   .media.box { right: 96px; bottom: 120px; width: 768px; height: 432px; background: #000; border-radius: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55); }
+  /* A video the streaming app plays itself, under this page: leave a hole for it. */
+  .media.handed { background: transparent; box-shadow: none; }
   .media video, .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .media img { opacity: 0; transition: opacity 700ms ease; }
   .media img.cut { transition: none; }
@@ -255,7 +257,27 @@
     const ended = () => {
       if (item.end === 'hide' && view !== 'preview' && decides()) post('/api/do', { action: 'hide', take })
     }
-    if (item.kind === 'video') {
+    if (item.kind === 'video' && item.ok && view === 'out' && inStreamer && window.streamerVideo) {
+      // In the streaming app: hand the video over. The streaming app plays it itself, on its graphics card,
+      // so it stays smooth (drawing a playing video in this page and sending it over is too slow).
+      const handed = window.streamerVideo({
+        take: key,
+        url: new URL(`/media/${item.id}`, location.href).href,
+        shows: item.shows === 'box' ? 'box' : 'full',
+        loop: item.end === 'loop',
+        sound: item.sound !== false
+      })
+      handed.catch(() => {})
+      media.classList.add('handed')
+      const onEnd = (e) => {
+        if (e.detail?.take === key) ended()
+      }
+      window.addEventListener('streamer:video-ended', onEnd)
+      stopMedia = () => {
+        window.removeEventListener('streamer:video-ended', onEnd)
+        window.streamerVideo({ take: key, stop: true }).catch(() => {})
+      }
+    } else if (item.kind === 'video') {
       if (!item.ok) media.append(el('div', 'note', `${item.file || 'The video'} is not on the gfx laptop any more`))
       const v = el('video')
       v.src = `/media/${item.id}`

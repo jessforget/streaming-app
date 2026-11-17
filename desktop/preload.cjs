@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('desktopGraphics', {
   copyCue: (url) => ipcRenderer.invoke('gfx:copy-cue', url),
   /** Tell a gfx app something: path '/api/cue' (body: JSON) or '/api/program' (body: JPEG bytes). */
   post: (origin, path, body) => ipcRenderer.send('gfx:post', { origin, path, body }),
+  /** A graphics page hands over a video to play here: { id, take, url, shows, loop, sound } or { id, take, stop: true }. */
+  onVideo: (fn) => {
+    const h = (_e, v) => fn(v)
+    ipcRenderer.on('gfx:video', h)
+    return () => ipcRenderer.off('gfx:video', h)
+  },
+  /** Tell the page that its handed-over video ended. */
+  videoEnded: (id, take) => ipcRenderer.send('gfx:video-ended', { id, take }),
   onClear: (fn) => {
     const h = (_e, s) => fn(s)
     ipcRenderer.on('gfx:clear', h)
