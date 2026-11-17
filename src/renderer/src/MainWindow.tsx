@@ -421,7 +421,47 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
         {next && <em className="tag next">PREVIEW</em>}
       </span>
       <SceneSounds scene={scene} state={state} studio={studio} />
+      {studio && <MediaClock scene={scene} studio={studio} live={live} />}
     </>
+  )
+}
+
+const clockText = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+/**
+ * A scene with a video that plays once (like the Gfx commercial): its length, and while it
+ * is on air, the time left. In the last 10 seconds it turns into a big red countdown, so the
+ * operator knows the scene is about to go back.
+ */
+function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; live: boolean }) {
+  const media = scene.layers.find((l) => l.kind === 'media' && l.visible && l.loop === false && l.url)
+  const url = media?.url ?? ''
+  const [t, setT] = useState<{ pos: number; dur: number } | null>(null)
+  useEffect(() => {
+    if (!url) return setT(null)
+    const tick = () => {
+      const el = studio.compositor.mediaElement(url)
+      const dur = el && Number.isFinite(el.duration) ? el.duration : 0
+      setT((old) => {
+        const pos = el?.currentTime ?? 0
+        return old && old.dur === dur && Math.abs(old.pos - pos) < 0.05 ? old : { pos, dur }
+      })
+    }
+    tick()
+    const timer = window.setInterval(tick, 200)
+    return () => window.clearInterval(timer)
+  }, [url, studio])
+  if (!media || !t || !t.dur) return null
+  const left = Math.max(0, t.dur - t.pos)
+  if (!live) return <span className="media-clock">Length {clockText(t.dur)}</span>
+  const ending = left <= 10
+  return (
+    <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(left)} seconds left`}>
+      <span className="media-clock-text">{ending ? <>Ends in <b>{Math.ceil(left)}</b></> : <>{clockText(Math.ceil(left))} left</>}</span>
+      <span className="media-clock-bar">
+        <span style={{ width: `${Math.min(100, (100 * t.pos) / t.dur)}%` }} />
+      </span>
+    </span>
   )
 }
 

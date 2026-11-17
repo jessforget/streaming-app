@@ -515,6 +515,17 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .scene-sound.muted .meter { opacity: 0.2; }
 .scene-sound.missing .sound-label, .scene-sound.missing .sound-label small, .scene-sound.missing .sound-icon { color: var(--warn); }
 .scene-sound-every { font-size: 11px; color: var(--muted); }
+.media-clock { display: grid; gap: 4px; margin: 0 10px 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.media-clock.on { color: var(--fg); font-size: 14px; font-weight: 600; }
+.media-clock-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.media-clock-bar span { display: block; height: 100%; background: var(--live, #e5484d); }
+.media-clock.ending { padding: 6px 8px; border-radius: 6px; background: var(--live, #e5484d); color: #fff; }
+.media-clock.ending .media-clock-text { font-size: 15px; }
+.media-clock.ending b { font-size: 22px; margin-left: 4px; }
+.media-clock.ending .media-clock-bar { background: rgba(255, 255, 255, 0.35); }
+.media-clock.ending .media-clock-bar span { background: #fff; }
+@media (prefers-reduced-motion: no-preference) { .media-clock.ending { animation: clock-pulse 1s ease-in-out infinite; } }
+@keyframes clock-pulse { 50% { filter: brightness(1.2); } }
 .library-item .scene-sounds { padding: 0 8px 6px; }
 
 /* ---------- Graphics (network) sources ---------- */
