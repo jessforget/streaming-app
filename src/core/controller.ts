@@ -312,6 +312,7 @@ export class Controller extends Emitter<Events> {
           scene = { id: this.newId('scene'), name: 'Gfx commercial', layers: [], commercial: true, hideOverlay: true }
           this.s.scenes.push(scene)
         }
+        if (scene.name === 'Commercial') scene.name = 'Gfx commercial' // made by an earlier version
         if (scene.id === this.s.programSceneId) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
         delete scene.stored
         const layer: Layer = { id: this.newId('layer'), name: name(P, 'name'), kind: 'media', visible: true, url: path, placement: 'full', loop: false, returnAfter: true, sound: true, volume: 1 }
