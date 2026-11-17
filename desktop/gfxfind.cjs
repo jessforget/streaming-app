@@ -29,7 +29,9 @@ async function info(host, port, ms) {
     const r = await fetch(`http://${host}:${port}/api/info`, { signal: AbortSignal.timeout(ms), redirect: 'error' })
     if (!r.ok) return { answered: true, gfx: null }
     const j = await r.json().catch(() => null)
-    return { answered: true, gfx: j && j.app === 'gfx-app' ? j : null }
+    // Gfx apps from before 17 Nov don't say app: 'gfx-app' yet; their /api/info has port and addresses.
+    const isGfx = j && (j.app === 'gfx-app' || (Number.isInteger(j.port) && Array.isArray(j.addresses)))
+    return { answered: true, gfx: isGfx ? j : null }
   } catch (e) {
     // Refused = a PC is there, just nothing on that port; a timeout = probably no PC at all.
     return { answered: false, alive: e?.cause?.code === 'ECONNREFUSED', gfx: null }
@@ -52,7 +54,7 @@ async function find({ onFound, onProgress, signal, nets = localNets() }) {
       const host = hosts[next++]
       // The usual port first; the others only matter when 8765 was taken on that PC.
       for (const port of PORTS) {
-        const r = await info(host, port, host === '127.0.0.1' ? 500 : 900)
+        const r = await info(host, port, host === '127.0.0.1' ? 500 : 1500)
         if (r.gfx) {
           const name = String(r.gfx.name || host).slice(0, 80)
           const key = `${name}|${port}`
