@@ -323,13 +323,14 @@ function startServer(opts = {}) {
         return
       }
       case 'cue-move': {
-        // Play one video of the break earlier (up) or later.
+        // Play one video of the break earlier or later.
         if (!cue || ['onair', 'done', 'failed'].includes(cue.status)) throw new Error('Nothing to move')
+        // One step (up or down), or straight to a place (to: dragged in the list).
         const from = Number(body.index)
-        const to = from + (body.up ? -1 : 1)
-        if (!cue.items[from] || !cue.items[to]) return
+        const to = Number.isInteger(body.to) ? body.to : from + (body.up ? -1 : 1)
+        if (!cue.items[from] || !cue.items[to] || from === to) return
         const items = [...cue.items]
-        ;[items[from], items[to]] = [items[to], items[from]]
+        items.splice(to, 0, ...items.splice(from, 1))
         cue = { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' }
         return
       }

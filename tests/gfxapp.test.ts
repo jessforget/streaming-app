@@ -92,21 +92,24 @@ describe('gfx app server', () => {
     await doit({ action: 'cue-move', index: 1, up: true })
     s = (await state()) as typeof s
     expect(s.cue).toMatchObject({ take: 3, items: [{ id: v2.result }, { id: v.result }] })
+    await doit({ action: 'cue-move', index: 0, to: 1 }) // dragged: back where it was
+    expect(((await state()) as typeof s).cue.items.map((x) => x.id)).toEqual([v.result, v2.result])
+    await doit({ action: 'cue-move', index: 1, to: 0 })
     await doit({ action: 'uncue', index: 0 })
     s = (await state()) as typeof s
-    expect(s.cue).toMatchObject({ take: 4, items: [{ id: v.result }] })
+    expect(s.cue).toMatchObject({ take: 6, items: [{ id: v.result }] })
     const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
-    await tell({ take: 4, status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
+    await tell({ take: 6, status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
     s = (await state()) as typeof s
     expect(s.cue).toMatchObject({ status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
     expect((await doit({ action: 'uncue' })).error).toMatch(/on air/)
     expect((await doit({ action: 'cue', id: v2.result })).error).toMatch(/on air/)
     await tell({ take: 99, status: 'done' }) // an old cue: ignored
     expect(((await state()) as typeof s).cue.status).toBe('onair')
-    await tell({ take: 4, status: 'done' })
+    await tell({ take: 6, status: 'done' })
     // After a break has played, cueing starts a new one.
     await doit({ action: 'cue', id: v2.result })
-    expect(((await state()) as typeof s).cue).toMatchObject({ take: 5, items: [{ id: v2.result }] })
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 7, items: [{ id: v2.result }] })
     await doit({ action: 'uncue' })
     expect(((await state()) as typeof s).cue).toBeNull()
   })
