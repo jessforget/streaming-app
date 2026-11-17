@@ -11,6 +11,13 @@
  *
  * If the gfx laptop can't be reached, the source shows nothing (see-through)
  * and we try again every few seconds; when it is back, the page loads again.
+ *
+ * The page is told when it goes on the stream and when it comes off (a scene
+ * with it goes live, or the Overlay is switched on), so it can play its
+ * animation, or start its video, at that moment:
+ *
+ *   window.streamerLive                 true while on the stream
+ *   'streamer:live' event on window     event.detail.live = true / false
  */
 const { BrowserWindow, session } = require('electron')
 const http = require('node:http')
@@ -63,6 +70,7 @@ class GraphicsFeed {
     this.opts = opts
     this.send = send
     this.status = 'loading'
+    this.live = !!opts.live
     this.misses = 0
     this.closed = false
     this.loaded = false
@@ -94,6 +102,7 @@ class GraphicsFeed {
       this.loaded = true
       this.misses = 0
       this.setStatus('connected')
+      this.tellLive()
       // Ask for one whole picture, so the main window starts from the full page.
       wc.invalidate()
     })
@@ -139,6 +148,21 @@ class GraphicsFeed {
       this.win.webContents.stop()
       this.takeOff()
     }
+  }
+
+  /** On the stream now, or not. The page hears it at once (and again after each load). */
+  setLive(live) {
+    if (this.live === live) return
+    this.live = live
+    if (this.loaded) this.tellLive()
+  }
+
+  tellLive() {
+    if (this.closed || this.win.isDestroyed()) return
+    const live = this.live ? 'true' : 'false'
+    this.win.webContents
+      .executeJavaScript(`window.streamerLive = ${live}; window.dispatchEvent(new CustomEvent('streamer:live', { detail: { live: ${live} } })); 0`)
+      .catch(() => {})
   }
 
   setStatus(status) {
@@ -199,13 +223,15 @@ function setupGraphics(ipcMain, target) {
       url: p.url,
       width: clamp(p.width, 320, 3840, 1920),
       height: clamp(p.height, 180, 2160, 1080),
-      fps: clamp(p.fps, 1, 60, 30)
+      fps: clamp(p.fps, 1, 60, 30),
+      live: p.live === true
     }
     const have = feeds.get(p.id)
     if (have) {
       const o = have.opts
       if (o.url === opts.url && o.width === opts.width && o.height === opts.height && o.fps === opts.fps) {
-        // Same page again (the main window reloaded): send its status and a whole picture.
+        have.setLive(opts.live)
+        // Same page again (the main window reloaded, or it went on or off the stream): send its status and a whole picture.
         send('gfx:status', { id: p.id, status: have.status })
         if (!have.win.isDestroyed()) have.win.webContents.invalidate()
         return

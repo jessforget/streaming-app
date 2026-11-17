@@ -10,7 +10,7 @@
  * desktop version.
  */
 import { presetFor } from '../../../shared/presets'
-import { GRAPHICS_SIZES, type AppState, type Layer } from '../../../shared/state'
+import { GRAPHICS_SIZES, scenesOnAir, type AppState, type Layer } from '../../../shared/state'
 
 export type GraphicsStatus = 'loading' | 'connected' | 'unreachable' | 'needs-desktop'
 
@@ -29,7 +29,7 @@ export interface GraphicsFrame {
 }
 
 interface DesktopGraphics {
-  sync(list: { id: string; url: string; width: number; height: number; fps: number }[]): void
+  sync(list: { id: string; url: string; width: number; height: number; fps: number; live?: boolean }[]): void
   reload(id: string): void
   onFrame(fn: (f: GraphicsFrame) => void): () => void
   onStatus(fn: (s: { id: string; status: GraphicsStatus }) => void): () => void
@@ -144,7 +144,7 @@ export class GraphicsFeeds {
   private started = false
   /** Pages opened by the "Add source" form to check an address before adding it. */
   private checks = new Map<string, { url: string; width: number; height: number; fps: number }>()
-  private wanted: { id: string; url: string; width: number; height: number; fps: number }[] = []
+  private wanted: { id: string; url: string; width: number; height: number; fps: number; live?: boolean }[] = []
   private lastSent = ''
 
   constructor(private readonly desktop: DesktopGraphics | null = desktopGraphics()) {}
@@ -168,10 +168,15 @@ export class GraphicsFeeds {
   sync(state: AppState) {
     this.lastState = state
     const specs = new Map<string, NonNullable<ReturnType<typeof feedSpec>>>()
+    // Pages on the stream now (a shown source in a scene on air, or in the Overlay over it): the page is told, so it can play its animation then.
+    const onAir = scenesOnAir(state)
+    const live = new Set<string>()
     for (const scene of state.scenes) {
       for (const l of scene.layers) {
         const spec = feedSpec(l, state)
-        if (spec) specs.set(spec.key, spec)
+        if (!spec) continue
+        specs.set(spec.key, spec)
+        if (l.visible && onAir.has(scene.id)) live.add(spec.key)
       }
     }
     for (const [key, c] of this.checks) specs.set(key, { key, ...c })
@@ -188,7 +193,7 @@ export class GraphicsFeeds {
       this.feeds.delete(key)
       changed = true
     }
-    this.wanted = [...specs.values()].map((s) => ({ id: s.key, url: s.url, width: s.width, height: s.height, fps: s.fps }))
+    this.wanted = [...specs.values()].map((s) => ({ id: s.key, url: s.url, width: s.width, height: s.height, fps: s.fps, live: live.has(s.key) }))
     this.send()
     if (changed) this.changed()
   }
