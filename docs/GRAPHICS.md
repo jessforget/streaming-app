@@ -84,6 +84,13 @@ laptop. A window is sent like a live camera (WebRTC): more network, and a
 fraction of a second late, so a network cable helps. Whole screens are listed
 too: a PowerPoint slide show on a second screen is easiest sent as that screen.
 
+**Finding it.** In the source's settings, **Find gfx apps on the network**
+asks every address on the streaming PC's own network (ports 8765 to 8767) for
+the gfx app's `/api/info` and lists what answers; **Test** checks one address.
+If nothing answers, the usual cause is Windows Firewall on the gfx PC: the gfx
+app checks its own rules and shows **Let the streaming PC in**, which adds one
+rule letting PCs on the same network in (Windows asks to confirm).
+
 **Sound.** A video's sound (the "Send its sound to the stream" setting, on by
 default) goes into the streaming app's mixer, not the streaming PC's speakers.
 Inside the streaming app the page has `window.streamerAudio.connect(offerSdp)`,

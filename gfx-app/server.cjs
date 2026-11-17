@@ -424,7 +424,15 @@ function startServer(opts = {}) {
         return res.end(readFileSync(join(pagesDir, 'live.html')))
       }
       if (req.method === 'GET' && path === '/api/info') {
-        return json(res, 200, { port: server.address().port, addresses: lanAddresses(), local: isLocal(req) })
+        // Also how the streaming app's "Find gfx apps" and "Test" know this is a gfx app, and which PC.
+        return json(res, 200, {
+          app: 'gfx-app',
+          name: os.hostname(),
+          items: show.items.length,
+          port: server.address().port,
+          addresses: lanAddresses(),
+          local: isLocal(req)
+        })
       }
       if (req.method === 'GET' && path === '/events') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
 import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, isOverlay, scenesOnAir, showScenes } from '../../shared/state'
 import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
-import { GraphicsCheck, GraphicsDetail } from './GraphicsParts'
+import { GraphicsAddress, GraphicsCheck, GraphicsDetail } from './GraphicsParts'
 import { deviceName } from './parts'
 import type { Run } from './useApp'
 
@@ -287,11 +287,7 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
       )}
       {kind === 'graphics' && (
         <>
-          <label>
-            Address of the graphics page
-            <input value={v.url} placeholder="http://192.168.101.50:8765/live" inputMode="url" onChange={(e) => set('url', e.target.value)} />
-            <small className="muted">Your gfx app shows this address. Give the gfx laptop a fixed address on the router so it never changes.</small>
-          </label>
+          <GraphicsAddress url={v.url} setUrl={(u) => set('url', u)} />
           <div className="two-cols">
             <label>
               Size

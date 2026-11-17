@@ -26,6 +26,20 @@ contextBridge.exposeInMainWorld('desktopGraphics', {
     return () => ipcRenderer.off('gfx:audio-offer', h)
   },
   audioAnswer: (req, answer) => ipcRenderer.send('gfx:audio-answer', { req, ...answer }),
+  /** Is a gfx app at this address? { result: 'connected' | 'page' | 'other' | 'unreachable', name?, ms? } */
+  test: (url) => ipcRenderer.invoke('gfx:test', url),
+  /** Look for gfx apps on this PC's network; onFound / onProgress tell as it goes. Resolves with all found. */
+  find: (onFound, onProgress) => {
+    const f = (_e, x) => onFound(x)
+    const p = (_e, x) => onProgress(x)
+    ipcRenderer.on('gfx:find-found', f)
+    ipcRenderer.on('gfx:find-progress', p)
+    return ipcRenderer.invoke('gfx:find').finally(() => {
+      ipcRenderer.off('gfx:find-found', f)
+      ipcRenderer.off('gfx:find-progress', p)
+    })
+  },
+  stopFind: () => ipcRenderer.send('gfx:find-stop'),
   onClear: (fn) => {
     const h = (_e, s) => fn(s)
     ipcRenderer.on('gfx:clear', h)

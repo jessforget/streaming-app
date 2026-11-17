@@ -2,7 +2,7 @@
  * The Graphics (network) source's pieces in the source list and its settings:
  * the status light, the "What it shows now" preview, and Reload.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { GRAPHICS_SIZES, type AppState, type GraphicsSize, type Layer } from '../../shared/state'
 import { presetFor } from '../../shared/presets'
 import { graphicsFeeds, type GraphicsFeed, type GraphicsStatus } from './studio/graphics'
@@ -132,4 +132,185 @@ function useSettled(key: string, ms: number): string | null {
     return () => clearTimeout(t)
   }, [key, ms])
   return settled
+}
+
+interface FoundGfx {
+  name: string
+  host: string
+  port: number
+  items: number
+  local: boolean
+  url: string
+}
+type TestResult = { result: 'connected' | 'page' | 'other' | 'unreachable'; name?: string; ms?: number; items?: number; host?: string; why?: string }
+interface Finder {
+  test(url: string): Promise<TestResult>
+  find(onFound: (f: FoundGfx) => void, onProgress: (p: { checked: number; total: number; nets: string[]; done?: boolean }) => void): Promise<FoundGfx[]>
+  stopFind(): void
+}
+const finder = (): Finder | null => {
+  const d = (globalThis as { desktopGraphics?: Partial<Finder> }).desktopGraphics
+  return d?.find && d.test && d.stopFind ? (d as Finder) : null
+}
+
+/**
+ * The address of the graphics page, with Test and "Find gfx apps on the network"
+ * (the desktop version looks on this PC's network and lists the gfx apps that answer).
+ */
+export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: string) => void }) {
+  const f = finder()
+  const id = useId()
+  const [test, setTest] = useState<{ url: string; r: TestResult | null } | null>(null)
+  const [scan, setScan] = useState<{ found: FoundGfx[]; checked: number; total: number; nets: string[]; done: boolean } | null>(null)
+  const alive = useRef(true)
+  useEffect(
+    () => () => {
+      alive.current = false
+      finder()?.stopFind()
+    },
+    []
+  )
+
+  const runTest = async () => {
+    if (!f || !url.trim()) return
+    const at = url.trim()
+    setTest({ url: at, r: null })
+    const r = await f.test(at).catch((): TestResult => ({ result: 'unreachable' }))
+    if (alive.current) setTest({ url: at, r })
+  }
+  const runFind = async () => {
+    if (!f) return
+    setTest(null)
+    setScan({ found: [], checked: 0, total: 0, nets: [], done: false })
+    const found = await f
+      .find(
+        (x) => alive.current && setScan((s) => (s ? { ...s, found: [...s.found, x] } : s)),
+        (p) => alive.current && setScan((s) => (s ? { ...s, checked: p.checked, total: p.total, nets: p.nets } : s))
+      )
+      .catch(() => [] as FoundGfx[])
+    if (alive.current) setScan((s) => (s ? { ...s, found: found.length ? found : s.found, done: true } : s))
+  }
+  const stop = () => {
+    f?.stopFind()
+    setScan((s) => (s ? { ...s, done: true } : s))
+  }
+  const use = (x: FoundGfx) => {
+    setUrl(x.url)
+    setScan(null)
+    setTest({ url: x.url, r: { result: 'connected', name: x.name, items: x.items } })
+  }
+  const host = shortAddress(test?.url ?? url).split('/')[0]
+  const shownTest = test && test.url === url.trim() ? test : null
+
+  return (
+    <div className="gfx-address">
+      <label htmlFor={id}>Address of the graphics page</label>
+      <div className="gfx-address-row">
+        <input id={id} value={url} placeholder="http://192.168.101.50:8765/live" inputMode="url" onChange={(e) => setUrl(e.target.value)} />
+        {f && (
+          <button type="button" onClick={runTest} disabled={!url.trim() || (!!shownTest && !shownTest.r)}>
+            {shownTest && !shownTest.r ? 'Testing…' : 'Test'}
+          </button>
+        )}
+      </div>
+      {f ? (
+        <button type="button" className="accent strong gfx-find-btn" onClick={runFind} disabled={!!scan && !scan.done}>
+          Find gfx apps on the network
+        </button>
+      ) : (
+        <small className="muted">Your gfx app shows this address. Give the gfx laptop a fixed address on the router so it never changes.</small>
+      )}
+
+      {scan && (
+        <div className="gfx-scan" role="status">
+          <div className="gfx-scan-head">
+            {!scan.done && <span className="spinner" aria-hidden="true" />}
+            <strong>
+              {!scan.done
+                ? `Looking on ${scan.nets.length ? scan.nets.map((n) => `${n}.x`).join(', ') : 'this network'}…`
+                : scan.found.length
+                  ? `Found ${scan.found.length} gfx app${scan.found.length === 1 ? '' : 's'}`
+                  : 'No gfx app found'}
+            </strong>
+            {!scan.done && scan.total > 0 && <span className="muted small">{`${scan.checked} of ${scan.total} checked`}</span>}
+          </div>
+          {!scan.done && (
+            <div className="gfx-scan-bar">
+              <div style={{ width: `${scan.total ? Math.round((100 * scan.checked) / scan.total) : 0}%` }} />
+            </div>
+          )}
+          {scan.found.length > 0 && (
+            <ul className="gfx-found">
+              {scan.found.map((x) => (
+                <li key={x.url}>
+                  <div>
+                    <strong>{x.local ? 'Gfx app on this PC' : `Gfx app on ${x.name}`}</strong>
+                    <span className="muted small">{`${x.host}:${x.port} · ${x.items} item${x.items === 1 ? '' : 's'} in the rundown${x.local ? ' · for trying things out' : ''}`}</span>
+                  </div>
+                  <button type="button" className={x.local ? '' : 'accent strong'} onClick={() => use(x)}>
+                    Use this
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {scan.done && !scan.found.length && (
+            <p className="small">
+              Is the Gfx app open on the other PC? If it is, its top bar shows a <b>Let the streaming PC in</b> button when Windows Firewall is blocking it. Both PCs need to be on the same network.
+            </p>
+          )}
+          <div className="gfx-scan-foot">
+            <span className="muted small">{scan.done ? '' : 'Takes about 10 seconds. Only this network is checked.'}</span>
+            {scan.done ? (
+              <button type="button" className="small" onClick={() => setScan(null)}>
+                Done
+              </button>
+            ) : (
+              <button type="button" className="small" onClick={stop}>
+                Stop
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {shownTest?.r && (
+        <div className={`gfx-test ${shownTest.r.result}`} role="status">
+          {shownTest.r.result === 'connected' && (
+            <>
+              <strong>Connected</strong>
+              <span>{`Gfx app on ${shownTest.r.name ?? host}${shownTest.r.ms !== undefined ? ` answered in ${shownTest.r.ms} ms` : ''}. Its graphics page loads.`}</span>
+            </>
+          )}
+          {shownTest.r.result === 'page' && (
+            <>
+              <strong>The page loads</strong>
+              <span>It isn’t the Gfx app, but any web page can be shown.</span>
+            </>
+          )}
+          {shownTest.r.result === 'other' && (
+            <>
+              <strong>Something else answered</strong>
+              <span>{`${host} answered, but it isn’t the Gfx app. Another program uses that port, or the address is for another PC.`}</span>
+            </>
+          )}
+          {shownTest.r.result === 'unreachable' && (
+            <>
+              <strong>{`Can’t reach ${host}`}</strong>
+              <span>{shownTest.r.why ?? 'Nothing answered. Check these on the gfx PC, in this order:'}</span>
+              {!shownTest.r.why && (
+                <ol>
+                  <li>The Gfx app is open. Its top bar shows the address to use: is it the same as here?</li>
+                  <li>
+                    Windows Firewall lets the Gfx app in. The Gfx app checks this itself and shows a <b>Let the streaming PC in</b> button if it’s blocked.
+                  </li>
+                  <li>Both PCs are on the same Wi-Fi or network (the first three numbers of the address match).</li>
+                </ol>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }

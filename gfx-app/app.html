@@ -31,6 +31,10 @@
   .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #5d6574; }
   .pill.ok { background: #13261d; color: #8fe0b6; } .pill.ok .dot { background: var(--go); }
   .pill.live { background: #2a1618; color: #ff9b9b; } .pill.live .dot { background: #ff5a5a; }
+  .pill.bad { background: #2a1618; color: #ff9b9b; } .pill.bad .dot { background: #ff5a5a; }
+  .fw { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .fw button { min-height: 32px; padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600; color: #0b1a33; background: var(--accent, #4c8dff); border: 0; border-radius: 8px; cursor: pointer; }
+  .fw-note { font-size: 12px; color: var(--muted); }
   .addr { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .addr b { color: var(--text); font-weight: 600; user-select: all; }
 
@@ -112,6 +116,11 @@
   <header class="top">
     <h1>Gfx app</h1>
     <span class="pill" id="streamPill"><span class="dot"></span><span id="streamText">Streaming app not connected</span></span>
+    <span class="fw" id="fw" hidden>
+      <span class="pill bad"><span class="dot"></span>Windows Firewall blocks the streaming PC</span>
+      <button type="button" class="go" id="fwAllow">Let the streaming PC in</button>
+      <span class="fw-note" id="fwNote">Windows asks once to confirm.</span>
+    </span>
     <span class="addr" id="addr"></span>
   </header>
   <div class="cols">
@@ -196,6 +205,26 @@
     b.textContent = `http://${host}:${info.port}/live`
     $('addr').append(b)
   }).catch(() => {})
+
+  // ---------- Windows Firewall: can the streaming PC reach this app? ----------
+  let fwAt = 0
+  async function checkFirewall() {
+    if (!desk?.firewall || Date.now() - fwAt < 30000) return
+    fwAt = Date.now()
+    const st = await desk.firewall().catch(() => 'unknown')
+    $('fw').hidden = st !== 'blocked'
+  }
+  $('fwAllow').onclick = async () => {
+    $('fwAllow').disabled = true
+    $('fwNote').textContent = 'Confirm in the Windows question…'
+    const st = await desk.allowFirewall().catch(() => 'unknown')
+    $('fwAllow').disabled = false
+    $('fwNote').textContent = st === 'blocked' ? 'Still blocked. Did Windows ask? Try again, or ask whoever looks after this PC.' : 'Windows asks once to confirm.'
+    $('fw').hidden = st !== 'blocked'
+  }
+  checkFirewall()
+  // Again whenever the window comes back to the front (the network or the rules may have changed).
+  window.addEventListener('focus', checkFirewall)
 
   // ---------- Rundown ----------
   const byId = (id) => S?.items.find((i) => i.id === id) ?? null

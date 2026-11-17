@@ -13,5 +13,9 @@ contextBridge.exposeInMainWorld('gfxDesktop', {
     }
   },
   listWindows: () => ipcRenderer.invoke('gfx:windows'),
-  findWindow: (id, name) => ipcRenderer.invoke('gfx:findWindow', id, name)
+  findWindow: (id, name) => ipcRenderer.invoke('gfx:findWindow', id, name),
+  /** Windows Firewall: 'allowed', 'blocked' or 'unknown'. */
+  firewall: () => ipcRenderer.invoke('gfx:firewall'),
+  /** Let the streaming PC in (Windows asks to confirm). Returns the new firewall state. */
+  allowFirewall: () => ipcRenderer.invoke('gfx:firewall-allow')
 })

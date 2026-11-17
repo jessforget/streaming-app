@@ -290,6 +290,7 @@ function setupGraphics(ipcMain, target) {
     pendingAudio.delete(answer.req)
     done?.(answer)
   })
+  require('./gfxfind.cjs').setupFind(ipcMain, fromMain)
   ipcMain.on('gfx:reload', (e, id) => {
     if (!fromMain(e)) return
     feeds.get(id)?.reload()

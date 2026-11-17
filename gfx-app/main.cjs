@@ -15,6 +15,7 @@
 const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } = require('electron')
 const { join } = require('node:path')
 const { startServer } = require('./server.cjs')
+const firewall = require('./firewall.cjs')
 
 // Its own name and settings folder (the show is saved there), apart from the streaming app's.
 app.setName('Gfx app')
@@ -106,6 +107,11 @@ ipcMain.handle('gfx:findWindow', async (e, id, name) => {
   nextCapture = source
   return source?.id ?? null
 })
+
+/** Can the streaming PC get past Windows Firewall to this app? 'allowed', 'blocked' or 'unknown'. */
+ipcMain.handle('gfx:firewall', (e) => (fromApp(e) ? firewall.check() : 'unknown'))
+/** Let PCs on this network in (Windows asks the person to confirm). */
+ipcMain.handle('gfx:firewall-allow', (e) => (fromApp(e) ? firewall.allow() : 'unknown'))
 
 app.whenReady().then(open)
 app.on('second-instance', () => {
