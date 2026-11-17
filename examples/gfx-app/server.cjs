@@ -1,7 +1,7 @@
 /**
  * A tiny sample gfx app: a starting point for your own.
  *
- *   node examples/gfx-app/server.cjs            (port 8080, or the next free one)
+ *   node examples/gfx-app/server.cjs            (port 8765, or the next free one)
  *   node examples/gfx-app/server.cjs --port 9000
  *   node examples/gfx-app/server.cjs --open     (also opens the control page)
  *
@@ -28,7 +28,7 @@ const { join } = require('node:path')
 const os = require('node:os')
 
 const arg = process.argv.indexOf('--port')
-const FIRST_PORT = Number(arg > 0 ? process.argv[arg + 1] : process.env.PORT) || 8080
+const FIRST_PORT = Number(arg > 0 ? process.argv[arg + 1] : process.env.PORT) || 8765
 const OPEN = process.argv.includes('--open')
 const SAVED = join(__dirname, 'gfx-settings.json')
 
@@ -182,7 +182,7 @@ const server = http.createServer((req, res) => {
   res.end(`Not found: ${url.pathname}\n\nThis is the sample gfx app. Its pages are /control (to show and hide the lower third) and /live (the graphics, for the streaming app).`)
 })
 
-/** Start on the first free port from FIRST_PORT (another program may already use 8080). */
+/** Start on the first free port from FIRST_PORT (another program may already use it). */
 let port = FIRST_PORT
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE' && port < FIRST_PORT + 20) {

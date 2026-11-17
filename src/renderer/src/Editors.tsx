@@ -268,7 +268,7 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
         <>
           <label>
             Address of the graphics page
-            <input value={v.url} placeholder="http://192.168.101.50:8080/live" inputMode="url" onChange={(e) => set('url', e.target.value)} />
+            <input value={v.url} placeholder="http://192.168.101.50:8765/live" inputMode="url" onChange={(e) => set('url', e.target.value)} />
             <small className="muted">Your gfx app shows this address. Give the gfx laptop a fixed address on the router so it never changes.</small>
           </label>
           <div className="two-cols">

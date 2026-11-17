@@ -12,7 +12,7 @@ Works in the desktop version (`npm run desktop`, or "Start Streaming App
 
 ## What the gfx app's page must do
 
-1. **Be a web address on the network**, like `http://192.168.101.50:8080/live`.
+1. **Be a web address on the network**, like `http://192.168.101.50:8765/live`.
    Give the gfx laptop a fixed address on the router so it never changes.
 2. **Have a see-through background**: `background: transparent` on the page.
    Whatever it draws shows; everything else lets the cameras show through.

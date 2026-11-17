@@ -901,7 +901,7 @@ export class Controller extends Emitter<Events> {
 }
 
 /**
- * A gfx app's address, as people type it: "192.168.101.50:8080/live" works
+ * A gfx app's address, as people type it: "192.168.101.50:8765/live" works
  * too (http:// is added). Only web addresses can be graphics pages.
  */
 export function graphicsUrl(raw: string): string {
@@ -910,7 +910,7 @@ export function graphicsUrl(raw: string): string {
   try {
     u = new URL(url)
   } catch {
-    throw new CommandError('That address doesn’t look right. It should look like http://192.168.101.50:8080/live')
+    throw new CommandError('That address doesn’t look right. It should look like http://192.168.101.50:8765/live')
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new CommandError('The address must start with http:// or https://')
   return url
