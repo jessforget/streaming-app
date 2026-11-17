@@ -91,6 +91,20 @@ If nothing answers, the usual cause is Windows Firewall on the gfx PC: the gfx
 app checks its own rules and shows **Let the streaming PC in**, which adds one
 rule letting PCs on the same network in (Windows asks to confirm).
 
+**Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
+The streaming app copies the video to the streaming PC (so Wi-Fi can't stop it
+half way), fills a **Commercial** scene with it (full screen, auto-play, Overlay
+hidden, back to the scene before at its end) and puts it in Preview with a
+note. The streaming operator presses Transition when it suits. The gfx app
+shows Cued, On air (with the time) and Done. Behind it: the page in the
+streaming app passes the cue with `window.streamerCue({ take, name, url })`,
+and the streaming app reports to `POST /api/cue`.
+
+**The stream's Live in the gfx app.** The streaming app sends a small copy of
+its Live picture (640 x 360 JPEG, 5 a second) to each gfx app it shows
+(`POST /api/program`); the gfx app's On air screen shows it (`/program.mjpg`),
+marked "The stream's Live".
+
 **Sound.** A video's sound (the "Send its sound to the stream" setting, on by
 default) goes into the streaming app's mixer, not the streaming PC's speakers.
 Inside the streaming app the page has `window.streamerAudio.connect(offerSdp)`,

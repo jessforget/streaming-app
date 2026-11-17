@@ -71,10 +71,42 @@ describe('gfx app server', () => {
     const ctl = new AbortController()
     await fetch(`${base}/events?role=stream`, { signal: ctl.signal })
     await fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live: true }) })
-    expect((await state()).stream).toEqual({ connected: true, live: true })
+    expect((await state()).stream).toEqual({ connected: true, live: true, picture: false })
     ctl.abort()
     await new Promise((r) => setTimeout(r, 100))
-    expect((await state()).stream).toEqual({ connected: false, live: false })
+    expect((await state()).stream).toEqual({ connected: false, live: false, picture: false })
+  })
+
+  it('cues a video to the stream and follows how it goes', async () => {
+    writeFileSync(join(dir, 'ad.mp4'), Buffer.alloc(100))
+    const v = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })
+    expect((await doit({ action: 'cue', id: 'item-1' })).error).toMatch(/Only videos/)
+    await doit({ action: 'cue', id: v.result })
+    let s = (await state()) as State & { cue: { take: number; status: string; name: string } }
+    expect(s.cue).toMatchObject({ id: v.result, take: 1, name: 'ad', status: 'waiting' })
+    const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
+    await tell({ take: 1, status: 'onair', pos: 3, dur: 30 })
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ status: 'onair', pos: 3, dur: 30 })
+    expect((await doit({ action: 'uncue' })).error).toMatch(/on air/)
+    await tell({ take: 99, status: 'done' }) // an old cue: ignored
+    expect(((await state()) as typeof s).cue.status).toBe('onair')
+    await tell({ take: 1, status: 'done' })
+    await doit({ action: 'uncue' })
+    expect(((await state()) as typeof s).cue).toBeNull()
+  })
+
+  it('takes the stream’s Live picture and shows it on /program.mjpg', async () => {
+    expect((await fetch(`${base}/api/program`, { method: 'POST', body: 'nope' })).status).toBe(400)
+    const jpg = Buffer.from([0xff, 0xd8, 1, 2, 3, 0xff, 0xd9])
+    expect((await fetch(`${base}/api/program`, { method: 'POST', body: jpg })).status).toBe(204)
+    expect((await state()).stream).toMatchObject({ picture: true })
+    const ctl = new AbortController()
+    const r = await fetch(`${base}/program.mjpg`, { signal: ctl.signal })
+    expect(r.headers.get('content-type')).toContain('multipart/x-mixed-replace')
+    const first = new TextDecoder('latin1').decode((await r.body!.getReader().read()).value)
+    expect(first).toContain('Content-Type: image/jpeg')
+    ctl.abort()
   })
 
   it('next and previous move Preview down and up the rundown', async () => {

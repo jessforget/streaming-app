@@ -304,6 +304,37 @@ export class Controller extends Emitter<Events> {
         else delete scene.hideOverlay
         return this.changed()
       }
+      case 'cue.commercial': {
+        const path = str(P, 'path')
+        if (path.length > 2000) throw new CommandError('path is too long')
+        let scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) {
+          scene = { id: this.newId('scene'), name: 'Commercial', layers: [], commercial: true, hideOverlay: true }
+          this.s.scenes.push(scene)
+        }
+        if (scene.id === this.s.programSceneId) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
+        delete scene.stored
+        const layer: Layer = { id: this.newId('layer'), name: name(P, 'name'), kind: 'media', visible: true, url: path, placement: 'full', loop: false, returnAfter: true, sound: true, volume: 1 }
+        scene.layers = [layer]
+        await this.engine.setScene(scene)
+        if (this.s.previewSceneId !== scene.id) this.cueBack = this.s.previewSceneId
+        this.s.previewSceneId = scene.id
+        await this.engine.setPreviewScene(scene.id)
+        this.changed()
+        return { sceneId: scene.id }
+      }
+      case 'cue.clear': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene || scene.id === this.s.programSceneId) return null
+        scene.layers = []
+        await this.engine.setScene(scene)
+        const back = this.s.scenes.find((s) => s.id === this.cueBack && !s.stored && !isOverlay(s))
+        if (this.s.previewSceneId === scene.id && back) {
+          this.s.previewSceneId = back.id
+          await this.engine.setPreviewScene(back.id)
+        }
+        return this.changed()
+      }
       case 'overlay.set': {
         this.s.overlayOn = bool(P, 'on')
         return this.changed()
@@ -872,6 +903,9 @@ export class Controller extends Emitter<Events> {
     }
     return [...value]
   }
+
+  /** What was in Preview before a commercial was cued there. */
+  private cueBack = ''
 
   private newId(prefix: string): string {
     const taken = new Set([

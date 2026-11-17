@@ -417,6 +417,25 @@
       if (msg.type !== 'state') return
       state = msg
       render()
+      passCue()
+    }
+  }
+
+  /**
+   * A video cued as a commercial: the streaming app (it gives this page window.streamerCue) copies
+   * it and puts a Commercial scene in its Preview. Passed once per cue; un-cueing is passed too.
+   */
+  let passedCue = 0
+  function passCue() {
+    if (view !== 'out' || !window.streamerCue) return
+    const c = state?.cue
+    // Only a cue nobody has picked up yet (not one that already played, after a reload).
+    if (c && c.take !== passedCue && (c.status === 'waiting' || c.status === 'sent')) {
+      passedCue = c.take
+      window.streamerCue({ take: c.take, name: c.name, url: new URL(`/media/${c.id}`, location.href).href }).catch(() => {})
+    } else if (!c && passedCue) {
+      window.streamerCue({ take: passedCue, clear: true }).catch(() => {})
+      passedCue = 0
     }
   }
   function streamerSays(live) {

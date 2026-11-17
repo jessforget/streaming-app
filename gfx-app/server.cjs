@@ -178,6 +178,18 @@ function startServer(opts = {}) {
   let rtcId = 1
   let hideTimer = null
   let take = 0
+  /**
+   * A video cued to the stream as a commercial: the streaming app copies it, puts a Commercial scene
+   * in its Preview, and says how it goes: copying, cued, onair (with pos/dur), done, or failed.
+   */
+  let cue = null
+  let cueTake = 0
+  /** The streaming app's Live picture (JPEG), sent a few times a second, for the On air screen. */
+  let program = null
+  let programAt = 0
+  const programViewers = new Set()
+  const hasPicture = () => Date.now() - programAt < 3000
+  let pictureShown = false
 
   const save = () => {
     try {
@@ -211,7 +223,8 @@ function startServer(opts = {}) {
     look: show.look,
     previewId: show.previewId,
     onAir: show.onAir,
-    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive }
+    cue,
+    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, picture: hasPicture() }
   })
   const send = (res, msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`)
   const broadcast = () => {
@@ -284,6 +297,19 @@ function startServer(opts = {}) {
       }
       case 'take': {
         takeItem(body.id ?? show.previewId)
+        return
+      }
+      case 'cue': {
+        // Cue a video to the stream as a commercial (one at a time: a new one replaces the last).
+        const it = item(body.id ?? show.previewId)
+        if (!it || it.kind !== 'video') throw new Error('Only videos can be cued as a commercial')
+        if (!it.path || !exists(it.path)) throw new Error('That video is not on this laptop any more')
+        cue = { id: it.id, take: ++cueTake, name: it.name, status: streamPages.size ? 'sent' : 'waiting' }
+        return
+      }
+      case 'uncue': {
+        if (cue && (cue.status === 'onair')) throw new Error('It’s on air now: it ends by itself')
+        cue = null
         return
       }
       case 'hide': {
@@ -443,6 +469,7 @@ function startServer(opts = {}) {
         // The graphics page inside the streaming app says so: the app shows "connected".
         if (role === 'stream') {
           streamPages.add(res)
+          if (cue?.status === 'waiting') cue = { ...cue, status: 'sent' }
           broadcast()
         }
         if (role === 'operator') operators.add(res)
@@ -498,6 +525,53 @@ function startServer(opts = {}) {
         for (const op of operators) send(op, msg)
         return
       }
+      // The streaming app says how the cued commercial goes.
+      if (req.method === 'POST' && path === '/api/cue') {
+        const body = await readBody(req)
+        const STATUSES = ['copying', 'cued', 'onair', 'done', 'failed', 'cleared']
+        if (cue && body.take === cue.take && STATUSES.includes(body.status)) {
+          cue = { ...cue, status: body.status, pos: Number(body.pos) || 0, dur: Number(body.dur) || 0, error: body.error ? text(body.error, 200) : undefined }
+          if (body.status === 'cleared') cue = null
+          broadcast()
+        }
+        return json(res, 200, { ok: true })
+      }
+      // The streaming app's Live picture, a few times a second.
+      if (req.method === 'POST' && path === '/api/program') {
+        const chunks = []
+        let size = 0
+        for await (const c of req) {
+          size += c.length
+          if (size > 3_000_000) return json(res, 413, { error: 'Too big' })
+          chunks.push(c)
+        }
+        const jpg = Buffer.concat(chunks)
+        if (jpg[0] !== 0xff || jpg[1] !== 0xd8) return json(res, 400, { error: 'Send a JPEG' })
+        program = jpg
+        programAt = Date.now()
+        for (const v of programViewers) {
+          v.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpg.length}\r\n\r\n`)
+          v.write(jpg)
+          v.write('\r\n')
+        }
+        if (!pictureShown) {
+          pictureShown = true
+          broadcast()
+        }
+        res.writeHead(204)
+        return res.end()
+      }
+      if (req.method === 'GET' && path === '/program.mjpg') {
+        res.writeHead(200, { 'content-type': 'multipart/x-mixed-replace; boundary=frame', 'cache-control': 'no-store', connection: 'close' })
+        programViewers.add(res)
+        if (program) {
+          res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${program.length}\r\n\r\n`)
+          res.write(program)
+          res.write('\r\n')
+        }
+        req.on('close', () => programViewers.delete(res))
+        return
+      }
       if (req.method === 'POST' && path === '/api/rtc/answer') {
         const body = await readBody(req)
         const done = pendingRtc.get(body.id)
@@ -511,6 +585,14 @@ function startServer(opts = {}) {
       json(res, 400, { error: e.message })
     }
   })
+
+  // The Live picture stopped coming (the streaming app closed): say so once.
+  const pictureCheck = setInterval(() => {
+    if (pictureShown && !hasPicture()) {
+      pictureShown = false
+      broadcast()
+    }
+  }, 1000)
 
   return new Promise((resolve, reject) => {
     const first = opts.port ?? 8765 // 0 = any free port (tests)
@@ -529,6 +611,8 @@ function startServer(opts = {}) {
         server,
         addresses: lanAddresses,
         close: () => {
+          clearInterval(pictureCheck)
+          for (const res of programViewers) res.end()
           for (const res of listeners) res.end()
           server.close()
         }

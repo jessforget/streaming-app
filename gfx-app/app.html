@@ -86,6 +86,16 @@
   .actions button { min-height: 52px; font-size: 15px; font-weight: 600; }
   .actions .take { background: var(--go); border-color: var(--go); color: #08170f; font-size: 16px; font-weight: 700; }
   .waiting { color: #f0c36b; }
+  .actions:has(.cue-btn:not([hidden])) { grid-template-columns: 2fr 1fr 1fr 1.5fr; }
+  .actions .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; font-weight: 700; }
+  .cue-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
+  .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
+  .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cue-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--line); min-width: 60px; } .cue-prog span { display: block; height: 100%; border-radius: 2px; background: #ff5a5a; }
+  .cue-bar button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
+  .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .screen-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 600; background: rgba(14, 16, 20, 0.8); color: #e8eaee; padding: 2px 6px; border-radius: 4px; }
 
   /* Settings */
   .settings { border-left: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
@@ -147,13 +157,20 @@
         </section>
         <section class="mon" aria-label="On air">
           <div class="mon-head"><span class="badge live">ON AIR</span><strong id="onairName"></strong></div>
-          <div class="screen live" id="onairScreen"><iframe src="/live?view=onair" title="On air" tabindex="-1"></iframe></div>
+          <div class="screen live" id="onairScreen"><iframe src="/live?view=onair" title="On air" tabindex="-1"></iframe>
+            <img id="progImg" alt="The stream’s Live picture" hidden><span class="screen-tag" id="progTag" hidden>The stream’s Live</span></div>
         </section>
       </div>
       <div class="actions">
         <button class="take" id="take">Take</button>
         <button id="hide">Hide</button>
         <button id="next">Next ↓</button>
+        <button class="cue-btn" id="cue" hidden title="Put this video in the streaming app’s Preview as a full-screen commercial">Cue to stream</button>
+      </div>
+      <div class="cue-bar" id="cueBar" hidden role="status">
+        <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
+        <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
+        <button id="uncue" class="small">Uncue</button>
       </div>
       <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
     </main>
@@ -373,6 +390,13 @@
       : S.stream.connected
         ? 'Streaming app connected · graphics not on the stream now'
         : 'Streaming app not connected'
+    renderCue(p)
+    // The On air screen shows the stream's real Live picture when the streaming app sends it.
+    const pic = !!S.stream.picture
+    if (pic && !$('progImg').getAttribute('src')) $('progImg').src = '/program.mjpg'
+    if (!pic && $('progImg').getAttribute('src')) $('progImg').removeAttribute('src')
+    $('progImg').hidden = !pic
+    $('progTag').hidden = !pic
     if ($('liveHint').classList.contains('warn')) return
     const waits = o && o.playOnLive !== false && S.stream.connected && !S.stream.live
     $('liveHint').className = `hint ${waits ? 'waiting' : ''}`
@@ -380,6 +404,35 @@
       ? `${o.name} is ready: it starts when the streaming app puts the graphics live (Overlay on, or a scene with them).`
       : 'Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.'
   }
+
+  // ---------- Cue to stream: a video as a commercial, in the streaming app's Preview ----------
+  const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  function renderCue(p) {
+    const c = S.cue
+    $('cue').hidden = !p || p.kind !== 'video'
+    $('cue').disabled = !!c && c.status === 'onair'
+    $('cue').textContent = c?.status === 'onair' ? 'Commercial on air…' : c && c.id === p?.id && c.status !== 'done' && c.status !== 'failed' ? 'Cue again' : 'Cue to stream'
+    $('cueBar').hidden = !c
+    if (!c) return
+    const words = {
+      waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
+      sent: ['Sent', 'to the streaming app…'],
+      copying: ['Copying', 'to the streaming PC…'],
+      cued: ['Cued', 'in the streaming app’s Preview · waiting for Transition'],
+      onair: ['On air', c.dur ? `${clock(c.pos)} of ${clock(c.dur)}` : clock(c.pos)],
+      done: ['Done', 'played on the stream; back to the scene before'],
+      failed: ['Couldn’t cue', c.error || 'the streaming app could not copy it']
+    }[c.status] ?? [c.status, '']
+    $('cueBar').className = `cue-bar ${c.status}`
+    $('cueState').textContent = `${c.name}: ${words[0]}`
+    $('cueText').textContent = words[1]
+    $('cueProg').hidden = c.status !== 'onair' || !c.dur
+    $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
+    $('uncue').hidden = c.status === 'onair'
+    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : 'Uncue'
+  }
+  $('cue').onclick = () => act({ action: 'cue', id: S.previewId })
+  $('uncue').onclick = () => act({ action: 'uncue' })
 
   // ---------- Settings for the item in Preview ----------
   let builtFor = ''

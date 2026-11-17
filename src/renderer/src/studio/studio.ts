@@ -14,6 +14,7 @@ import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
 import { listDevices, onDeviceChange } from './devices'
 import { GpuCompositor } from './gpuCompositor'
+import { GfxLink } from './gfxlink'
 import { GpuOutput, gpuEncodeSupported } from './gpuOutput'
 import { Mixer } from './mixer'
 import { Output } from './output'
@@ -57,6 +58,7 @@ export class Studio {
   private state: AppState | null = null
   /** The scene that was live before the one live now: where an auto-play video goes back to. */
   private liveBefore = ''
+  private gfxLink: GfxLink | null = null
   private outputs: Partial<Record<'stream' | 'record', Output | GpuOutput>> = {}
   /** Which qualities the graphics card can encode (checked once at the start). */
   private gpuEncode = new Map<string, boolean>()
@@ -165,6 +167,15 @@ export class Studio {
     })
     void this.netcams.load()
     this.offGraphics = this.watchGraphics()
+    // Cue to stream, and the Live picture for the gfx operator's On air screen.
+    this.gfxLink = new GfxLink(
+      this.bridge,
+      () => this.state,
+      (c) => this.compositor.drawLive(c),
+      (url) => this.compositor.mediaElement(url),
+      (m) => this.notice(m)
+    )
+    this.gfxLink.start()
     await this.reportDevices()
     this.offDevices = onDeviceChange(() => void this.reportDevices())
     this.reportTimer = setInterval(() => {
@@ -394,6 +405,7 @@ export class Studio {
     this.offDevices?.()
     this.offPhoneOffers?.()
     this.offGraphics?.()
+    this.gfxLink?.stop()
     this.compositor.graphics.close()
     this.phones.close()
     this.netcams.close()

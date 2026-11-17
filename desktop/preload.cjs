@@ -40,6 +40,16 @@ contextBridge.exposeInMainWorld('desktopGraphics', {
     })
   },
   stopFind: () => ipcRenderer.send('gfx:find-stop'),
+  /** A gfx app cued a commercial: { origin, take, name, url } or { origin, take, clear: true }. */
+  onCue: (fn) => {
+    const h = (_e, c) => fn(c)
+    ipcRenderer.on('gfx:cue', h)
+    return () => ipcRenderer.off('gfx:cue', h)
+  },
+  /** Copy a cued video to this PC; resolves with its path here. */
+  copyCue: (url) => ipcRenderer.invoke('gfx:copy-cue', url),
+  /** Tell a gfx app something: path '/api/cue' (body: JSON) or '/api/program' (body: JPEG bytes). */
+  post: (origin, path, body) => ipcRenderer.send('gfx:post', { origin, path, body }),
   onClear: (fn) => {
     const h = (_e, s) => fn(s)
     ipcRenderer.on('gfx:clear', h)

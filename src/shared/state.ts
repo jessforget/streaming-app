@@ -107,6 +107,8 @@ export interface Scene {
   stored?: boolean
   /** Leave the Overlay off while this scene is on air (for "Starting soon", "Ending"...). */
   hideOverlay?: boolean
+  /** The scene a gfx app's "Cue to stream" fills with its commercial (made the first time, then reused). */
+  commercial?: boolean
 }
 
 /**

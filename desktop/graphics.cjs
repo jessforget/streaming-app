@@ -291,6 +291,23 @@ function setupGraphics(ipcMain, target) {
     done?.(answer)
   })
   require('./gfxfind.cjs').setupFind(ipcMain, fromMain)
+  const originOf = (url) => {
+    try {
+      return new URL(url).origin
+    } catch {
+      return null
+    }
+  }
+  require('./gfxcue.cjs').setupCue(
+    ipcMain,
+    fromMain,
+    send,
+    () => [...new Set([...feeds.values()].map((f) => originOf(f.opts.url)).filter(Boolean))],
+    (sender) => {
+      const feed = [...feeds.values()].find((f) => !f.win.isDestroyed() && f.win.webContents === sender)
+      return feed ? originOf(feed.opts.url) : null
+    }
+  )
   ipcMain.on('gfx:reload', (e, id) => {
     if (!fromMain(e)) return
     feeds.get(id)?.reload()
