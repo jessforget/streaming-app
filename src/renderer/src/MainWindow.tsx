@@ -41,10 +41,11 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           <section className="panel">
             <SourceList state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
           </section>
+          {/* Sources, Sound, Overlay, Live data: the order the operator works in. */}
+          <SoundPanel state={state} stats={stats} run={run} studio={studio} openSettings={setSettings} />
           <section className="panel overlay-panel">
             <SourceList state={state} run={run} scene={state.scenes.find(isOverlay) ?? { id: OVERLAY_ID, name: 'Overlay', layers: [] }} />
           </section>
-          <SoundPanel state={state} stats={stats} run={run} studio={studio} openSettings={setSettings} />
           <section className="panel">
             <div className="panel-head">
               <h2>Live data</h2>
