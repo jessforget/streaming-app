@@ -88,6 +88,16 @@
   .waiting { color: #f0c36b; }
   .actions:has(.cue-btn:not([hidden])) { grid-template-columns: 2fr 1fr 1fr 1.5fr; }
   .actions .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; font-weight: 700; }
+  /* A full-screen video while the streaming app is connected: Cue to stream is the main action; Take is the careful one. */
+  .actions.covers { grid-template-columns: 2fr 1fr 1fr 1.2fr; }
+  .actions.covers .cue-btn { order: -1; font-size: 16px; }
+  .actions.covers .take { background: var(--card); border-color: var(--line); color: inherit; font-size: 15px; font-weight: 600; order: 3; }
+  .ask-bar { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #f0c36b; border-radius: 8px; background: rgba(240, 195, 107, 0.08); font-size: 13px; }
+  .ask-bar[hidden] { display: none; }
+  .ask-bar b { color: #f0c36b; font-size: 14px; }
+  .ask-bar .ask-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
+  .ask-bar .ask-row button { min-height: 34px; padding: 0 14px; font-weight: 600; }
+  .ask-bar .ask-row .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; }
   .cue-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
   .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
@@ -166,6 +176,11 @@
         <button id="hide">Hide</button>
         <button id="next">Next ↓</button>
         <button class="cue-btn" id="cue" hidden title="Put this video in the streaming app’s Preview as a full-screen commercial">Cue to stream</button>
+      </div>
+      <div class="ask-bar" id="askBar" hidden role="alertdialog" aria-labelledby="askTitle">
+        <b id="askTitle">This video fills the whole stream</b>
+        <span>Take puts it on top of every scene and every camera in the streaming app, in Preview and Live, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.</span>
+        <div class="ask-row"><button class="cue-btn" id="askCue">Cue to stream</button><button id="askTake">Take anyway</button><button id="askCancel">Cancel</button></div>
       </div>
       <div class="cue-bar" id="cueBar" hidden role="status">
         <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
@@ -298,7 +313,7 @@
       tool('✕', 'Remove', () => confirmRemove(i))
       li.append(thumb, txt, tools)
       li.onclick = () => act({ action: 'preview', id: i.id })
-      li.ondblclick = () => act({ action: 'take', id: i.id })
+      li.ondblclick = () => takeItem(i.id)
       li.onkeydown = (e) => {
         if (e.key === 'Enter') act({ action: 'preview', id: i.id })
       }
@@ -357,7 +372,33 @@
   })
 
   // ---------- Take, Hide, Next ----------
-  $('take').onclick = () => S?.previewId && act({ action: 'take', id: S.previewId })
+  /** A full-screen video Taken while the streaming app shows this gfx app covers the whole stream: ask first. */
+  const covers = (i) => !!i && i.kind === 'video' && i.shows !== 'box' && !!S?.stream?.connected
+  let asking = ''
+  function takeItem(id) {
+    const i = byId(id)
+    if (!i) return
+    if (covers(i) && asking !== id) {
+      asking = id
+      $('askBar').hidden = false
+      $('askCue').focus()
+      return
+    }
+    closeAsk()
+    act({ action: 'take', id })
+  }
+  function closeAsk() {
+    asking = ''
+    $('askBar').hidden = true
+  }
+  $('askTake').onclick = () => asking && takeItem(asking)
+  $('askCue').onclick = () => {
+    const id = asking
+    closeAsk()
+    if (id) act({ action: 'cue', id })
+  }
+  $('askCancel').onclick = closeAsk
+  $('take').onclick = () => S?.previewId && takeItem(S.previewId)
   $('hide').onclick = () => act({ action: 'hide' })
   $('next').onclick = () => act({ action: 'next' })
   const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
@@ -365,8 +406,12 @@
     if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
     if (e.code === 'Space') {
       e.preventDefault()
-      if (!e.repeat) $('take').click()
-    } else if (e.key === 'Escape') act({ action: 'hide' })
+      // While asking about a full-screen video, Space does nothing: the operator picks with the buttons.
+      if (!e.repeat && !asking) $('take').click()
+    } else if (e.key === 'Escape') {
+      if (asking) closeAsk()
+      else act({ action: 'hide' })
+    }
     else if (e.key === 'ArrowDown') {
       e.preventDefault()
       act({ action: 'next' })
@@ -382,6 +427,10 @@
     $('previewName').textContent = p ? p.name : 'Nothing'
     $('onairName').textContent = o ? o.name : 'Nothing'
     $('take').disabled = !p
+    // A full-screen video: Cue to stream is the main button, Take the careful one.
+    $('take').closest('.actions').classList.toggle('covers', covers(p))
+    $('take').textContent = covers(p) ? 'Take over everything' : 'Take'
+    if (asking && asking !== p?.id) closeAsk()
     $('hide').disabled = !o
     const pill = $('streamPill')
     pill.className = `pill ${S.stream.live ? 'live' : S.stream.connected ? 'ok' : ''}`
@@ -431,7 +480,10 @@
     $('uncue').hidden = c.status === 'onair'
     $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : 'Uncue'
   }
-  $('cue').onclick = () => act({ action: 'cue', id: S.previewId })
+  $('cue').onclick = () => {
+    closeAsk()
+    act({ action: 'cue', id: S.previewId })
+  }
   $('uncue').onclick = () => act({ action: 'uncue' })
 
   // ---------- Settings for the item in Preview ----------

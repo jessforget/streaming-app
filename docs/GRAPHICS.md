@@ -92,6 +92,9 @@ app checks its own rules and shows **Let the streaming PC in**, which adds one
 rule letting PCs on the same network in (Windows asks to confirm).
 
 **Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
+For a full-screen video, while the streaming app is connected, Cue to stream is
+the main button; Take becomes **Take over everything** and asks first, because
+a Taken video goes in the Overlay, on top of every scene and camera.
 The streaming app copies the video to the streaming PC (so Wi-Fi can't stop it
 half way), fills a **Gfx commercial** scene with it (full screen, auto-play, Overlay
 hidden, back to the scene before at its end) and puts it in Preview with a
