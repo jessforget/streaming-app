@@ -330,6 +330,11 @@ export class Studio {
     }
   }
 
+  /** Look for cameras and sound devices again now ("Look again" in Settings). */
+  rescanDevices() {
+    return this.reportDevices()
+  }
+
   private async reportDevices() {
     try {
       const inputs = await listDevices()

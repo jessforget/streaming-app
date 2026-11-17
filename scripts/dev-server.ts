@@ -15,6 +15,7 @@ import { SimEngine } from '../src/core/sim'
 import { ControlServer } from '../src/server/control/server'
 import { MemoryDeviceStore, PairingManager } from '../src/server/control/pairing'
 import { DEFAULT_CONTROL_PORT } from '../src/shared/protocol'
+import { namedLanAddresses } from '../src/server/phones'
 
 async function main() {
   const args = process.argv.slice(2)
@@ -35,7 +36,11 @@ async function main() {
 
   const server = new ControlServer({ controller, pairing, port, staticDir: join(__dirname, '../out/web') })
   await server.start()
-  controller.updateDevices({ ...pairing.snapshot(), controlUrl: server.urls()[0] })
+  controller.updateDevices({
+    ...pairing.snapshot(),
+    controlUrl: server.urls()[0],
+    network: { addresses: namedLanAddresses(), controlPort: server.port, phonePort: 0, rtmpPort: 0 }
+  })
 
   console.log('\nControl server running (practice mode, nothing is captured or sent).')
   for (const url of server.urls()) console.log(`  Tablet remote: ${url}/remote    Test page: ${url}/test`)

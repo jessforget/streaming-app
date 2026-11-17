@@ -35,6 +35,14 @@ describe('gfx app server', () => {
   })
   afterEach(() => gfx.close())
 
+  it('tells the About box its version, developer and address', async () => {
+    const info = await fetch(`${base}/api/info`).then((r) => r.json())
+    expect(info.about).toMatchObject({ name: 'Gfx App', developer: 'Jess Limot' })
+    expect(info.about.version).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(info.port).toBe(gfx.port)
+    for (const a of info.named) expect(a).toEqual({ name: expect.any(String), ip: expect.any(String) })
+  })
+
   it('starts with a lower third in Preview; Take and Hide', async () => {
     let s = await state()
     expect(s.items.map((i) => i.kind)).toEqual(['lowerthird'])

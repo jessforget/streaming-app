@@ -555,6 +555,7 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .gfx-preview-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; font-size: 13px; color: #e8eaee; text-shadow: 0 1px 2px #000; }
 .gfx-note { margin: 0; }
 
+<<<<<<< HEAD
 /* Graphics (network): address, Test, Find gfx apps */
 .gfx-address { display: grid; gap: 8px; }
 .gfx-address-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
@@ -582,3 +583,42 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .gfx-test.other strong { color: var(--warn); }
 .layers .gfx-test li { display: list-item; background: none; padding: 0; border-radius: 0; }
 .layers .gfx-found li { background: none; }
+=======
+/* ---------- About ---------- */
+.modal.about { width: min(640px, 100%); }
+.modal.about .modal-head h2 { margin: 0 4px; font-family: var(--display); font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+.about-title { display: flex; align-items: center; gap: 16px; }
+.about-title img { border-radius: 14px; flex: none; }
+.about-title div { display: grid; gap: 2px; }
+.about-title strong { font-family: var(--display); font-size: 24px; }
+.about-facts { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 16px; margin: 0; padding: 14px 16px; background: var(--panel-2); border-radius: var(--radius); }
+.about-facts dt { color: var(--muted); }
+.about-facts dd { margin: 0; font-weight: 600; }
+.about-ips { display: flex; flex-wrap: wrap; gap: 8px; }
+.about-ips button { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; flex: 1 1 260px; text-align: left; }
+.about-ips button.on { border-color: var(--good); background: var(--good-bg); }
+.about-adapter { font-size: 12px; font-weight: 700; color: var(--muted); }
+.about-ips button.on .about-adapter { color: var(--good); }
+.about-ip { margin-left: auto; font: 600 20px ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+.about-links { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+.about-links li { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 8px 8px 14px; background: var(--panel-2); border-radius: var(--radius); }
+.about-links li > div { display: grid; }
+.about-links code { font-size: 13px; overflow-wrap: anywhere; user-select: all; }
+.about-links li button { min-width: 72px; }
+.about-note { grid-column: 1 / -1; }
+@media (max-width: 560px) {
+  .about-links li { grid-template-columns: minmax(0, 1fr) auto; }
+  .about-links li > div { grid-column: 1 / -1; }
+}
+
+/* ---------- Looking for devices ---------- */
+.scan-status { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); margin-bottom: 10px; }
+.scan-status.busy { border-color: var(--accent); background: var(--accent-bg); }
+.scan-status.done { border-color: var(--good); background: var(--good-bg); }
+.scan-status .scan-text { flex: 1; text-align: left; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 0.8s linear infinite; flex: none; }
+.scan-status .tick { color: var(--good); font-weight: 700; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.about-link { margin-left: 12px; }
+>>>>>>> origin/claude/project-thread-qmr9h0

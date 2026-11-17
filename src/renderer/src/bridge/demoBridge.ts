@@ -69,7 +69,8 @@ export class DemoApp {
       pairingOpen: true,
       pairingCode: this.devices.code,
       controlUrl: 'http://192.168.1.20:7420',
-      list: this.devices.list
+      list: this.devices.list,
+      network: { addresses: [{ name: 'Wi-Fi', ip: '192.168.1.20' }], controlPort: 7420, phonePort: 7421, rtmpPort: 1935 }
     })
   }
 

@@ -109,7 +109,7 @@ export function defaultState(): AppState {
     recording: { active: false, startedAt: null, folder: 'Videos/Streams', format: 'mkv' },
     inputs: { video: [], audio: [] },
     data: {},
-    devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [] },
+    devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [], network: { addresses: [], controlPort: 0, phonePort: 0, rtmpPort: 0 } },
     stats: { ...IDLE_STATS }
   }
 }
