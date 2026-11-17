@@ -309,7 +309,7 @@ export class Controller extends Emitter<Events> {
         if (path.length > 2000) throw new CommandError('path is too long')
         let scene = this.s.scenes.find((s) => s.commercial)
         if (!scene) {
-          scene = { id: this.newId('scene'), name: 'Commercial', layers: [], commercial: true, hideOverlay: true }
+          scene = { id: this.newId('scene'), name: 'Gfx commercial', layers: [], commercial: true, hideOverlay: true }
           this.s.scenes.push(scene)
         }
         if (scene.id === this.s.programSceneId) throw new CommandError('A commercial is on air now: cue the next one when it has ended')

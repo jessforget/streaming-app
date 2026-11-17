@@ -93,7 +93,7 @@ rule letting PCs on the same network in (Windows asks to confirm).
 
 **Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
 The streaming app copies the video to the streaming PC (so Wi-Fi can't stop it
-half way), fills a **Commercial** scene with it (full screen, auto-play, Overlay
+half way), fills a **Gfx commercial** scene with it (full screen, auto-play, Overlay
 hidden, back to the scene before at its end) and puts it in Preview with a
 note. The streaming operator presses Transition when it suits. The gfx app
 shows Cued, On air (with the time) and Done. Behind it: the page in the
