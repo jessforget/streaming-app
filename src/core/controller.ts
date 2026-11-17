@@ -911,6 +911,7 @@ export class Controller extends Emitter<Events> {
       browser: 'Browser overlay',
       graphics: 'Graphics',
       media: 'Media file',
+      bars: 'Color bars',
       color: 'Color',
       countdown: 'Countdown',
       slideshow: 'Slideshow',

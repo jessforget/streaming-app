@@ -127,3 +127,11 @@ The show (rundown and look) is saved in the gfx app's settings folder
 Without the window (only Node.js): `node gfx-app/server.cjs --open` runs the
 same server and opens the operator page in a browser. Videos and photos can't
 be picked there, and windows can't be sent.
+
+**Color bars.** Both apps have them, for line-up before the show: the 75% bars with
+the strip and PLUGE row. In the streaming app, add a **Color bars** source to a
+scene (say a "Bars" scene); in the gfx app, **+ Add → Color bars (and tone)** and
+Take it. Each can send a 1 kHz tone at −20 dBFS (the usual line-up level) while on
+air: the streaming app's appears on the mixer as "Color bars (tone)", the gfx
+app's through its Graphics source's sound.
+

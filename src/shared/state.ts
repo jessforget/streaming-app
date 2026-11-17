@@ -14,11 +14,12 @@ export type LayerKind =
   | 'graphics'
   | 'media'
   | 'color'
+  | 'bars'
   | 'countdown'
   | 'slideshow'
   | 'scene'
 
-export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'bars', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
 
 /** The sizes a Graphics (network) page can be drawn at. */
 export type GraphicsSize = '1080p' | '720p'

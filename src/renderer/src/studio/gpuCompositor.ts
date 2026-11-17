@@ -9,6 +9,7 @@
  */
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
 import { boxFor, Compositor } from './compositor'
 import { videoBox, type GraphicsFeed } from './graphics'
 
@@ -232,6 +233,9 @@ export class GpuCompositor extends Compositor {
         if (texture) ops.push({ kind: 'tex', rect: map({ x: 0, y: 0, w, h }), clip, alpha, texture })
       } else if (l.kind === 'color') {
         ops.push({ kind: 'solid', rect: map(boxFor(placementOf(l), w, h)), clip, alpha, color: parseColor(l.color ?? '#1e3a8a') })
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) ops.push({ kind: 'solid', rect: map(r), clip, alpha, color: [r.rgb[0] / 255, r.rgb[1] / 255, r.rgb[2] / 255, 1] })
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue

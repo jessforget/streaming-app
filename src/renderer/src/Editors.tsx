@@ -17,6 +17,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   screen: 'Screen',
   window: 'Window',
   color: 'Color',
+  bars: 'Color bars',
   countdown: 'Countdown',
   slideshow: 'Slideshow',
   scene: 'Scene'
@@ -32,6 +33,7 @@ const KIND_HELP: Record<LayerKind, string> = {
   screen: 'Everything on one of this PC’s screens',
   window: 'One app window on this PC',
   color: 'A solid color, as a background or a box behind text',
+  bars: 'Standard color bars, with a 1 kHz line-up tone if you like: before the show, to check the picture and sound levels on the stream',
   countdown: 'Counts down to a time (like 19:30) or for some minutes after the scene goes on air',
   slideshow: 'Every picture in a folder, one after another',
   scene: 'Another scene shown inside this one, such as a logo-and-title scene used on every slide'
@@ -249,6 +251,10 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
         : `${layer.minutes ?? 5} min`
       : layer.kind === 'color'
         ? layer.color
+        : layer.kind === 'bars'
+          ? layer.sound
+            ? `with tone · ${Math.round((layer.volume ?? 1) * 100)}%`
+            : 'no tone'
         : layer.kind === 'media'
           ? `${layer.url ?? ''}${layer.loop === false ? ' · plays once' : ' · loops'}${layer.sound ? ' · with sound' : ''}`
           : (layer.text ?? layer.url)
@@ -363,6 +369,19 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Seconds per picture
           <input type="number" min={1} max={3600} value={v.seconds} onChange={(e) => set('seconds', e.target.value)} />
         </label>
+      )}
+      {kind === 'bars' && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play a 1 kHz tone while this scene is on air
+          </label>
+          {v.sound && (
+            <label>
+              Tone level (100% = −20 dBFS, the usual line-up level)
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
+        </>
       )}
       {kind === 'color' && (
         <label>
@@ -493,6 +512,8 @@ function kindFields(kind: LayerKind, v: Fields) {
       return { ...(v.url && { url: v.url }), seconds: Math.max(1, Number(v.seconds) || 5) }
     case 'color':
       return { color: v.color }
+    case 'bars':
+      return { sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
     case 'countdown':
       return {
         text: v.text || 'Starting in {time}',
@@ -519,6 +540,8 @@ function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Ru
   const pick = (k: LayerKind) => {
     setKind(k)
     set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
+    // Bars and tone: the tone is on at the usual line-up level.
+    if (k === 'bars') set('sound', true)
   }
   const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene) || (kind === 'graphics' && !v.url.trim())
   const add = async () => {

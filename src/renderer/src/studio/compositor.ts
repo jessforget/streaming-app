@@ -6,6 +6,7 @@
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
 import { graphicsFeeds, videoBox } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
@@ -373,6 +374,12 @@ export class Compositor {
         const b = boxFor(placementOf(l), w, h)
         ctx.fillStyle = l.color ?? '#1e3a8a'
         ctx.fillRect(b.x, b.y, b.w, b.h)
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) {
+          ctx.fillStyle = `rgb(${r.rgb.join(',')})`
+          ctx.fillRect(r.x, r.y, r.w, r.h)
+        }
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue

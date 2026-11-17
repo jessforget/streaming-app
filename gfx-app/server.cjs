@@ -23,7 +23,7 @@ const { createReadStream, readFileSync, writeFileSync, statSync, readdirSync, mk
 const { join, extname, basename, dirname } = require('node:path')
 const os = require('node:os')
 
-const KINDS = ['lowerthird', 'video', 'photos', 'window']
+const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars']
 const STYLES = ['classic', 'block', 'minimal', 'news']
 const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'custom']
 const POSITIONS = ['left', 'center', 'right']
@@ -88,7 +88,7 @@ const numOf = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, 
 /** One rundown item from what was sent, over what it was (or a fresh one). Paths are checked by the caller. */
 function cleanItem(p, was) {
   const kind = was ? was.kind : pickOf(p.kind, KINDS, null)
-  if (!kind) throw new Error('kind must be lowerthird, video, photos or window')
+  if (!kind) throw new Error('kind must be lowerthird, video, photos, window or bars')
   const base = was ?? { id: '', kind, playOnLive: true }
   const item = { ...base }
   if (p.name !== undefined) item.name = text(p.name, 80)
@@ -116,13 +116,19 @@ function cleanItem(p, was) {
     item.end ??= 'loop'
     item.shows ??= 'full'
   }
+  if (kind === 'bars') {
+    // Color bars, with a 1 kHz line-up tone sent to the stream (on unless turned off).
+    if (p.sound !== undefined) item.sound = p.sound !== false
+    item.sound ??= true
+    item.shows = 'full'
+  }
   if (kind === 'window') {
     if (p.sourceId !== undefined) item.sourceId = text(p.sourceId, 200)
     if (p.windowName !== undefined) item.windowName = text(p.windowName, 200)
     if (p.shows !== undefined) item.shows = pickOf(p.shows, SHOWS, item.shows ?? 'full')
     item.shows ??= 'full'
   }
-  if (!item.name) item.name = kind === 'lowerthird' ? 'Lower third' : kind === 'video' ? 'Video' : kind === 'photos' ? 'Photos' : 'Window'
+  if (!item.name) item.name = { lowerthird: 'Lower third', video: 'Video', photos: 'Photos', window: 'Window', bars: 'Color bars' }[kind]
   return item
 }
 

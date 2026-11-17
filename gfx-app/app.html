@@ -60,6 +60,7 @@
   .thumb.video { background: linear-gradient(135deg, #3d5a80, #98c1d9); }
   .thumb.photos { background: linear-gradient(135deg, #7a5f52, #e0b48a); }
   .thumb.window { background: #4b5563; }
+  .thumb.bars { background: linear-gradient(90deg, #bfbfbf 0 14%, #bfbf00 0 28%, #00bfbf 0 42%, #00bf00 0 57%, #bf00bf 0 71%, #bf0000 0 85%, #0000bf 0); }
   .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.preview .sub { color: #9fc1ff; } .item.onair .sub { color: #ff9b9b; }
@@ -171,6 +172,7 @@
           <button data-add="video">Video…</button>
           <button data-add="photos">Photos or slideshow…</button>
           <button data-add="window">A window on this laptop…</button>
+          <button data-add="bars">Color bars (and tone)</button>
         </div>
       </div>
       <ul class="items" id="items"></ul>
@@ -219,7 +221,7 @@
 <script>
   const $ = (id) => document.getElementById(id)
   const desk = window.gfxDesktop || null
-  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window' }
+  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window', bars: 'Color bars' }
   const STYLE_COLORS = {
     classic: { box: '#f2f2f2', text: '#111111' },
     block: { box: '#0c0e12', text: '#ffffff' },
@@ -286,6 +288,7 @@
     if (i.kind === 'lowerthird') return i.title || 'Lower third'
     if (i.kind === 'video') return `Video · ${i.file}${i.ok ? '' : ' (missing)'}`
     if (i.kind === 'photos') return `Slideshow · ${i.count} photo${i.count === 1 ? '' : 's'}`
+    if (i.kind === 'bars') return `Color bars · ${i.sound !== false ? 'with 1 kHz tone' : 'no tone'}`
     return `Window · ${i.windowName || 'pick one'}`
   }
   function renderItems() {
@@ -363,6 +366,7 @@
   async function add(kind) {
     menu.hidden = true
     if (kind === 'lowerthird') return act({ action: 'add', item: { kind, name: 'New name', title: 'Title' } })
+    if (kind === 'bars') return act({ action: 'add', item: { kind, name: 'Color bars' } })
     if (kind === 'window') {
       if (!desk) return alertBar('Windows can be sent from the gfx app window only (Start Gfx App), not from a browser.')
       return act({ action: 'add', item: { kind, name: 'Window' } })
@@ -482,7 +486,8 @@
   let dragFrom = -1
   function renderCue(p) {
     const c = S.cue
-    const items = c?.items ?? []
+    // (An older gfx app server sends one video, not a list.)
+    const items = c?.items ?? (c?.id ? [{ id: c.id, name: c.name }] : [])
     const open = !!c && !['onair', 'done', 'failed'].includes(c.status)
     const inBreak = open && items.some((x) => x.id === p?.id)
     $('cue').hidden = !p || p.kind !== 'video'
@@ -783,6 +788,10 @@
     const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
     box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
     if (it.kind === 'lowerthird') box.append(lookSection())
+    if (it.kind === 'bars') {
+      box.append(check('Send a 1 kHz tone to the stream (−20 dBFS, the usual line-up level)', it.sound !== false, (v) => change(id, { sound: v }, true)))
+      box.append(div('hint', 'Bars and tone go out before the show, so the streaming operator and the platforms can check the picture and the sound level. The tone is heard only on the stream, not here.'))
+    }
     if (it.kind === 'video') {
       box.append(check('Send its sound to the stream', it.sound !== false, (v) => change(id, { sound: v }, true)))
       box.append(div('hint', 'The sound shows up in the streaming app as a channel named after the graphics source, with its own volume in that source’s settings.'))

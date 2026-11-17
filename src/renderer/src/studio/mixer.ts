@@ -6,6 +6,7 @@
  * One device is opened once and shared, so an L-12 can feed one channel per
  * mic. The program mix goes into the stream and the recording.
  */
+import { TONE_GAIN, TONE_HZ } from '../../../shared/bars'
 import { audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
 import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
@@ -18,6 +19,7 @@ const stopTracks = (id: string, d: DeviceInput | null) => {
     return
   }
   // A video's sound node is shared by every channel that opens it (one node per element): unhook only this one.
+  if (d?.node instanceof OscillatorNode) d.node.stop()
   if (d && !d.stream) {
     try {
       d.node.disconnect(d.splitter)
@@ -33,6 +35,9 @@ const LAYER_PREFIX = 'mediasound-'
 /** Sound from a network graphics page (a video in the gfx app), keyed by layer id. */
 export const GFX_SOUND_PREFIX = 'gfxsound-'
 const GFX_DEVICE = 'gfx:'
+/** The line-up tone of a Color bars source, keyed by layer id. */
+const TONE_PREFIX = 'bartone-'
+const TONE_DEVICE = 'tone:'
 
 interface DeviceInput {
   stream?: MediaStream
@@ -124,7 +129,7 @@ export class Mixer {
     // Sound follows the picture: a fade takes as long as the video fade; a cut is quick but not a click.
     const fadeS = state.transition.kind === 'fade' ? Math.max(0.03, state.transition.durationMs / 1000) : 0.03
 
-    const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir), ...this.graphicsChannels(state, onAir)]
+    const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir), ...this.graphicsChannels(state, onAir), ...this.toneChannels(state, onAir)]
     const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
     for (const { a, on } of channels) {
@@ -168,6 +173,21 @@ export class Mixer {
         if (l.kind !== 'media' || !l.sound || !l.url) continue
         out.push({
           a: { id: LAYER_PREFIX + l.id, name: l.name, kind: 'file', url: l.url, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
+          on: l.visible && onAir.has(scene.id)
+        })
+      }
+    }
+    return out
+  }
+
+  /** Color bars with their tone on: a 1 kHz tone, heard while their scene is on air. */
+  private toneChannels(state: AppState, onAir: Set<string>): { a: AudioSource; on: boolean }[] {
+    const out: { a: AudioSource; on: boolean }[] = []
+    for (const scene of state.scenes) {
+      for (const l of scene.layers) {
+        if (l.kind !== 'bars' || !l.sound) continue
+        out.push({
+          a: { id: TONE_PREFIX + l.id, name: `${l.name} (tone)`, kind: 'device', device: `${TONE_DEVICE}${TONE_HZ}`, syncOffsetMs: 0, volume: (l.volume ?? 1) * TONE_GAIN, muted: false, level: 0 },
           on: l.visible && onAir.has(scene.id)
         })
       }
@@ -249,6 +269,15 @@ export class Mixer {
     p = (async () => {
       let stream: MediaStream
       if (id.startsWith('file:')) return this.openFile(id)
+      if (id.startsWith(TONE_DEVICE)) {
+        // A sine tone, made here (one per channel that uses it).
+        const osc = this.ctx.createOscillator()
+        osc.frequency.value = Number(id.slice(TONE_DEVICE.length)) || TONE_HZ
+        osc.start()
+        const splitter = this.ctx.createChannelSplitter(1)
+        osc.connect(splitter)
+        return { node: osc, splitter, channels: 1 }
+      }
       if (id === 'desktop') {
         if (!this.desktop) return null
         stream = this.desktop
