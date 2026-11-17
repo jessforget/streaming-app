@@ -522,7 +522,10 @@
     const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
     box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
     if (it.kind === 'lowerthird') box.append(lookSection())
-    if (it.kind === 'video') box.append(div('hint', 'Sound from videos isn’t sent to the stream yet: it’s the next step.'))
+    if (it.kind === 'video') {
+      box.append(check('Send its sound to the stream', it.sound !== false, (v) => change(id, { sound: v }, true)))
+      box.append(div('hint', 'The sound shows up in the streaming app as a channel named after the graphics source, with its own volume in that source’s settings.'))
+    }
   }
 
   function refreshValues(box) {

@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld('desktopGraphics', {
     ipcRenderer.on('gfx:status', h)
     return () => ipcRenderer.off('gfx:status', h)
   },
+  /** A graphics page offers its sound (WebRTC): answer with audioAnswer(req, { sdp } or { error }). */
+  onAudioOffer: (fn) => {
+    const h = (_e, o) => fn(o)
+    ipcRenderer.on('gfx:audio-offer', h)
+    return () => ipcRenderer.off('gfx:audio-offer', h)
+  },
+  audioAnswer: (req, answer) => ipcRenderer.send('gfx:audio-answer', { req, ...answer }),
   onClear: (fn) => {
     const h = (_e, s) => fn(s)
     ipcRenderer.on('gfx:clear', h)

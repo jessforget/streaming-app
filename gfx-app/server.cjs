@@ -101,8 +101,10 @@ function cleanItem(p, was) {
   if (kind === 'video') {
     if (p.shows !== undefined) item.shows = pickOf(p.shows, SHOWS, item.shows ?? 'full')
     if (p.end !== undefined) item.end = pickOf(p.end, VIDEO_ENDS, item.end ?? 'loop')
+    if (p.sound !== undefined) item.sound = p.sound !== false
     item.shows ??= 'full'
     item.end ??= 'loop'
+    item.sound ??= true
   }
   if (kind === 'photos') {
     if (p.seconds !== undefined) item.seconds = numOf(p.seconds, 1, 600, item.seconds ?? 5)

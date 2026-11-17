@@ -84,7 +84,7 @@ export function StudioBar({ studio, elsewhere, state }: { studio: Studio | null;
     problems.push(`${name}: ${why}`)
   }
   for (const [id, why] of studio.mixer.problems) {
-    const layer = state.scenes.flatMap((x) => x.layers).find((l) => `mediasound-${l.id}` === id)
+    const layer = state.scenes.flatMap((x) => x.layers).find((l) => `mediasound-${l.id}` === id || `gfxsound-${l.id}` === id)
     const name = state.audio.find((a) => a.id === id)?.name ?? (layer ? `${layer.name} (sound)` : 'An audio channel')
     if (!(id === 'desktop' || why.startsWith('Needs a click'))) problems.push(`${name}: ${why}`)
   }
