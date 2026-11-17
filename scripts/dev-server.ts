@@ -10,7 +10,7 @@
 import { join } from 'node:path'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
-import { MemoryKeyStore } from '../src/core/ports'
+import { MemoryKeyStore, MemoryShowStore } from '../src/core/ports'
 import { SimEngine } from '../src/core/sim'
 import { ControlServer } from '../src/server/control/server'
 import { MemoryDeviceStore, PairingManager } from '../src/server/control/pairing'
@@ -26,7 +26,7 @@ async function main() {
   const keys = new MemoryKeyStore()
   keys.set('youtube', 'practice')
   const pairing = new PairingManager(new MemoryDeviceStore())
-  const controller = new Controller({ engine: new SimEngine(), keys, initial, devices: pairing })
+  const controller = new Controller({ engine: new SimEngine(), keys, initial, devices: pairing, shows: new MemoryShowStore() })
   pairing.onChange((s) => {
     controller.updateDevices(s)
     if (s.pairingCode) console.log(`Pairing code: ${s.pairingCode}`)

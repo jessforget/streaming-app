@@ -325,7 +325,10 @@ export type FpsFamily = 'pal' | 'ntsc'
 export type FrameRateChoice = 'auto' | FpsFamily
 
 export interface AppState {
+  /** The show's name (top left of the main window). */
   setupName: string
+  /** The show file it was opened from or saved to (in the shows folder), and whether there are changes not saved yet. */
+  show: { file: string | null; savedAt: number | null; changed: boolean }
   engine: EngineInfo
   scenes: Scene[]
   previewSceneId: string

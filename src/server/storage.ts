@@ -2,12 +2,13 @@
  * Saving to disk: the Setup (scenes, audio, platforms, settings), paired
  * devices, and stream keys.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppState } from '../shared/state'
 import { ensureOverlay, showScenes } from '../shared/state'
 import { defaultState } from '../core/defaults'
-import type { KeyStore } from '../core/ports'
+import type { KeyStore, ShowStore } from '../core/ports'
+import { isShowFileName } from '../core/show'
 import type { DeviceStore, StoredDevice } from './control/pairing'
 
 function readJson<T>(file: string): T | undefined {
@@ -35,6 +36,10 @@ type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'
   recordFormat: AppState['recording']['format']
   /** The devices seen last time, so a device whose id changed is found again by its name. */
   inputs?: AppState['inputs']
+  /** The show file this layout came from, and whether it had changes not saved yet. */
+  show?: AppState['show']
+  /** Live data fields, so team names and the like are still there after a restart. */
+  data?: AppState['data']
 }
 
 export class SetupFile {
@@ -52,6 +57,8 @@ export class SetupFile {
     return ensureOverlay({
       ...base,
       setupName: saved.setupName ?? base.setupName,
+      show: saved.show ?? base.show,
+      data: saved.data ?? base.data,
       scenes,
       previewSceneId: first,
       programSceneId: first,
@@ -91,7 +98,9 @@ export class SetupFile {
       destinations: s.stream.destinations,
       recordFolder: s.recording.folder,
       recordFormat: s.recording.format,
-      inputs: s.inputs
+      inputs: s.inputs,
+      show: s.show,
+      data: s.data
     }
     writeJson(this.file, setup)
   }
@@ -130,6 +139,54 @@ export class FileKeyStore implements KeyStore {
     if (key) this.keys.set(id, key)
     else this.keys.delete(id)
     writeJson(this.file, Object.fromEntries(this.keys), 0o600)
+  }
+}
+
+/**
+ * Saved shows: one .show.json file each, in a folder the person can find and
+ * copy (Documents\Streaming App Shows on Windows).
+ */
+export class ShowFolder implements ShowStore {
+  constructor(readonly dir: string, readonly folder = dir) {}
+  list() {
+    let names: string[] = []
+    try {
+      names = readdirSync(this.dir).filter(isShowFileName)
+    } catch {
+      return []
+    }
+    const out: { file: string; name: string; savedAt: number; scenes: number }[] = []
+    for (const file of names) {
+      const show = readJson<{ name?: unknown; savedAt?: unknown; scenes?: unknown }>(join(this.dir, file))
+      if (!show) continue
+      let savedAt = typeof show.savedAt === 'number' ? show.savedAt : 0
+      if (!savedAt) {
+        try {
+          savedAt = statSync(join(this.dir, file)).mtimeMs
+        } catch {
+          // keep 0
+        }
+      }
+      const scenes = Array.isArray(show.scenes) ? show.scenes.filter((x) => x && x.id !== 'overlay' && !x.commercial).length : 0
+      out.push({ file, name: typeof show.name === 'string' && show.name ? show.name : file.replace(/\.show\.json$/, ''), savedAt, scenes })
+    }
+    return out
+  }
+  read(file: string): unknown {
+    if (!isShowFileName(file)) throw new Error('not a show file')
+    try {
+      return JSON.parse(readFileSync(join(this.dir, file), 'utf8'))
+    } catch (e) {
+      throw new Error((e as NodeJS.ErrnoException).code === 'ENOENT' ? 'the file is gone from the shows folder' : 'the file is damaged')
+    }
+  }
+  write(file: string, show: unknown) {
+    if (!isShowFileName(file)) throw new Error('not a show file')
+    writeJson(join(this.dir, file), show)
+  }
+  remove(file: string) {
+    if (!isShowFileName(file)) throw new Error('not a show file')
+    rmSync(join(this.dir, file), { force: true })
   }
 }
 

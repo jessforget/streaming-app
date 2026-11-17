@@ -11,7 +11,7 @@
  * same server and show the same page, with no rewrite.
  */
 import { homedir } from 'node:os'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Controller, errorText } from '../core/controller'
 import { freshSetup } from '../core/defaults'
@@ -23,7 +23,7 @@ import { findFfmpeg, pickEncoder } from './ffmpeg'
 import { NetCamHub } from './netcams'
 import { DEFAULT_RTMP_PORT, RtmpReceiver } from './rtmp'
 import { PhoneHub, namedLanAddresses } from './phones'
-import { DeviceFile, FileKeyStore, SetupFile, files } from './storage'
+import { DeviceFile, FileKeyStore, SetupFile, ShowFolder, files } from './storage'
 
 import about from '../../about.json'
 
@@ -34,6 +34,15 @@ function dataDir() {
   if (process.env.STREAMING_APP_DATA) return process.env.STREAMING_APP_DATA
   if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Streaming App')
   return join(homedir(), '.streaming-app')
+}
+
+/** Saved shows: Documents\Streaming App Shows on Windows, easy to find and copy to another PC. */
+function showsFolder(dir: string): ShowFolder {
+  if (process.env.STREAMING_APP_SHOWS) return new ShowFolder(process.env.STREAMING_APP_SHOWS)
+  if (process.platform === 'win32' || existsSync(join(homedir(), 'Documents'))) {
+    return new ShowFolder(join(homedir(), 'Documents', 'Streaming App Shows'), process.platform === 'win32' ? 'Documents\\Streaming App Shows' : '~/Documents/Streaming App Shows')
+  }
+  return new ShowFolder(join(dir, 'shows'))
 }
 
 async function main() {
@@ -52,7 +61,8 @@ async function main() {
   const engine = new BrowserEngine(ffmpeg, encoder)
   const keys = new FileKeyStore(f.keys)
   const pairing = new PairingManager(new DeviceFile(f.devices))
-  const controller = new Controller({ engine, keys, initial, devices: pairing })
+  const shows = showsFolder(dir)
+  const controller = new Controller({ engine, keys, initial, devices: pairing, shows })
   pairing.onChange((s) => controller.updateDevices(s))
   // Problems also go to app.log in the data folder, so they can be read after the window is closed.
   const logFile = join(dir, 'app.log')
