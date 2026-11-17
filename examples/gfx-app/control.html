@@ -43,6 +43,7 @@
     <button id="hide">Hide</button>
   </div>
   <p class="state" id="state" role="status">Connecting…</p>
+  <p class="state" id="addr"></p>
 
   <h2>Look</h2>
   <div class="styles" role="radiogroup" aria-label="Style">
@@ -162,6 +163,15 @@
 
   $('show').onclick = () => send({ show: true, name: $('name').value, title: $('title').value })
   $('hide').onclick = () => send({ show: false })
+
+  // The address to type into the streaming app ("Graphics (network)" source).
+  fetch('/api/info').then((r) => r.json()).then((info) => {
+    const host = info.addresses[0] || location.hostname
+    $('addr').textContent = 'Add to the streaming app: '
+    const b = document.createElement('b')
+    b.textContent = `http://${host}:${info.port}/live`
+    $('addr').append(b)
+  }).catch(() => {})
 
   // Show what is on the graphics now (the same messages the graphics page gets).
   let filled = false

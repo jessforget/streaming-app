@@ -1,8 +1,9 @@
 /**
  * A tiny sample gfx app: a starting point for your own.
  *
- *   node examples/gfx-app/server.cjs            (port 8080)
+ *   node examples/gfx-app/server.cjs            (port 8080, or the next free one)
  *   node examples/gfx-app/server.cjs --port 9000
+ *   node examples/gfx-app/server.cjs --open     (also opens the control page)
  *
  * Run it on the graphics laptop. It serves two pages:
  *
@@ -27,7 +28,8 @@ const { join } = require('node:path')
 const os = require('node:os')
 
 const arg = process.argv.indexOf('--port')
-const PORT = Number(arg > 0 ? process.argv[arg + 1] : process.env.PORT) || 8080
+const FIRST_PORT = Number(arg > 0 ? process.argv[arg + 1] : process.env.PORT) || 8080
+const OPEN = process.argv.includes('--open')
 const SAVED = join(__dirname, 'gfx-settings.json')
 
 const STYLES = ['classic', 'block', 'minimal', 'news']
@@ -90,6 +92,13 @@ let hideTimer = null
 
 const page = (file) => readFileSync(join(__dirname, file))
 
+/** This PC's addresses on the network, for the other PC to use. */
+const lanAddresses = () =>
+  Object.values(os.networkInterfaces())
+    .flat()
+    .filter((a) => a && a.family === 'IPv4' && !a.internal)
+    .map((a) => a.address)
+
 function broadcast() {
   const msg = `data: ${JSON.stringify(graphics)}\n\n`
   for (const res of listeners) res.write(msg)
@@ -136,6 +145,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     return res.end(page('live.html'))
   }
+  if (req.method === 'GET' && url.pathname === '/api/info') {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify({ port: server.address().port, addresses: lanAddresses() }))
+  }
   if (req.method === 'GET' && url.pathname === '/events') {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
     res.write(`retry: 2000\ndata: ${JSON.stringify(graphics)}\n\n`)
@@ -165,20 +178,35 @@ const server = http.createServer((req, res) => {
     })
     return
   }
-  res.writeHead(404, { 'content-type': 'text/plain' })
-  res.end('Not found')
+  res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+  res.end(`Not found: ${url.pathname}\n\nThis is the sample gfx app. Its pages are /control (to show and hide the lower third) and /live (the graphics, for the streaming app).`)
 })
 
-server.listen(PORT, '0.0.0.0', () => {
-  const addrs = Object.values(os.networkInterfaces())
-    .flat()
-    .filter((a) => a && a.family === 'IPv4' && !a.internal)
-    .map((a) => a.address)
-  console.log('Sample gfx app is running.\n')
-  console.log(`  On this PC:  graphics http://localhost:${PORT}/live   control http://localhost:${PORT}/control\n`)
-  for (const a of addrs) {
+/** Start on the first free port from FIRST_PORT (another program may already use 8080). */
+let port = FIRST_PORT
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE' && port < FIRST_PORT + 20) {
+    console.log(`Port ${port} is used by another program, trying ${port + 1}...`)
+    port += 1
+    return server.listen(port, '0.0.0.0')
+  }
+  console.error(`\nThe sample gfx app could not start: ${e.message}`)
+  process.exit(1)
+})
+server.on('listening', () => {
+  console.log('\nSample gfx app is running. Keep this window open.\n')
+  console.log(`  Control page (this PC):   http://localhost:${port}/control`)
+  console.log(`  Graphics page (this PC):  http://localhost:${port}/live\n`)
+  for (const a of lanAddresses()) {
     console.log(`  From another PC on the network:`)
-    console.log(`    Add to the streaming app:  http://${a}:${PORT}/live`)
-    console.log(`    Control page:              http://${a}:${PORT}/control\n`)
+    console.log(`    Add to the streaming app:  http://${a}:${port}/live`)
+    console.log(`    Control page:              http://${a}:${port}/control\n`)
+  }
+  if (port !== FIRST_PORT) console.log(`  Note: port ${FIRST_PORT} was taken, so this runs on port ${port}. Use the addresses above.\n`)
+  if (OPEN) {
+    const target = `http://localhost:${port}/control`
+    const cmd = process.platform === 'win32' ? `start "" "${target}"` : process.platform === 'darwin' ? `open "${target}"` : `xdg-open "${target}"`
+    require('node:child_process').exec(cmd, () => {})
   }
 })
+server.listen(port, '0.0.0.0')
