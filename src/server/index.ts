@@ -22,10 +22,12 @@ import { PairingManager } from './control/pairing'
 import { findFfmpeg, pickEncoder } from './ffmpeg'
 import { NetCamHub } from './netcams'
 import { DEFAULT_RTMP_PORT, RtmpReceiver } from './rtmp'
-import { PhoneHub } from './phones'
+import { PhoneHub, namedLanAddresses } from './phones'
 import { DeviceFile, FileKeyStore, SetupFile, files } from './storage'
 
-const VERSION = '0.2.0'
+import about from '../../about.json'
+
+const VERSION = about.version
 
 /** Where the Setup, paired devices and stream keys are kept. */
 function dataDir() {
@@ -121,6 +123,23 @@ async function main() {
     process.exit(1)
   }
   controller.updateDevices({ ...pairing.snapshot(), controlUrl: server.urls()[0] })
+  // Where other computers reach this PC (Settings, About). Checked again now and then: Wi-Fi can change.
+  let lastNet = ''
+  const updateNetwork = () => {
+    const network = {
+      addresses: namedLanAddresses(),
+      controlPort: server.port,
+      phonePort: phonesOn ? port + 1 : 0,
+      rtmpPort: rtmpOn ? rtmp.port : 0
+    }
+    const text = JSON.stringify(network)
+    if (text === lastNet) return
+    lastNet = text
+    controller.updateDevices({ network, controlUrl: server.urls()[0] })
+  }
+  updateNetwork()
+  const netTimer = setInterval(updateNetwork, 10_000)
+  netTimer.unref()
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   controller.on('state', () => {
