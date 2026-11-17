@@ -343,6 +343,18 @@ export interface AppState {
   /** Devices the PC can see, for the source and audio pickers. */
   inputs: { video: InputDevice[]; audio: InputDevice[] }
   data: Record<string, DataField>
-  devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[] }
+  devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[]; network: NetworkInfo }
   stats: HealthStats
+}
+
+/** Where other computers on the network reach this PC (shown in About). Port 0 = that part is off. */
+export interface NetworkInfo {
+  /** This PC's addresses, with the network adapter's name ("Wi-Fi", "Ethernet"). */
+  addresses: { name: string; ip: string }[]
+  /** Main window, tablet remote, companion app and stream deck. */
+  controlPort: number
+  /** Phone cameras (HTTPS). */
+  phonePort: number
+  /** Cameras that stream to the app (RTMP). */
+  rtmpPort: number
 }

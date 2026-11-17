@@ -40,6 +40,8 @@ export function Settings(props: {
   onTab: (t: SettingsTab) => void
   onClose: () => void
   testKey?: (id: string) => Promise<KeyCheck>
+  /** Asks the main window's browser for the devices again (only on the PC that runs the cameras). */
+  rescan?: () => Promise<void>
 }) {
   const { state, run, tab, onTab, onClose } = props
   useEffect(() => {
@@ -77,7 +79,7 @@ export function Settings(props: {
         </header>
         <div className="modal-body">
           {tab === 'golive' && <GoLive state={state} run={run} />}
-          {tab === 'inputs' && <Inputs state={state} run={run} />}
+          {tab === 'inputs' && <Inputs state={state} run={run} rescan={props.rescan} />}
           {tab === 'devices' && <Devices state={state} run={run} />}
         </div>
         <footer className="modal-foot">
@@ -293,8 +295,28 @@ function FolderField({ value, onSave }: { value: string; onSave: (v: string) => 
   )
 }
 
-function Inputs({ state, run }: { state: AppState; run: Run }) {
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`
+
+/** "Look again": scans, shows that it is scanning (at least a moment, so it can be seen), then a Done button. */
+function useScan(run: Run, rescan?: () => Promise<void>) {
+  const [status, setStatus] = useState<'idle' | 'busy' | 'done'>('idle')
+  const start = async () => {
+    setStatus('busy')
+    const minimum = new Promise((r) => setTimeout(r, 1200))
+    try {
+      if (rescan) await rescan()
+      await run('inputs.refresh')
+    } finally {
+      await minimum
+      setStatus('done')
+    }
+  }
+  return { status, busy: status === 'busy', start, dismiss: () => setStatus('idle') }
+}
+
+function Inputs({ state, run, rescan }: { state: AppState; run: Run; rescan?: () => Promise<void> }) {
   const { video, audio } = state.inputs
+  const scan = useScan(run, rescan)
   return (
     <div className="stack">
       <PhoneCameras state={state} />
@@ -323,10 +345,25 @@ function Inputs({ state, run }: { state: AppState; run: Run }) {
       <section>
         <div className="panel-head">
           <h3>Devices this PC can see</h3>
-          <button className="small" onClick={() => run('inputs.refresh')}>
-            Look again
+          <button className="small" onClick={() => void scan.start()} disabled={scan.busy}>
+            {scan.busy ? 'Looking…' : 'Look again'}
           </button>
         </div>
+        {scan.status !== 'idle' && (
+          <div className={`scan-status ${scan.busy ? 'busy' : 'done'}`} role="status" aria-live="polite">
+            {scan.busy ? <span className="spinner" aria-hidden="true" /> : <span className="tick" aria-hidden="true">✓</span>}
+            <span className="scan-text">
+              {scan.busy
+                ? 'Scanning for cameras, video and audio inputs…'
+                : `Scan finished: ${count(video.length, 'video input')} and ${count(audio.length, 'audio input')} found.`}
+            </span>
+            {!scan.busy && (
+              <button className="small" onClick={scan.dismiss}>
+                Done
+              </button>
+            )}
+          </div>
+        )}
         <h4>Video</h4>
         {video.length === 0 ? (
           <p className="muted">None found. Check the cable. Devices show up here by themselves when plugged in.</p>

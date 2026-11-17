@@ -50,11 +50,19 @@ interface CertFile {
 
 /** This PC's addresses on the network, the ones a phone can reach. */
 export function lanAddresses(): string[] {
-  const out: string[] = []
-  for (const list of Object.values(networkInterfaces())) {
-    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) out.push(a.address)
+  return namedLanAddresses().map((a) => a.ip)
+}
+
+/** Adapters made by other programs (WSL, VirtualBox, VMware, Docker): other computers can't reach these. */
+const VIRTUAL = /vethernet|virtual|vmware|vbox|docker|hyper-v|wsl|loopback|tailscale|zerotier|vpn/i
+
+/** This PC's addresses with their adapter's name ("Wi-Fi", "Ethernet"); real adapters first. */
+export function namedLanAddresses(): { name: string; ip: string }[] {
+  const out: { name: string; ip: string }[] = []
+  for (const [name, list] of Object.entries(networkInterfaces())) {
+    for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) out.push({ name, ip: a.address })
   }
-  return out
+  return out.sort((a, b) => Number(VIRTUAL.test(a.name)) - Number(VIRTUAL.test(b.name)))
 }
 
 /** A certificate for this PC's addresses, made once and kept (made again if the address changes). */

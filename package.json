@@ -1,6 +1,6 @@
 {
   "name": "streaming-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A simpler live streaming and recording app, like OBS, for ATEM shows. Runs as a local web app with a tablet remote and a network control API.",
   "license": "GPL-2.0-or-later",

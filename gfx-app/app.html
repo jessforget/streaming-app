@@ -99,6 +99,31 @@
   .warn { color: #f0c36b; font-size: 12px; }
   .empty { color: var(--muted); }
 
+  /* About */
+  .about-btn { margin-left: 8px; flex: none; }
+  dialog#about { width: min(600px, calc(100% - 32px)); background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 18px 20px 20px; }
+  dialog#about::backdrop { background: rgba(0, 0, 0, 0.55); }
+  .about-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .about-head h2 { font-size: 17px; letter-spacing: 0; text-transform: none; color: var(--text); }
+  .about-head button { min-height: 40px; min-width: 40px; }
+  dialog#about h3 { margin: 18px 0 2px; font-size: 14px; }
+  .facts { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px 14px; margin: 0; padding: 14px; background: var(--card); border-radius: 8px; font-size: 14px; }
+  .facts dt { color: var(--muted); } .facts dd { margin: 0; font-weight: 600; }
+  .ips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .ips button { flex: 1 1 240px; display: flex; align-items: center; gap: 12px; min-height: 48px; text-align: left; }
+  .ips button[aria-checked='true'] { border-color: var(--go); background: #13261d; }
+  .ips .adapter { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .ips button[aria-checked='true'] .adapter { color: #8fe0b6; }
+  .ips .ip { margin-left: auto; font: 600 18px ui-monospace, Consolas, monospace; }
+  .links { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .links li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 8px 8px 8px 12px; background: var(--card); border-radius: 8px; }
+  .links li > div { display: flex; gap: 8px; align-items: baseline; grid-column: 1 / -1; }
+  .links code { font: 13px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; user-select: all; }
+  .links li button { min-height: 40px; min-width: 72px; }
+  #abPortNote:empty { display: none; }
+  dialog#about .hint { margin: 0; }
+  #abPortNote { margin-top: 10px; }
+
   /* A laptop screen (1366 x 768 and up). Narrower: the settings move under. */
   @media (max-width: 1180px) {
     .cols { grid-template-columns: 250px minmax(0, 1fr); }
@@ -113,6 +138,7 @@
     <h1>Gfx app</h1>
     <span class="pill" id="streamPill"><span class="dot"></span><span id="streamText">Streaming app not connected</span></span>
     <span class="addr" id="addr"></span>
+    <button id="aboutBtn" class="about-btn">About</button>
   </header>
   <div class="cols">
     <aside class="rundown" id="rundown" aria-label="Rundown">
@@ -152,6 +178,26 @@
     <aside class="settings" id="settings" aria-label="Item settings"></aside>
   </div>
 </div>
+
+<dialog id="about" aria-labelledby="aboutTitle">
+  <div class="about-head">
+    <h2 id="aboutTitle">About</h2>
+    <button id="aboutClose" aria-label="Close">✕</button>
+  </div>
+  <dl class="facts">
+    <dt>App</dt><dd id="abName">Gfx App</dd>
+    <dt>Version</dt><dd id="abVersion"></dd>
+    <dt>Revision date</dt><dd id="abDate"></dd>
+    <dt>Developer</dt><dd id="abDev"></dd>
+    <dt>Copyright</dt><dd id="abCopy"></dd>
+  </dl>
+  <h3>Connect from another computer</h3>
+  <p class="hint">The streaming PC (or a tablet) must be on the same network as this laptop.</p>
+  <div class="ips" id="abIps" role="radiogroup" aria-label="This laptop’s address"></div>
+  <p class="warn" id="abNoNet" hidden>This laptop isn’t on a network right now. Connect to Wi-Fi or plug in a cable, then open About again.</p>
+  <ul class="links" id="abLinks"></ul>
+  <p class="hint" id="abPortNote"></p>
+</dialog>
 
 <script>
   const $ = (id) => document.getElementById(id)
@@ -196,6 +242,81 @@
     b.textContent = `http://${host}:${info.port}/live`
     $('addr').append(b)
   }).catch(() => {})
+
+  // ---------- About: version, developer, and the addresses other computers use ----------
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const longDate = (iso) => {
+    const [y, m, d] = String(iso || '').split('-').map(Number)
+    return y && m && d ? `${d} ${MONTHS[m - 1]} ${y}` : iso || ''
+  }
+  let aboutIp = ''
+  function copyText(text, btn) {
+    const ok = () => { btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = 'Copy'), 1500) }
+    navigator.clipboard?.writeText(text).then(ok, () => {
+      const t = document.createElement('textarea')
+      t.value = text
+      document.body.append(t)
+      t.select()
+      document.execCommand('copy')
+      t.remove()
+      ok()
+    }) ?? ok()
+  }
+  async function openAbout() {
+    let info = null
+    try { info = await (await fetch('/api/info')).json() } catch {}
+    const a = info?.about ?? {}
+    $('abName').textContent = a.name || 'Gfx App'
+    $('abVersion').textContent = a.version || '–'
+    $('abDate').textContent = longDate(a.revisionDate) || '–'
+    $('abDev').textContent = a.developer || '–'
+    $('abCopy').textContent = a.copyright || '–'
+    const named = info?.named ?? []
+    if (!named.some((n) => n.ip === aboutIp)) aboutIp = named[0]?.ip ?? ''
+    $('abNoNet').hidden = named.length > 0
+    const drawIps = () => {
+      const box = $('abIps')
+      box.textContent = ''
+      for (const n of named) {
+        const b = document.createElement('button')
+        b.setAttribute('role', 'radio')
+        b.setAttribute('aria-checked', String(n.ip === aboutIp))
+        const name = document.createElement('span'); name.className = 'adapter'; name.textContent = n.name
+        const ip = document.createElement('span'); ip.className = 'ip'; ip.textContent = n.ip
+        b.append(name, ip)
+        b.onclick = () => { aboutIp = n.ip; drawIps(); drawLinks() }
+        box.append(b)
+      }
+    }
+    const drawLinks = () => {
+      const ul = $('abLinks')
+      ul.textContent = ''
+      if (!aboutIp || !info) return
+      const rows = [
+        ['Paste into the streaming app', `http://${aboutIp}:${info.port}/live`],
+        ['This control page on a tablet', `http://${aboutIp}:${info.port}/control`]
+      ]
+      for (const [label, url] of rows) {
+        const li = document.createElement('li')
+        const d = document.createElement('div')
+        const l = document.createElement('strong'); l.textContent = label
+        const p = document.createElement('span'); p.className = 'hint'; p.textContent = `port ${info.port}`
+        d.append(l, p)
+        const c = document.createElement('code'); c.textContent = url
+        const btn = document.createElement('button'); btn.textContent = 'Copy'
+        btn.onclick = () => copyText(url, btn)
+        li.append(d, c, btn)
+        ul.append(li)
+      }
+    }
+    drawIps()
+    drawLinks()
+    $('abPortNote').textContent = info && info.port !== 8765 ? `Port 8765 was busy, so this runs on port ${info.port}.` : named.length > 1 ? 'This laptop has more than one address: pick the one on the same network as the streaming PC.' : ''
+    if (!$('about').open) $('about').showModal()
+  }
+  $('aboutBtn').onclick = () => void openAbout()
+  $('aboutClose').onclick = () => $('about').close()
+  $('about').addEventListener('click', (e) => { if (e.target === $('about')) $('about').close() })
 
   // ---------- Rundown ----------
   const byId = (id) => S?.items.find((i) => i.id === id) ?? null
@@ -316,6 +437,7 @@
   $('next').onclick = () => act({ action: 'next' })
   const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
   document.addEventListener('keydown', (e) => {
+    if ($('about').open) return
     if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
     if (e.code === 'Space') {
       e.preventDefault()

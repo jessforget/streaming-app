@@ -6,6 +6,7 @@ import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
 import { InstallButton } from './install'
 import { HealthPill, Notice, ScenePicture } from './parts'
 import { Settings, type SettingsTab } from './Settings'
+import { About } from './About'
 import type { Studio } from './studio/studio'
 import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
 import { useApp, useElapsed, type Run } from './useApp'
@@ -22,12 +23,13 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   const { bridge, studio = null, studioElsewhere = false } = props
   const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
   const [settings, setSettings] = useState<SettingsTab | null>(null)
+  const [aboutOpen, setAboutOpen] = useState(false)
   useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
-  useSpaceToTransition(state, run, settings === null)
+  useSpaceToTransition(state, run, settings === null && !aboutOpen)
   if (!state) return <div className="loading">Starting…</div>
   return (
     <div className="app">
-      <TopBar state={state} stats={stats} run={run} openSettings={setSettings} />
+      <TopBar state={state} stats={stats} run={run} openSettings={setSettings} openAbout={() => setAboutOpen(true)} />
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
       <div className="workspace">
@@ -63,12 +65,14 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           tab={settings}
           onTab={setSettings}
           onClose={() => setSettings(null)}
+          rescan={studio ? () => studio.rescanDevices() : undefined}
           testKey={async (id) => {
             const r = await bridge.command('settings.testDestination', { id })
             return r.ok ? (r.data as { ok: boolean; message: string }) : { ok: false, message: r.error ?? 'Could not check the key.' }
           }}
         />
       )}
+      {aboutOpen && <About state={state} onClose={() => setAboutOpen(false)} />}
     </div>
   )
 }
@@ -76,8 +80,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
 /** Platforms shown as switches in the top bar: the three most used, plus any other that is on or has a key. */
 const MAIN_PLATFORMS = ['youtube', 'facebook', 'instagram']
 
-function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
-  const { state, stats, run, openSettings } = props
+function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void; openAbout: () => void }) {
+  const { state, stats, run, openSettings, openAbout } = props
   const liveFor = useElapsed(state.stream.startedAt)
   const recFor = useElapsed(state.recording.startedAt)
   const live = state.stream.live
@@ -97,6 +101,9 @@ function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; o
               Settings
             </button>
           )}
+          <button className="link small about-link" onClick={openAbout}>
+            About
+          </button>
         </span>
       </div>
       <HealthPill stats={stats} />
