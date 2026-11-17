@@ -64,8 +64,13 @@ export interface Layer {
   text?: string
   /** Image, media and browser layers: file path or URL. Graphics: the gfx app's page. Slideshow: a folder of pictures. */
   url?: string
-  /** Media: play again from the start when it ends. Default on. */
+  /**
+   * Media: play again from the start when it ends, all the time. Default on.
+   * Off = auto-play: it waits on its first frame, plays from the start when its scene goes live, and stops when it leaves.
+   */
   loop?: boolean
+  /** Media that plays once: when it ends, go back to the scene that was live before (like a commercial break). */
+  returnAfter?: boolean
   /**
    * Media: send the file's sound to the mix while its scene is on air. Default off.
    * Graphics: play the sound the page sends (videos from the gfx app). Default on.

@@ -784,6 +784,7 @@ export class Controller extends Emitter<Events> {
       layer.placement = P.placement as Placement
     }
     if (P.loop !== undefined) layer.loop = bool(P, 'loop')
+    if (P.returnAfter !== undefined) layer.returnAfter = bool(P, 'returnAfter')
     if (P.sound !== undefined) layer.sound = bool(P, 'sound')
     if (P.volume !== undefined) layer.volume = num(P, 'volume', 0, 1)
     if (P.color !== undefined) {

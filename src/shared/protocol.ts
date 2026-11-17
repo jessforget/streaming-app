@@ -81,6 +81,8 @@ export interface CommandMap {
     url?: string
     placement?: Placement
     loop?: boolean
+    /** Media that plays once: when it ends, go back to the scene that was live before. */
+    returnAfter?: boolean
     sound?: boolean
     volume?: number
     color?: string
@@ -105,6 +107,8 @@ export interface CommandMap {
     url?: string
     placement?: Placement
     loop?: boolean
+    /** Media that plays once: when it ends, go back to the scene that was live before. */
+    returnAfter?: boolean
     sound?: boolean
     volume?: number
     color?: string

@@ -335,9 +335,18 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
       )}
       {kind === 'media' && (
         <>
-          <label className="check">
-            <input type="checkbox" checked={v.loop} onChange={(e) => set('loop', e.target.checked)} /> Loop (otherwise it plays once, from the start, each time its scene goes on air)
+          <label>
+            When its scene goes live
+            <select value={v.loop ? 'loop' : 'once'} onChange={(e) => set('loop', e.target.value === 'loop')}>
+              <option value="once">Auto-play from the start (a commercial, an intro)</option>
+              <option value="loop">Keep looping all the time (a background)</option>
+            </select>
           </label>
+          {!v.loop && (
+            <label className="check">
+              <input type="checkbox" checked={v.returnAfter} onChange={(e) => set('returnAfter', e.target.checked)} /> When it ends, go back to the scene that was live before
+            </label>
+          )}
           <label className="check">
             <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play its sound while this scene is on air
           </label>
@@ -422,6 +431,8 @@ interface Fields {
   url: string
   placement: Placement
   loop: boolean
+  /** Media that plays once: go back to the scene before when it ends. */
+  returnAfter: boolean
   sound: boolean
   /** 0 to 100 */
   volume: string
@@ -448,6 +459,7 @@ function useFields(layer: Partial<Layer> & { placement: Placement }) {
     url: layer.url ?? '',
     placement: layer.placement,
     loop: layer.loop !== false,
+    returnAfter: layer.returnAfter === true,
     sound: layer.sound === true,
     volume: String(Math.round((layer.volume ?? 1) * 100)),
     color: layer.color ?? '#1e3a8a',
@@ -476,7 +488,7 @@ function kindFields(kind: LayerKind, v: Fields) {
     case 'browser':
       return v.url ? { url: v.url } : {}
     case 'media':
-      return { ...(v.url && { url: v.url }), loop: v.loop, sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
+      return { ...(v.url && { url: v.url }), loop: v.loop, returnAfter: !v.loop && v.returnAfter, sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
     case 'slideshow':
       return { ...(v.url && { url: v.url }), seconds: Math.max(1, Number(v.seconds) || 5) }
     case 'color':

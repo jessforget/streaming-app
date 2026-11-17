@@ -117,13 +117,36 @@ export class Compositor {
       for (const l of state.scenes.find((x) => x.id === id)?.layers ?? []) {
         const el = l.kind === 'media' && l.url && l.loop === false ? this.videos.get(`media:${l.url}`)?.el : undefined
         if (el) {
+          clearTimeout(this.rewind.get(el))
           el.currentTime = 0
           void el.play().catch(() => {})
         }
       }
     }
     this.onAir = onAir
+    // One-shot videos no longer on air: once the fade is over, stop and wait on the first frame for next time.
+    const fadeMs = state.transition.kind === 'fade' ? state.transition.durationMs : 0
+    for (const [key, v] of this.videos) {
+      if (!key.startsWith('media:') || v.el.loop) continue
+      const url = key.slice('media:'.length)
+      const live = state.scenes.some((s) => onAir.has(s.id) && s.layers.some((l) => l.kind === 'media' && l.url === url && l.visible))
+      if (live || v.el.paused || this.rewind.has(v.el)) continue
+      this.rewind.set(
+        v.el,
+        window.setTimeout(() => {
+          this.rewind.delete(v.el)
+          if (!this.state || this.state.scenes.some((s) => this.onAir.has(s.id) && s.layers.some((l) => l.kind === 'media' && l.url === url && l.visible))) return
+          v.el.pause()
+          v.el.currentTime = 0
+        }, fadeMs + 300)
+      )
+    }
   }
+
+  /** Waiting to stop a one-shot video that left the air (after the fade). */
+  private rewind = new Map<HTMLVideoElement, number>()
+  /** A one-shot video reached its end (set by the studio: it may go back to the scene before). */
+  onMediaEnded: (url: string) => void = () => {}
 
   /** Open every capture device used in any scene; close the rest. */
   private syncSources(state: AppState) {
@@ -156,8 +179,11 @@ export class Compositor {
       }
       if (kind === 'media' && !this.videos.has(`media:${url}`)) {
         const el = document.createElement('video')
-        Object.assign(el, { src: fileUrl(url), loop: true, muted: true, playsInline: true })
-        void el.play().catch(() => {})
+        // A one-shot (auto-play) video waits on its first frame until its scene goes live.
+        const once = state.scenes.every((s) => s.layers.every((l) => !(l.kind === 'media' && l.url === url) || l.loop === false))
+        Object.assign(el, { src: fileUrl(url), loop: !once, muted: true, playsInline: true, preload: 'auto' })
+        if (!once) void el.play().catch(() => {})
+        el.addEventListener('ended', () => this.onMediaEnded(url))
         this.videos.set(`media:${url}`, { el })
       }
     }
@@ -172,7 +198,10 @@ export class Compositor {
         this.videos.delete(key)
         continue
       }
-      v.el.loop = layers.some((l) => l.loop !== false)
+      const loop = layers.some((l) => l.loop !== false)
+      // Switched to looping: start it; the auto-play ones start when their scene goes live.
+      if (loop && !v.el.loop) void v.el.play().catch(() => {})
+      v.el.loop = loop
     }
   }
 

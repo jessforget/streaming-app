@@ -55,6 +55,8 @@ export class Studio {
   /** Network cameras, like a Z CAM E2 on the router. */
   readonly netcams = new NetCams()
   private state: AppState | null = null
+  /** The scene that was live before the one live now: where an auto-play video goes back to. */
+  private liveBefore = ''
   private outputs: Partial<Record<'stream' | 'record', Output | GpuOutput>> = {}
   /** Which qualities the graphics card can encode (checked once at the start). */
   private gpuEncode = new Map<string, boolean>()
@@ -135,6 +137,14 @@ export class Studio {
     this.compositor.phoneStream = (id) => this.phones.stream(id) ?? this.netcams.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
     this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
+    // A commercial ended: go back to the scene before, if its source says so and its scene is still the one live.
+    this.compositor.onMediaEnded = (url) => {
+      const st = this.state
+      const live = st?.scenes.find((s) => s.id === st.programSceneId)
+      const back = live?.layers.some((l) => l.kind === 'media' && l.url === url && l.visible && l.loop === false && l.returnAfter)
+      if (!st || !back || !this.liveBefore || this.liveBefore === st.programSceneId || !st.scenes.some((s) => s.id === this.liveBefore)) return
+      void this.bridge.command('scene.program', { sceneId: this.liveBefore }).catch(() => {})
+    }
     this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
     this.phones.subscribe(() => {
@@ -182,6 +192,7 @@ export class Studio {
 
   /** Called by the screen on every state change. */
   update(state: AppState) {
+    if (this.state && this.state.programSceneId !== state.programSceneId) this.liveBefore = this.state.programSceneId
     this.state = state
     const preset = presetFor(state.stream.quality, state.stream.family)
     if (!state.stream.live && !state.recording.active) this.compositor.setSize(preset.width, preset.height)
