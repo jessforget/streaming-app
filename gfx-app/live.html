@@ -444,8 +444,8 @@
   }
 
   /**
-   * A video cued as a commercial: the streaming app (it gives this page window.streamerCue) copies
-   * it and puts a Commercial scene in its Preview. Passed once per cue; un-cueing is passed too.
+   * A commercial break (one or more videos): the streaming app (it gives this page window.streamerCue)
+   * copies them and puts its Gfx commercial scene in Preview. Passed once per take; un-cueing too.
    */
   let passedCue = 0
   function passCue() {
@@ -454,7 +454,8 @@
     // Only a cue nobody has picked up yet (not one that already played, after a reload).
     if (c && c.take !== passedCue && (c.status === 'waiting' || c.status === 'sent')) {
       passedCue = c.take
-      window.streamerCue({ take: c.take, name: c.name, url: new URL(`/media/${c.id}`, location.href).href }).catch(() => {})
+      const items = c.items.map((x) => ({ name: x.name, url: new URL(`/media/${x.id}`, location.href).href }))
+      window.streamerCue({ take: c.take, items }).catch(() => {})
     } else if (!c && passedCue) {
       window.streamerCue({ take: passedCue, clear: true }).catch(() => {})
       passedCue = 0

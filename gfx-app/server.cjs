@@ -179,8 +179,10 @@ function startServer(opts = {}) {
   let hideTimer = null
   let take = 0
   /**
-   * A video cued to the stream as a commercial: the streaming app copies it, puts a Commercial scene
-   * in its Preview, and says how it goes: copying, cued, onair (with pos/dur), done, or failed.
+   * A commercial break cued to the stream: one or more videos ({ id, name }), played in order after one
+   * Transition. The streaming app copies them, puts its Gfx commercial scene in Preview, and says how it
+   * goes: copying, cued, onair (at = which one, pos/dur = its time), done, or failed. Each change to the
+   * list is a new take, so the streaming app cues the whole break afresh.
    */
   let cue = null
   let cueTake = 0
@@ -300,16 +302,35 @@ function startServer(opts = {}) {
         return
       }
       case 'cue': {
-        // Cue a video to the stream as a commercial (one at a time: a new one replaces the last).
+        // Add a video to the commercial break (a new break once the last one has played).
         const it = item(body.id ?? show.previewId)
         if (!it || it.kind !== 'video') throw new Error('Only videos can be cued as a commercial')
         if (!it.path || !exists(it.path)) throw new Error('That video is not on this laptop any more')
-        cue = { id: it.id, take: ++cueTake, name: it.name, status: streamPages.size ? 'sent' : 'waiting' }
-        return
+        if (cue?.status === 'onair') throw new Error('The break is on air now. Add more after it ends.')
+        const open = cue && !['done', 'failed'].includes(cue.status)
+        const items = open ? cue.items : []
+        if (items.some((x) => x.id === it.id)) throw new Error(`${it.name} is already in the break`)
+        if (items.length >= 20) throw new Error('A break holds 20 videos at most')
+        cue = { items: [...items, { id: it.id, name: it.name }], take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' }
+        return cue.items.length
       }
       case 'uncue': {
-        if (cue && (cue.status === 'onair')) throw new Error('It’s on air now: it ends by itself')
-        cue = null
+        // Take one video out of the break (index), or the whole break.
+        if (cue && cue.status === 'onair') throw new Error('The break is on air now: it ends by itself')
+        const at = Number.isInteger(body.index) && cue && !['done', 'failed'].includes(cue.status) ? body.index : -1
+        const items = at >= 0 ? cue.items.filter((_, i) => i !== at) : []
+        cue = items.length ? { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' } : null
+        return
+      }
+      case 'cue-move': {
+        // Play one video of the break earlier (up) or later.
+        if (!cue || ['onair', 'done', 'failed'].includes(cue.status)) throw new Error('Nothing to move')
+        const from = Number(body.index)
+        const to = from + (body.up ? -1 : 1)
+        if (!cue.items[from] || !cue.items[to]) return
+        const items = [...cue.items]
+        ;[items[from], items[to]] = [items[to], items[from]]
+        cue = { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' }
         return
       }
       case 'hide': {
@@ -352,6 +373,11 @@ function startServer(opts = {}) {
         if (at < 0) return
         show.items.splice(at, 1)
         if (show.onAir?.id === body.id) show.onAir = null
+        // A removed video leaves a break that has not played yet.
+        if (cue && cue.items.some((x) => x.id === body.id) && !['onair', 'done', 'failed'].includes(cue.status)) {
+          const items = cue.items.filter((x) => x.id !== body.id)
+          cue = items.length ? { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' } : null
+        }
         if (show.previewId === body.id) show.previewId = show.items[Math.min(at, show.items.length - 1)]?.id ?? null
         return
       }
@@ -530,7 +556,8 @@ function startServer(opts = {}) {
         const body = await readBody(req)
         const STATUSES = ['copying', 'cued', 'onair', 'done', 'failed', 'cleared']
         if (cue && body.take === cue.take && STATUSES.includes(body.status)) {
-          cue = { ...cue, status: body.status, pos: Number(body.pos) || 0, dur: Number(body.dur) || 0, error: body.error ? text(body.error, 200) : undefined }
+          const at = Math.max(0, Math.min(cue.items.length - 1, Math.floor(Number(body.at) || 0)))
+          cue = { ...cue, status: body.status, at, pos: Number(body.pos) || 0, dur: Number(body.dur) || 0, left: Number(body.left) || 0, error: body.error ? text(body.error, 200) : undefined }
           if (body.status === 'cleared') cue = null
           broadcast()
         }

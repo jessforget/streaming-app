@@ -111,18 +111,25 @@ export class Compositor {
     }
     // Scenes that just went on air: start their countdowns, and play their one-shot videos from the top.
     const onAir = scenesOnAir(state)
-    for (const id of onAir) {
-      if (this.onAir.has(id)) continue
-      this.liveAt.set(id, Date.now())
-      for (const l of state.scenes.find((x) => x.id === id)?.layers ?? []) {
-        const el = l.kind === 'media' && l.url && l.loop === false ? this.videos.get(`media:${l.url}`)?.el : undefined
-        if (el) {
-          clearTimeout(this.rewind.get(el))
-          el.currentTime = 0
-          void el.play().catch(() => {})
-        }
+    for (const id of onAir) if (!this.onAir.has(id)) this.liveAt.set(id, Date.now())
+    // A one-shot video that just came on air (its scene went live, or it was shown in a live scene,
+    // like the next video of a commercial break): play it from the top.
+    const liveOnce = new Set<string>()
+    for (const sc of state.scenes) {
+      if (!onAir.has(sc.id)) continue
+      for (const l of sc.layers) if (l.kind === 'media' && l.url && l.loop === false && l.visible) liveOnce.add(l.url)
+    }
+    for (const url of liveOnce) {
+      if (this.liveOnce.has(url)) continue
+      const el = this.videos.get(`media:${url}`)?.el
+      if (el) {
+        clearTimeout(this.rewind.get(el))
+        this.rewind.delete(el)
+        el.currentTime = 0
+        void el.play().catch(() => {})
       }
     }
+    this.liveOnce = liveOnce
     this.onAir = onAir
     // One-shot videos no longer on air: once the fade is over, stop and wait on the first frame for next time.
     const fadeMs = state.transition.kind === 'fade' ? state.transition.durationMs : 0
@@ -145,6 +152,8 @@ export class Compositor {
 
   /** Waiting to stop a one-shot video that left the air (after the fade). */
   private rewind = new Map<HTMLVideoElement, number>()
+  /** One-shot videos on air now (shown in a live scene), by file. */
+  private liveOnce = new Set<string>()
   /** A one-shot video reached its end (set by the studio: it may go back to the scene before). */
   onMediaEnded: (url: string) => void = () => {}
 

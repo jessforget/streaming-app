@@ -72,8 +72,13 @@ export interface CommandMap {
   'scene.store': { sceneId: string; stored: boolean }
   /** Leave the Overlay off while this scene is on air. */
   'scene.setHideOverlay': { sceneId: string; hide: boolean }
-  /** A gfx app cued a commercial (a video file on this PC): fill the Commercial scene with it and put it in Preview. */
-  'cue.commercial': { name: string; path: string }
+  /**
+   * A gfx app cued a commercial break (video files on this PC, played in order): fill the Gfx commercial
+   * scene with them and put it in Preview. One video can be given as name and path.
+   */
+  'cue.commercial': { name?: string; path?: string; items?: { name: string; path: string }[] }
+  /** The break's video (layerId) ended: show the next one in the Gfx commercial scene. */
+  'cue.next': { layerId: string }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -196,6 +201,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.setHideOverlay': 'admin',
   'cue.commercial': 'admin',
   'cue.clear': 'admin',
+  'cue.next': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

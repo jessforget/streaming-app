@@ -98,12 +98,23 @@
   .ask-bar .ask-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
   .ask-bar .ask-row button { min-height: 34px; padding: 0 14px; font-weight: 600; }
   .ask-bar .ask-row .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; }
-  .cue-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
+  .cue-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cue-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; max-height: 150px; overflow: auto; }
+  .cue-list:empty { display: none; }
+  .cue-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; color: var(--muted); }
+  .cue-list li .n { width: 18px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cue-list li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cue-list li.now { color: inherit; background: rgba(255, 90, 90, 0.12); font-weight: 600; }
+  .cue-list li.played { opacity: 0.5; }
+  .cue-list li button { min-height: 24px; padding: 0 7px; font-size: 12px; margin: 0; }
+  .cue-bar.ending { border-color: #ff5a5a; background: rgba(255, 90, 90, 0.15); }
+  .cue-bar.ending #cueText { color: #ff8a8a; font-weight: 700; font-size: 15px; }
+  .cue-bar { display: block; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
   .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
   .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cue-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--line); min-width: 60px; } .cue-prog span { display: block; height: 100%; border-radius: 2px; background: #ff5a5a; }
-  .cue-bar button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
+  .cue-head button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
   .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   .screen-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 600; background: rgba(14, 16, 20, 0.8); color: #e8eaee; padding: 2px 6px; border-radius: 4px; }
 
@@ -175,7 +186,7 @@
         <button class="take" id="take">Take</button>
         <button id="hide">Hide</button>
         <button id="next">Next ↓</button>
-        <button class="cue-btn" id="cue" hidden title="Put this video in the streaming app’s Preview as a full-screen commercial">Cue to stream</button>
+        <button class="cue-btn" id="cue" hidden title="Put this video in a commercial break, in the streaming app’s Preview. Cue more to play them one after the other.">Cue to stream</button>
       </div>
       <div class="ask-bar" id="askBar" hidden role="alertdialog" aria-labelledby="askTitle">
         <b id="askTitle">This video fills the whole stream</b>
@@ -183,9 +194,12 @@
         <div class="ask-row"><button class="cue-btn" id="askCue">Cue to stream</button><button id="askTake">Take anyway</button><button id="askCancel">Cancel</button></div>
       </div>
       <div class="cue-bar" id="cueBar" hidden role="status">
-        <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
-        <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
-        <button id="uncue" class="small">Uncue</button>
+        <div class="cue-head">
+          <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
+          <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
+          <button id="uncue" class="small">Uncue</button>
+        </div>
+        <ol class="cue-list" id="cueList"></ol>
       </div>
       <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
     </main>
@@ -458,27 +472,76 @@
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   function renderCue(p) {
     const c = S.cue
+    const items = c?.items ?? []
+    const open = !!c && !['onair', 'done', 'failed'].includes(c.status)
+    const inBreak = open && items.some((x) => x.id === p?.id)
     $('cue').hidden = !p || p.kind !== 'video'
-    $('cue').disabled = !!c && c.status === 'onair'
-    $('cue').textContent = c?.status === 'onair' ? 'Commercial on air…' : c && c.id === p?.id && c.status !== 'done' && c.status !== 'failed' ? 'Cue again' : 'Cue to stream'
+    $('cue').disabled = (!!c && c.status === 'onair') || inBreak
+    $('cue').textContent = c?.status === 'onair' ? 'Break on air…' : inBreak ? 'In the break' : open ? `Add to break (${items.length + 1})` : 'Cue to stream'
+    $('askCue').textContent = open ? `Add to break (${items.length + 1})` : 'Cue to stream'
     $('cueBar').hidden = !c
     if (!c) return
+    const n = items.length
+    const at = c.at ?? 0
+    const last = at === n - 1
+    const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
+    const ending = c.status === 'onair' && last && c.dur && leftHere <= 10
+    const what = n === 1 ? items[0].name : `Break of ${n}`
     const words = {
       waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
       sent: ['Sent', 'to the streaming app…'],
       copying: ['Copying', 'to the streaming PC…'],
-      cued: ['Cued', 'in the streaming app’s Preview · waiting for Transition'],
-      onair: ['On air', c.dur ? `${clock(c.pos)} of ${clock(c.dur)}` : clock(c.pos)],
+      cued: ['Cued', n > 1 ? 'in the streaming app’s Preview · one Transition plays them all, then back to the camera' : 'in the streaming app’s Preview · waiting for Transition'],
+      onair: [
+        'On air',
+        ending
+          ? `Ends in ${Math.ceil(leftHere)}`
+          : n > 1
+            ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
+            : c.dur
+              ? `${clock(c.pos)} of ${clock(c.dur)}`
+              : clock(c.pos)
+      ],
       done: ['Done', 'played on the stream; back to the scene before'],
       failed: ['Couldn’t cue', c.error || 'the streaming app could not copy it']
     }[c.status] ?? [c.status, '']
-    $('cueBar').className = `cue-bar ${c.status}`
-    $('cueState').textContent = `${c.name}: ${words[0]}`
+    $('cueBar').className = `cue-bar ${c.status} ${ending ? 'ending' : ''}`
+    $('cueState').textContent = `${what}: ${words[0]}`
     $('cueText').textContent = words[1]
     $('cueProg').hidden = c.status !== 'onair' || !c.dur
     $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
     $('uncue').hidden = c.status === 'onair'
-    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : 'Uncue'
+    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : n > 1 ? 'Uncue all' : 'Uncue'
+    // The break's videos, in play order: reorder or take one out before it airs.
+    const list = $('cueList')
+    list.textContent = ''
+    if (n < 2 && c.status !== 'onair') return
+    items.forEach((x, i) => {
+      const li = document.createElement('li')
+      if (c.status === 'onair') li.className = i === at ? 'now' : i < at ? 'played' : ''
+      const num = document.createElement('span')
+      num.className = 'n'
+      num.textContent = `${i + 1}.`
+      const nm = document.createElement('span')
+      nm.className = 'nm'
+      nm.textContent = x.name
+      li.append(num, nm)
+      if (open) {
+        const btn = (label, title, fn, off) => {
+          const b = document.createElement('button')
+          b.textContent = label
+          b.title = title
+          b.setAttribute('aria-label', `${title}: ${x.name}`)
+          b.disabled = !!off
+          b.onclick = fn
+          li.append(b)
+        }
+        btn('↑', 'Play earlier', () => act({ action: 'cue-move', index: i, up: true }), i === 0)
+        btn('↓', 'Play later', () => act({ action: 'cue-move', index: i }), i === n - 1)
+        btn('✕', 'Take out of the break', () => act({ action: 'uncue', index: i }))
+      }
+      list.append(li)
+    })
   }
   $('cue').onclick = () => {
     closeAsk()

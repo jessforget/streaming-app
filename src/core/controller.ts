@@ -305,8 +305,15 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
       case 'cue.commercial': {
-        const path = str(P, 'path')
-        if (path.length > 2000) throw new CommandError('path is too long')
+        const given = Array.isArray(P.items) ? (P.items as Record<string, unknown>[]) : [{ name: P.name, path: P.path }]
+        if (!given.length || given.length > 20) throw new CommandError('items must hold 1 to 20 videos')
+        const items = given.map((x) => {
+          const it = x && typeof x === 'object' ? x : {}
+          const path = str(it, 'path')
+          if (path.length > 2000) throw new CommandError('path is too long')
+          const label = typeof it.name === 'string' && it.name.trim() ? it.name.trim().slice(0, 60) : 'Commercial'
+          return { name: label, path }
+        })
         let scene = this.s.scenes.find((s) => s.commercial)
         if (!scene) {
           scene = { id: this.newId('scene'), name: 'Gfx commercial', layers: [], commercial: true, hideOverlay: true }
@@ -315,14 +322,40 @@ export class Controller extends Emitter<Events> {
         if (scene.name === 'Commercial') scene.name = 'Gfx commercial' // made by an earlier version
         if (scene.id === this.s.programSceneId) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
         delete scene.stored
-        const layer: Layer = { id: this.newId('layer'), name: name(P, 'name'), kind: 'media', visible: true, url: path, placement: 'full', loop: false, returnAfter: true, sound: true, volume: 1 }
-        scene.layers = [layer]
+        // In play order: the first shows; each one that ends shows the next (cue.next); the last goes back.
+        // (Ids one by one: each new layer must count as taken before the next is named.)
+        scene.layers = []
+        items.forEach((it, i) =>
+          scene.layers.push({
+            id: this.newId('layer'),
+            name: it.name,
+            kind: 'media',
+            visible: i === 0,
+            url: it.path,
+            placement: 'full',
+            loop: false,
+            returnAfter: i === items.length - 1,
+            sound: true,
+            volume: 1
+          })
+        )
         await this.engine.setScene(scene)
         if (this.s.previewSceneId !== scene.id) this.cueBack = this.s.previewSceneId
         this.s.previewSceneId = scene.id
         await this.engine.setPreviewScene(scene.id)
         this.changed()
         return { sceneId: scene.id }
+      }
+      case 'cue.next': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) return null
+        const media = scene.layers.filter((l) => l.kind === 'media')
+        const at = media.findIndex((l) => l.id === P.layerId)
+        // Only the one showing moves on (an old 'ended' for an earlier video changes nothing).
+        if (at < 0 || !media[at].visible || at === media.length - 1) return null
+        for (const l of media) l.visible = l === media[at + 1]
+        await this.engine.setScene(scene)
+        return this.changed()
       }
       case 'cue.clear': {
         const scene = this.s.scenes.find((s) => s.commercial)
@@ -580,6 +613,12 @@ export class Controller extends Emitter<Events> {
   private async takeLive(scene: Scene) {
     // A scene from the Scene library that goes on air joins this show.
     delete scene.stored
+    // A commercial break always starts from its first video.
+    const media = scene.commercial ? scene.layers.filter((l) => l.kind === 'media') : []
+    if (media.length > 1 && !media[0].visible) {
+      for (const l of media) l.visible = l === media[0]
+      await this.engine.setScene(scene)
+    }
     this.s.programSceneId = scene.id
     await this.engine.setProgramScene(scene.id, this.s.transition)
   }

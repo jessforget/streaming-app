@@ -10,7 +10,8 @@
  * Only gfx apps whose page the streaming app shows are talked to.
  */
 const { app } = require('electron')
-const { createWriteStream, mkdirSync, readdirSync, statSync, unlinkSync } = require('node:fs')
+const { createHash } = require('node:crypto')
+const { createWriteStream, mkdirSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync } = require('node:fs')
 const { join } = require('node:path')
 const { Readable } = require('node:stream')
 const { pipeline } = require('node:stream/promises')
@@ -30,17 +31,26 @@ function setupCue(ipcMain, fromMain, send, origins, originOf) {
     const origin = originOf(e.sender)
     if (!origin || !c || !Number.isInteger(c.take)) return false
     if (c.clear) return send('gfx:cue', { origin, take: c.take, clear: true }), true
-    let url
-    try {
-      url = new URL(String(c.url))
-    } catch {
-      return false
+    // One video ({ name, url }) or a break of several ({ items: [{ name, url }] }), all from that gfx app.
+    const list = Array.isArray(c.items) ? c.items.slice(0, 20) : [{ name: c.name, url: c.url }]
+    const items = []
+    for (const x of list) {
+      let url
+      try {
+        url = new URL(String(x?.url))
+      } catch {
+        return false
+      }
+      if (url.origin !== origin || !/^\/media\/[\w-]+$/.test(url.pathname)) return false
+      items.push({ name: String(x?.name || 'Commercial').slice(0, 80), url: url.href })
     }
-    if (url.origin !== origin || !/^\/media\/[\w-]+$/.test(url.pathname)) return false
-    send('gfx:cue', { origin, take: c.take, name: String(c.name ?? 'Commercial').slice(0, 80), url: url.href })
+    if (!items.length) return false
+    send('gfx:cue', { origin, take: c.take, items })
     return true
   })
 
+  /** Copies on their way, by file: the same video cued twice at once is copied once. */
+  const copying = new Map()
   // Copy the cued video to this PC. Returns its path here.
   ipcMain.handle('gfx:copy-cue', async (e, href) => {
     if (!fromMain(e)) throw new Error('Not allowed')
@@ -48,11 +58,11 @@ function setupCue(ipcMain, fromMain, send, origins, originOf) {
     if (!known(url.origin) || !/^\/media\/[\w-]+$/.test(url.pathname)) throw new Error('Not from a gfx app shown here')
     const dir = join(app.getPath('userData'), 'commercials')
     mkdirSync(dir, { recursive: true })
-    // Keep the last few, so a commercial can be played again without copying.
+    // Keep the last ones (a break can hold 20), so a commercial plays again without copying.
     const old = readdirSync(dir)
       .map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs }))
       .sort((a, b) => b.t - a.t)
-    for (const { f } of old.slice(8)) {
+    for (const { f } of old.slice(40)) {
       try {
         unlinkSync(join(dir, f))
       } catch {
@@ -63,9 +73,35 @@ function setupCue(ipcMain, fromMain, send, origins, originOf) {
     if (!r.ok || !r.body) throw new Error(`The gfx app said ${r.status}`)
     const type = r.headers.get('content-type') ?? ''
     const ext = type.includes('webm') ? '.webm' : type.includes('quicktime') ? '.mov' : type.includes('matroska') ? '.mkv' : '.mp4'
-    const file = join(dir, `cue-${Date.now()}${ext}`)
-    await pipeline(Readable.fromWeb(r.body), createWriteStream(file))
-    return file
+    // The same video (same address, same size) copied before: use that copy.
+    const size = Number(r.headers.get('content-length')) || 0
+    const id = createHash('sha1').update(url.href).digest('hex').slice(0, 12)
+    const file = join(dir, `cue-${id}-${size}${ext}`)
+    try {
+      if (size && statSync(file).size === size) {
+        await r.body.cancel()
+        const now = new Date()
+        utimesSync(file, now, now)
+        return file
+      }
+    } catch {
+      // not copied yet
+    }
+    // Being copied already (the same video cued again a moment ago): wait for that copy.
+    const going = copying.get(file)
+    if (going) {
+      await r.body.cancel()
+      return going
+    }
+    const part = `${file}.${process.pid}-${Date.now()}.part`
+    const job = pipeline(Readable.fromWeb(r.body), createWriteStream(part))
+      .then(() => {
+        renameSync(part, file)
+        return file
+      })
+      .finally(() => copying.delete(file))
+    copying.set(file, job)
+    return job
   })
 
   // Tell a gfx app something: how the cue goes (JSON), or the Live picture (JPEG).

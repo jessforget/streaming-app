@@ -17,7 +17,14 @@ const stopTracks = (id: string, d: DeviceInput | null) => {
     d.node.disconnect()
     return
   }
-  if (d && !d.stream) d.node.disconnect()
+  // A video's sound node is shared by every channel that opens it (one node per element): unhook only this one.
+  if (d && !d.stream) {
+    try {
+      d.node.disconnect(d.splitter)
+    } catch {
+      // not hooked up
+    }
+  }
   if (!id.startsWith(PHONE_PREFIX) && !id.startsWith(GFX_DEVICE)) d?.stream?.getTracks().forEach((t) => t.stop())
 }
 

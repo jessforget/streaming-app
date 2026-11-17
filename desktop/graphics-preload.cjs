@@ -11,7 +11,21 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 // Cue to stream: pass a commercial the gfx operator cued ({ take, name, url } or { take, clear: true }).
-contextBridge.exposeInMainWorld('streamerCue', (c) => ipcRenderer.invoke('gfx:cue', c && typeof c === 'object' ? { take: c.take, name: c.name, url: c.url, clear: c.clear === true } : null))
+// A break of several: { take, items: [{ name, url }] }.
+contextBridge.exposeInMainWorld('streamerCue', (c) =>
+  ipcRenderer.invoke(
+    'gfx:cue',
+    c && typeof c === 'object'
+      ? {
+          take: c.take,
+          name: c.name,
+          url: c.url,
+          items: Array.isArray(c.items) ? c.items.slice(0, 20).map((x) => ({ name: String(x?.name ?? ''), url: String(x?.url ?? '') })) : undefined,
+          clear: c.clear === true
+        }
+      : null
+  )
+)
 
 // Hand a video over to the streaming app, which plays it itself (smooth, on the graphics card):
 // { take, url, shows: 'full' | 'box', loop, sound } or { take, stop: true }.

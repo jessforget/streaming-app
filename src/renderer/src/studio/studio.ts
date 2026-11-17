@@ -143,6 +143,12 @@ export class Studio {
     this.compositor.onMediaEnded = (url) => {
       const st = this.state
       const live = st?.scenes.find((s) => s.id === st.programSceneId)
+      // A commercial break: the next video, if this was not the last.
+      const ended = live?.commercial ? live.layers.find((l) => l.kind === 'media' && l.url === url && l.visible && !l.returnAfter) : undefined
+      if (ended) {
+        void this.bridge.command('cue.next', { layerId: ended.id }).catch(() => {})
+        return
+      }
       const back = live?.layers.some((l) => l.kind === 'media' && l.url === url && l.visible && l.loop === false && l.returnAfter)
       if (!st || !back || !this.liveBefore || this.liveBefore === st.programSceneId || !st.scenes.some((s) => s.id === this.liveBefore)) return
       void this.bridge.command('scene.program', { sceneId: this.liveBefore }).catch(() => {})

@@ -92,6 +92,11 @@ app checks its own rules and shows **Let the streaming PC in**, which adds one
 rule letting PCs on the same network in (Windows asks to confirm).
 
 **Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
+Cue more videos to make a **break**: the button becomes **Add to break (n)**, and
+the list under it can be reordered or trimmed until it airs. One Transition in the
+streaming app plays them in order, then goes back to the scene before. The
+streaming app's Gfx commercial card shows "2 of 3 · time left", and a big red
+"Ends in N" in the last 10 seconds of the last video (the producer's cue).
 For a full-screen video, while the streaming app is connected, Cue to stream is
 the main button; Take becomes **Take over everything** and asks first, because
 a Taken video goes in the Overlay, on top of every scene and camera.

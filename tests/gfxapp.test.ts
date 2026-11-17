@@ -82,16 +82,31 @@ describe('gfx app server', () => {
     const v = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })
     expect((await doit({ action: 'cue', id: 'item-1' })).error).toMatch(/Only videos/)
     await doit({ action: 'cue', id: v.result })
-    let s = (await state()) as State & { cue: { take: number; status: string; name: string } }
-    expect(s.cue).toMatchObject({ id: v.result, take: 1, name: 'ad', status: 'waiting' })
-    const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
-    await tell({ take: 1, status: 'onair', pos: 3, dur: 30 })
+    let s = (await state()) as State & { cue: { take: number; status: string; items: { id: string; name: string }[] } }
+    expect(s.cue).toMatchObject({ items: [{ id: v.result, name: 'ad' }], take: 1, status: 'waiting' })
+    // A second video joins the break (a new take); the same one twice is refused; order can change.
+    writeFileSync(join(dir, 'ad2.mp4'), Buffer.alloc(100))
+    const v2 = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad2.mp4') } })
+    expect((await doit({ action: 'cue', id: v.result })).error).toMatch(/already in the break/)
+    expect((await doit({ action: 'cue', id: v2.result })).result).toBe(2)
+    await doit({ action: 'cue-move', index: 1, up: true })
     s = (await state()) as typeof s
-    expect(s.cue).toMatchObject({ status: 'onair', pos: 3, dur: 30 })
+    expect(s.cue).toMatchObject({ take: 3, items: [{ id: v2.result }, { id: v.result }] })
+    await doit({ action: 'uncue', index: 0 })
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ take: 4, items: [{ id: v.result }] })
+    const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
+    await tell({ take: 4, status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
     expect((await doit({ action: 'uncue' })).error).toMatch(/on air/)
+    expect((await doit({ action: 'cue', id: v2.result })).error).toMatch(/on air/)
     await tell({ take: 99, status: 'done' }) // an old cue: ignored
     expect(((await state()) as typeof s).cue.status).toBe('onair')
-    await tell({ take: 1, status: 'done' })
+    await tell({ take: 4, status: 'done' })
+    // After a break has played, cueing starts a new one.
+    await doit({ action: 'cue', id: v2.result })
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 5, items: [{ id: v2.result }] })
     await doit({ action: 'uncue' })
     expect(((await state()) as typeof s).cue).toBeNull()
   })

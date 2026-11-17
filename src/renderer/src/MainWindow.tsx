@@ -429,37 +429,60 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
 const clockText = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
 /**
- * A scene with a video that plays once (like the Gfx commercial): its length, and while it
- * is on air, the time left. In the last 10 seconds it turns into a big red countdown, so the
- * operator knows the scene is about to go back.
+ * A scene with a video that plays once (like the Gfx commercial): its length, and while it is on
+ * air, the time left. A commercial break (several videos, played in order) shows which one plays
+ * and the time left in the whole break. In the last 10 seconds of the last video it turns into a
+ * big red countdown, so the producer can tell the show is about to start again.
  */
 function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; live: boolean }) {
-  const media = scene.layers.find((l) => l.kind === 'media' && l.visible && l.loop === false && l.url)
-  const url = media?.url ?? ''
-  const [t, setT] = useState<{ pos: number; dur: number } | null>(null)
+  const once = scene.layers.filter((l) => l.kind === 'media' && l.loop === false && !!l.url)
+  // A break: every video in it, in play order; otherwise the one shown.
+  const list = scene.commercial ? once : once.filter((l) => l.visible).slice(0, 1)
+  const urls = list.map((l) => l.url ?? '')
+  const at = Math.max(0, list.findIndex((l) => l.visible))
+  const key = urls.join('|')
+  const [t, setT] = useState<{ pos: number; durs: number[] } | null>(null)
   useEffect(() => {
-    if (!url) return setT(null)
+    if (!key) return setT(null)
+    const all = key.split('|')
     const tick = () => {
-      const el = studio.compositor.mediaElement(url)
-      const dur = el && Number.isFinite(el.duration) ? el.duration : 0
-      setT((old) => {
-        const pos = el?.currentTime ?? 0
-        return old && old.dur === dur && Math.abs(old.pos - pos) < 0.05 ? old : { pos, dur }
+      const durs = all.map((u) => {
+        const d = studio.compositor.mediaElement(u)?.duration
+        return d && Number.isFinite(d) ? d : 0
       })
+      const pos = studio.compositor.mediaElement(all[at])?.currentTime ?? 0
+      setT((old) => (old && old.durs.join() === durs.join() && Math.abs(old.pos - pos) < 0.05 ? old : { pos, durs }))
     }
     tick()
     const timer = window.setInterval(tick, 200)
     return () => window.clearInterval(timer)
-  }, [url, studio])
-  if (!media || !t || !t.dur) return null
-  const left = Math.max(0, t.dur - t.pos)
-  if (!live) return <span className="media-clock">Length {clockText(t.dur)}</span>
-  const ending = left <= 10
+  }, [key, at, studio])
+  if (!list.length || !t || !t.durs[at]) return null
+  const n = list.length
+  const total = t.durs.reduce((a, b) => a + b, 0)
+  if (!live) return <span className="media-clock">{n > 1 ? `${n} commercials · ${clockText(total)}` : `Length ${clockText(t.durs[0])}`}</span>
+  const leftHere = Math.max(0, t.durs[at] - t.pos)
+  const leftAll = leftHere + t.durs.slice(at + 1).reduce((a, b) => a + b, 0)
+  const last = at === n - 1
+  const ending = last && leftHere <= 10
+  const done = t.durs.slice(0, at).reduce((a, b) => a + b, 0) + t.pos
   return (
-    <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(left)} seconds left`}>
-      <span className="media-clock-text">{ending ? <>Ends in <b>{Math.ceil(left)}</b></> : <>{clockText(Math.ceil(left))} left</>}</span>
+    <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(leftAll)} seconds left`}>
+      <span className="media-clock-text">
+        {ending ? (
+          <>
+            Ends in <b>{Math.ceil(leftHere)}</b>
+          </>
+        ) : n > 1 ? (
+          <>
+            {at + 1} of {n} · {clockText(Math.ceil(leftAll))} left
+          </>
+        ) : (
+          <>{clockText(Math.ceil(leftHere))} left</>
+        )}
+      </span>
       <span className="media-clock-bar">
-        <span style={{ width: `${Math.min(100, (100 * t.pos) / t.dur)}%` }} />
+        <span style={{ width: `${total ? Math.min(100, (100 * done) / total) : 0}%` }} />
       </span>
     </span>
   )
