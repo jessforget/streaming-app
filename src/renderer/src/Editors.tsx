@@ -314,6 +314,15 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
               </select>
             </label>
           </div>
+          <label className="check">
+            <input type="checkbox" checked={v.gfxSound} onChange={(e) => set('gfxSound', e.target.checked)} /> Play its sound (videos sent from the gfx app)
+          </label>
+          {v.gfxSound && (
+            <label>
+              Volume
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
           <GraphicsCheck state={state} url={v.url} size={v.size} fps={v.fps} />
         </>
       )}
@@ -430,6 +439,8 @@ interface Fields {
   size: string
   /** Graphics: frames a second, '' = the same as the stream. */
   fps: string
+  /** Graphics: play the sound the page sends (default on). */
+  gfxSound: boolean
 }
 type SetField = <K extends keyof Fields>(k: K, value: Fields[K] | string | boolean) => void
 
@@ -450,7 +461,8 @@ function useFields(layer: Partial<Layer> & { placement: Placement }) {
     seconds: String(layer.seconds ?? 5),
     showScene: layer.sceneId ?? '',
     size: layer.size ?? '1080p',
-    fps: layer.fps ? String(layer.fps) : ''
+    fps: layer.fps ? String(layer.fps) : '',
+    gfxSound: layer.sound !== false
   })
   // "Copy as path" in File Explorer adds quotes.
   const set: SetField = (k, value) => setV((old) => ({ ...old, [k]: k === 'url' && typeof value === 'string' ? value.replace(/^\s*"|"\s*$/g, '') : value }))
@@ -481,7 +493,13 @@ function kindFields(kind: LayerKind, v: Fields) {
     case 'scene':
       return v.showScene ? { showScene: v.showScene } : {}
     case 'graphics':
-      return { ...(v.url.trim() && { url: v.url.trim() }), size: (v.size === '720p' ? '720p' : '1080p') as GraphicsSize, fps: Number(v.fps) || 0 }
+      return {
+        ...(v.url.trim() && { url: v.url.trim() }),
+        size: (v.size === '720p' ? '720p' : '1080p') as GraphicsSize,
+        fps: Number(v.fps) || 0,
+        sound: v.gfxSound,
+        volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0))
+      }
     default:
       return {}
   }

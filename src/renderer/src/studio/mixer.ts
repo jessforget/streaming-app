@@ -6,7 +6,7 @@
  * One device is opened once and shared, so an L-12 can feed one channel per
  * mic. The program mix goes into the stream and the recording.
  */
-import { audible, scenesOnAir, type AppState, type AudioSource, type InputDevice } from '../../../shared/state'
+import { audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
 import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
 
@@ -18,11 +18,14 @@ const stopTracks = (id: string, d: DeviceInput | null) => {
     return
   }
   if (d && !d.stream) d.node.disconnect()
-  if (!id.startsWith(PHONE_PREFIX)) d?.stream?.getTracks().forEach((t) => t.stop())
+  if (!id.startsWith(PHONE_PREFIX) && !id.startsWith(GFX_DEVICE)) d?.stream?.getTracks().forEach((t) => t.stop())
 }
 
 /** Sound from a video file in a scene ("media" source with sound on), keyed by layer id. */
 const LAYER_PREFIX = 'mediasound-'
+/** Sound from a network graphics page (a video in the gfx app), keyed by layer id. */
+export const GFX_SOUND_PREFIX = 'gfxsound-'
+const GFX_DEVICE = 'gfx:'
 
 interface DeviceInput {
   stream?: MediaStream
@@ -58,11 +61,16 @@ export class Mixer {
   readonly problems = new Map<string, string>()
   /** Where phone microphones come from (set by the studio). */
   phoneStream: (id: string) => MediaStream | null = () => null
+  /** The sound a network graphics source's page sends, if any (set by the studio). */
+  graphicsStream: (layer: Layer) => MediaStream | null = () => null
+  /** Remote WebRTC sound only flows into Web Audio while something plays it: a silent element per stream. */
+  private pullers = new Map<string, HTMLAudioElement>()
   /** The playing element of a video file in a scene (set by the studio). */
   mediaElement: (url: string) => HTMLVideoElement | null = () => null
   /** A media element can feed Web Audio only once: keep its node. */
   private mediaNodes = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>()
   private onAir = new Set<string>()
+  private state: AppState | null = null
 
   constructor() {
     this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' })
@@ -86,19 +94,28 @@ export class Mixer {
     for (const [id, c] of this.chains) if (c.key.includes(`|${PHONE_PREFIX}`)) this.drop(id)
   }
 
+  /** A graphics page started or stopped sending its sound: open it afresh on the next update. */
+  refreshGraphics() {
+    for (const id of [...this.devices.keys()]) if (id.startsWith(GFX_DEVICE)) this.devices.delete(id)
+    for (const [id, c] of this.chains) if (c.key.includes(`|${GFX_DEVICE}`)) this.drop(id)
+    for (const el of this.pullers.values()) el.srcObject = null
+    this.pullers.clear()
+  }
+
   get needsDesktop() {
     return !this.desktop || !this.desktop.getAudioTracks().some((t) => t.readyState === 'live')
   }
 
   /** Make the mixer match the app's channels. Cheap to call on every state change. */
   update(state: AppState) {
+    this.state = state
     const onAir = scenesOnAir(state)
     const sceneChanged = [...onAir].some((id) => !this.onAir.has(id)) || [...this.onAir].some((id) => !onAir.has(id))
     this.onAir = onAir
     // Sound follows the picture: a fade takes as long as the video fade; a cut is quick but not a click.
     const fadeS = state.transition.kind === 'fade' ? Math.max(0.03, state.transition.durationMs / 1000) : 0.03
 
-    const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir)]
+    const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir), ...this.graphicsChannels(state, onAir)]
     const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
     for (const { a, on } of channels) {
@@ -142,6 +159,25 @@ export class Mixer {
         if (l.kind !== 'media' || !l.sound || !l.url) continue
         out.push({
           a: { id: LAYER_PREFIX + l.id, name: l.name, kind: 'file', url: l.url, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
+          on: l.visible && onAir.has(scene.id)
+        })
+      }
+    }
+    return out
+  }
+
+  /** Network graphics sources whose page sends sound (videos in the gfx app): heard while on air. */
+  private graphicsChannels(state: AppState, onAir: Set<string>): { a: AudioSource; on: boolean }[] {
+    const out: { a: AudioSource; on: boolean }[] = []
+    const seen = new Set<string>()
+    for (const scene of state.scenes) {
+      for (const l of scene.layers) {
+        if (l.kind !== 'graphics' || l.sound === false || seen.has(l.id)) continue
+        const stream = this.graphicsStream(l)
+        if (!stream?.getAudioTracks().length) continue
+        seen.add(l.id)
+        out.push({
+          a: { id: GFX_SOUND_PREFIX + l.id, name: `${l.name} (sound)`, kind: 'device', device: GFX_DEVICE + stream.id, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
           on: l.visible && onAir.has(scene.id)
         })
       }
@@ -200,6 +236,21 @@ export class Mixer {
       if (id === 'desktop') {
         if (!this.desktop) return null
         stream = this.desktop
+      } else if (id.startsWith(GFX_DEVICE)) {
+        const want = id.slice(GFX_DEVICE.length)
+        const st = this.state?.scenes
+          .flatMap((x) => x.layers)
+          .map((l) => (l.kind === 'graphics' ? this.graphicsStream(l) : null))
+          .find((x) => x?.id === want)
+        if (!st?.getAudioTracks().length) return null
+        stream = st
+        if (!this.pullers.has(want)) {
+          const el = new Audio()
+          el.muted = true
+          el.srcObject = st
+          void el.play().catch(() => {})
+          this.pullers.set(want, el)
+        }
       } else if (id.startsWith(PHONE_PREFIX)) {
         const phone = this.phoneStream(id)
         if (!phone?.getAudioTracks().length) return null

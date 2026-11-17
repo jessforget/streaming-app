@@ -34,6 +34,9 @@ interface DesktopGraphics {
   onFrame(fn: (f: GraphicsFrame) => void): () => void
   onStatus(fn: (s: { id: string; status: GraphicsStatus }) => void): () => void
   onClear(fn: (s: { id: string }) => void): () => void
+  /** Desktop versions from before sound came along don't have these. */
+  onAudioOffer?(fn: (o: { id: string; req: number; sdp: string }) => void): () => void
+  audioAnswer?(req: number, answer: { sdp?: string; error?: string }): void
 }
 
 /** The desktop version's helper, when this page runs in it. */
@@ -86,6 +89,9 @@ export class GraphicsFeed {
   version = 0
   /** The part changed since the graphics card last copied it. */
   dirty: Rect | null = null
+  /** The page's sound (a video's), when it sends it. */
+  audio: MediaStream | null = null
+  pc: RTCPeerConnection | null = null
 
   constructor(
     readonly key: string,
@@ -162,6 +168,47 @@ export class GraphicsFeeds {
       }),
       this.desktop.onClear(({ id }) => this.feeds.get(id)?.clear())
     )
+    if (this.desktop.onAudioOffer) this.offs.push(this.desktop.onAudioOffer((o) => void this.answerAudio(o)))
+  }
+
+  /** A page sends its sound: take it in (one connection per page; a new one replaces the old). */
+  private async answerAudio(o: { id: string; req: number; sdp: string }) {
+    const reply = (a: { sdp?: string; error?: string }) => this.desktop?.audioAnswer?.(o.req, a)
+    const feed = this.feeds.get(o.id)
+    if (!feed) return reply({ error: 'Not shown here' })
+    try {
+      feed.pc?.close()
+      const pc = new RTCPeerConnection()
+      feed.pc = pc
+      pc.ontrack = (e) => {
+        if (feed.pc !== pc) return
+        feed.audio = e.streams[0] ?? new MediaStream([e.track])
+        this.changed()
+      }
+      pc.onconnectionstatechange = () => {
+        if (feed.pc === pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) {
+          feed.audio = null
+          feed.pc = null
+          this.changed()
+        }
+      }
+      await pc.setRemoteDescription({ type: 'offer', sdp: o.sdp })
+      await pc.setLocalDescription(await pc.createAnswer())
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') return resolve()
+        pc.addEventListener('icegatheringstatechange', () => pc.iceGatheringState === 'complete' && resolve())
+        setTimeout(resolve, 2000)
+      })
+      reply({ sdp: pc.localDescription!.sdp })
+    } catch (e) {
+      reply({ error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  /** A source's sound from its page, when the page sends one. */
+  audioFor(l: Layer, state: AppState): MediaStream | null {
+    const spec = feedSpec(l, state)
+    return (spec && this.feeds.get(spec.key)?.audio) || null
   }
 
   /** Open the pages the scenes use; close the rest. */
@@ -190,6 +237,7 @@ export class GraphicsFeeds {
     }
     for (const key of [...this.feeds.keys()]) {
       if (specs.has(key)) continue
+      this.feeds.get(key)?.pc?.close()
       this.feeds.delete(key)
       changed = true
     }
@@ -283,6 +331,7 @@ export class GraphicsFeeds {
     this.offs.forEach((off) => off())
     this.offs = []
     this.started = false
+    for (const f of this.feeds.values()) f.pc?.close()
     this.feeds.clear()
     this.wanted = []
     this.lastSent = ''

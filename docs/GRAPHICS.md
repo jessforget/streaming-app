@@ -26,7 +26,8 @@ Works in the desktop version (`npm run desktop`, or "Start Streaming App
 3. **Be laid out at 1920 x 1080** (or 1280 x 720 if you pick that size in the
    source's settings). It is scaled to the stream's size.
 4. **Run on its own**: no pop-ups, log-ins or "click to start" buttons, because
-   nobody can click it. Sound from the page is not played.
+   nobody can click it. Sound the page plays itself is not heard; a page sends
+   sound to the stream with `window.streamerAudio` (below).
 5. **Optional: start when the stream puts it live.** The streaming app tells the
    page when a scene with it goes live, or the Overlay is switched on, and when
    it comes off:
@@ -80,8 +81,16 @@ App.bat** (or `npm run gfx`). Its window fits a laptop screen:
 How each kind travels: lower thirds, videos and photos are drawn by the page on
 the streaming PC, sharp and see-through; the files are fetched from the gfx
 laptop. A window is sent like a live camera (WebRTC): more network, and a
-fraction of a second late, so a network cable helps. Sound from videos is not
-sent to the stream yet.
+fraction of a second late, so a network cable helps. Whole screens are listed
+too: a PowerPoint slide show on a second screen is easiest sent as that screen.
+
+**Sound.** A video's sound (the "Send its sound to the stream" setting, on by
+default) goes into the streaming app's mixer, not the streaming PC's speakers.
+Inside the streaming app the page has `window.streamerAudio.connect(offerSdp)`,
+which returns the answer SDP for one WebRTC audio track; the gfx app's page
+mixes each playing video into that track. In the streaming app it is a channel
+named after the source ("Gfx (sound)"), heard while the source is on air, with
+"Play its sound" and a volume in the source's settings.
 
 The show (rundown and look) is saved in the gfx app's settings folder
 (`%APPDATA%\Gfx app\gfx-show.json`).

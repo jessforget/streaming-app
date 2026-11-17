@@ -66,9 +66,12 @@ export interface Layer {
   url?: string
   /** Media: play again from the start when it ends. Default on. */
   loop?: boolean
-  /** Media: send the file's sound to the mix while its scene is on air. Default off. */
+  /**
+   * Media: send the file's sound to the mix while its scene is on air. Default off.
+   * Graphics: play the sound the page sends (videos from the gfx app). Default on.
+   */
   sound?: boolean
-  /** Media with sound: its volume, 0 to 1. */
+  /** Media and graphics with sound: its volume, 0 to 1. */
   volume?: number
   /** Solid color: CSS hex, like #1e3a8a. */
   color?: string

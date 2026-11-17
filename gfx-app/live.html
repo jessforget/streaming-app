@@ -107,6 +107,67 @@
   let inStreamer = false
   let streamerLive = false
 
+  // ---------- Sound to the stream ----------
+
+  /**
+   * In the streaming app, a video's sound goes to the stream's mixer (one audio connection inside
+   * the streaming PC), not to that PC's speakers. Elsewhere this is null and videos play as usual.
+   */
+  const sound = (() => {
+    if (view !== 'out' || !window.streamerAudio) return null
+    const ctx = new AudioContext({ sampleRate: 48000 })
+    const dest = ctx.createMediaStreamDestination()
+    const nodes = new WeakMap()
+    let pc = null
+    let connecting = false
+    const iceDone = (p) =>
+      new Promise((resolve) => {
+        if (p.iceGatheringState === 'complete') return resolve()
+        p.addEventListener('icegatheringstatechange', () => p.iceGatheringState === 'complete' && resolve())
+        setTimeout(resolve, 2000)
+      })
+    async function connect() {
+      if (pc || connecting) return
+      connecting = true
+      let p = null
+      try {
+        p = new RTCPeerConnection()
+        p.addTrack(dest.stream.getAudioTracks()[0], dest.stream)
+        await p.setLocalDescription(await p.createOffer())
+        await iceDone(p)
+        const answer = await window.streamerAudio.connect(p.localDescription.sdp)
+        await p.setRemoteDescription({ type: 'answer', sdp: answer })
+        pc = p
+        p.addEventListener('connectionstatechange', () => {
+          if (pc === p && (p.connectionState === 'failed' || p.connectionState === 'closed')) {
+            pc = null
+            p.close()
+            setTimeout(connect, 2000)
+          }
+        })
+      } catch {
+        p?.close()
+        setTimeout(connect, 3000)
+      } finally {
+        connecting = false
+      }
+    }
+    connect()
+    return {
+      /** Send this video's sound to the stream (and not to the speakers). */
+      attach(v) {
+        if (ctx.state !== 'running') ctx.resume().catch(() => {})
+        let n = nodes.get(v)
+        if (!n) {
+          n = ctx.createMediaElementSource(v)
+          nodes.set(v, n)
+        }
+        n.connect(dest)
+        return () => n.disconnect()
+      }
+    }
+  })()
+
   // ---------- Lower thirds ----------
 
   /** The lower third's parts for one style. Only rebuilt when the style changes, so the animation can run. */
@@ -199,7 +260,8 @@
       const v = el('video')
       v.src = `/media/${item.id}`
       v.playsInline = true
-      v.muted = quiet
+      v.muted = quiet || item.sound === false
+      const unhook = !quiet && item.sound !== false && sound ? sound.attach(v) : () => {}
       v.loop = view === 'preview' || item.end === 'loop'
       v.addEventListener('ended', ended)
       media.append(v)
@@ -209,6 +271,7 @@
         v.play().catch(() => {})
       })
       stopMedia = () => {
+        unhook()
         v.pause()
         v.removeAttribute('src')
         v.load()

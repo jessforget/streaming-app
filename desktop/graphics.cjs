@@ -18,8 +18,13 @@
  *
  *   window.streamerLive                 true while on the stream
  *   'streamer:live' event on window     event.detail.live = true / false
+ *
+ * Sound: the page itself plays nothing out loud. It can send its sound (a
+ * video's) to the mixer with window.streamerAudio.connect(offerSdp), a WebRTC
+ * connection inside this PC (see graphics-preload.cjs).
  */
 const { BrowserWindow, session } = require('electron')
+const { join } = require('node:path')
 const http = require('node:http')
 const https = require('node:https')
 
@@ -85,6 +90,8 @@ class GraphicsFeed {
       webPreferences: {
         offscreen: { useSharedTexture: false, deviceScaleFactor: 1 },
         session: getSession(),
+        // Only gives the page window.streamerAudio, to send its sound to the mixer.
+        preload: join(__dirname, 'graphics-preload.cjs'),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -256,6 +263,32 @@ function setupGraphics(ipcMain, target) {
       f.close()
       feeds.delete(id)
     }
+  })
+  // A page sends its sound: pass its offer to the main window, and the answer back.
+  let audioReq = 1
+  const pendingAudio = new Map()
+  ipcMain.handle('gfx:audio-offer', (e, sdp) => {
+    const feed = [...feeds.values()].find((f) => !f.win.isDestroyed() && f.win.webContents === e.sender)
+    if (!feed || typeof sdp !== 'string' || sdp.length > 100_000) throw new Error('Not a graphics page')
+    const req = audioReq++
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingAudio.delete(req)
+        reject(new Error('The streaming app did not answer'))
+      }, 10_000)
+      pendingAudio.set(req, (answer) => {
+        clearTimeout(timer)
+        if (typeof answer?.sdp === 'string') resolve(answer.sdp)
+        else reject(new Error(answer?.error || 'No answer'))
+      })
+      send('gfx:audio-offer', { id: feed.id, req, sdp })
+    })
+  })
+  ipcMain.on('gfx:audio-answer', (e, answer) => {
+    if (!fromMain(e) || !answer) return
+    const done = pendingAudio.get(answer.req)
+    pendingAudio.delete(answer.req)
+    done?.(answer)
   })
   ipcMain.on('gfx:reload', (e, id) => {
     if (!fromMain(e)) return

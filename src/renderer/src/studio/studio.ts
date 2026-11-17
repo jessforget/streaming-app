@@ -135,6 +135,7 @@ export class Studio {
     this.compositor.phoneStream = (id) => this.phones.stream(id) ?? this.netcams.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
     this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
+    this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
     this.phones.subscribe(() => {
       this.compositor.refreshPhones()
@@ -271,7 +272,21 @@ export class Studio {
   private watchGraphics() {
     const feeds = this.compositor.graphics
     const before = new Map<string, string>()
-    return feeds.subscribe(() => {
+    let sounds = ''
+    const offSound = feeds.subscribe(() => {
+      // A graphics page started or stopped sending its sound (a video in the gfx app).
+      const st = this.state
+      if (!st) return
+      const now = st.scenes
+        .flatMap((x) => x.layers)
+        .map((l) => (l.kind === 'graphics' ? (feeds.audioFor(l, st)?.id ?? '') : ''))
+        .join(',')
+      if (now === sounds) return
+      sounds = now
+      this.mixer.refreshGraphics()
+      this.mixer.update(st)
+    })
+    const offStatus = feeds.subscribe(() => {
       const st = this.state
       if (!st) return
       for (const l of st.scenes.flatMap((x) => x.layers)) {
@@ -286,6 +301,10 @@ export class Studio {
         if (status === 'connected' && was === 'unreachable') this.notice(`Graphics from ${host} are back.`)
       }
     })
+    return () => {
+      offSound()
+      offStatus()
+    }
   }
 
   /** Look for cameras and sound devices again now ("Look again" in Settings). */

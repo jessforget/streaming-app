@@ -86,8 +86,14 @@ ipcMain.handle('gfx:pick', async (e, kind) => {
 /** The windows open on this laptop (not this one). */
 ipcMain.handle('gfx:windows', async (e) => {
   if (!fromApp(e)) return []
-  const list = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } })
-  return list.filter((s) => !/^Gfx app$/.test(s.name) && s.name.trim()).map((s) => ({ id: s.id, name: s.name }))
+  // Windows, then whole screens (a PowerPoint slide show on a second screen is easiest sent as that screen).
+  const get = (type) => desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 0, height: 0 } }).catch(() => [])
+  const windows = (await get('window')).filter((s) => !/^Gfx app$/.test(s.name) && s.name.trim())
+  const screens = await get('screen')
+  return [
+    ...windows.map((s) => ({ id: s.id, name: s.name })),
+    ...screens.map((s, i) => ({ id: s.id, name: `Whole screen ${screens.length > 1 ? i + 1 : ''}`.trim() }))
+  ]
 })
 
 /** Get a window ready to send: by its id, or (after it was reopened) by its name. The page then asks for it. */
