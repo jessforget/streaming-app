@@ -5,7 +5,7 @@
  */
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
-import { countdownText, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { graphicsFeeds } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
@@ -259,18 +259,18 @@ export class Compositor {
       const t = (performance.now() - this.fadeFrom.start) / this.fadeFrom.ms
       if (t >= 1) this.fadeFrom = null
       else {
-        this.drawScene(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height)
+        this.drawWithOverlay(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height)
         pctx.globalAlpha = t
       }
     }
-    if (program) this.drawScene(pctx, program, s, this.program.width, this.program.height)
+    if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height)
     pctx.globalAlpha = 1
     if (withPreview) {
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
       const vctx = this.preview.getContext('2d')!
       vctx.fillStyle = '#000'
       vctx.fillRect(0, 0, this.preview.width, this.preview.height)
-      if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
+      if (preview) this.drawWithOverlay(vctx, preview, s, this.preview.width, this.preview.height)
     }
   }
 
@@ -292,6 +292,13 @@ export class Compositor {
     this.drawScene(ctx, scene, s, w, h)
     ctx.restore()
     return true
+  }
+
+  /** A scene, and the Overlay on top of it when it is on and the scene doesn't hide it. */
+  private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
+    this.drawScene(ctx, scene, s, w, h)
+    const overlay = overlayOver(s, scene.id)
+    if (overlay) this.drawScene(ctx, overlay, s, w, h, 1)
   }
 
   private drawScene(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number, depth = 0) {

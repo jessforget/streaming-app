@@ -77,10 +77,12 @@ export function defaultState(): AppState {
           { id: 'ending-title', name: 'Title', kind: 'text', visible: true, text: 'Thanks for watching' },
           { id: 'ending-bg', name: 'Background image', kind: 'image', visible: true }
         ]
-      }
+      },
+      { id: 'overlay', name: 'Overlay', layers: [] }
     ],
     previewSceneId: 'starting',
     programSceneId: 'starting',
+    overlayOn: true,
     transition: { kind: 'fade', durationMs: 300 },
     audio: [
       { id: 'atem-audio', name: 'ATEM Mini', kind: 'device', device: 'atem-mini-audio', volume: 0.8, muted: false, syncOffsetMs: 0, level: 0 },

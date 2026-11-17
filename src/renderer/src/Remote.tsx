@@ -5,6 +5,7 @@ import { WsBridge } from './bridge/wsBridge'
 import { InstallButton } from './install'
 import { HealthPill, Notice } from './parts'
 import { useApp, useElapsed } from './useApp'
+import { isOverlay } from '../../shared/state'
 
 export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onForget?: () => void; confirmStop?: () => boolean }) {
   const { bridge, deviceName, onForget, confirmStop = confirmStopDefault } = props
@@ -44,8 +45,8 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
             {state.scenes.map((s) => {
               const live = s.id === state.programSceneId
               const next = s.id === state.previewSceneId && !live
-              // Scenes put away in the Scene library stay off the remote.
-              if (s.stored && !live && !next) return null
+              // Scenes put away in the Scene library stay off the remote, and the Overlay isn't a scene.
+              if ((s.stored && !live && !next) || isOverlay(s)) return null
               return (
                 <button
                   key={s.id}
@@ -66,6 +67,15 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
           >
             Transition{preview ? `: ${preview.name}` : ''}
           </button>
+          {state.scenes.find(isOverlay)?.layers.length ? (
+            <button
+              className={`remote-overlay ${state.overlayOn ? 'on' : ''}`}
+              aria-pressed={state.overlayOn}
+              onClick={() => run('overlay.set', { on: !state.overlayOn })}
+            >
+              Overlay: {state.overlayOn ? 'ON AIR' : 'off'}
+            </button>
+          ) : null}
           {preview && preview.layers.length > 0 && (
             <>
               <h2>Sources in {preview.name}</h2>

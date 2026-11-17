@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -55,7 +55,7 @@ export class Controller extends Emitter<Events> {
     this.keys = opts.keys
     this.devices = opts.devices
     this.now = opts.now ?? (() => Date.now())
-    this.s = structuredClone(opts.initial)
+    this.s = ensureOverlay(structuredClone(opts.initial))
     for (const d of this.s.stream.destinations) {
       d.hasKey = this.keys.has(d.id)
       d.keyEnd = keyEnd(this.keys.get(d.id))
@@ -132,17 +132,17 @@ export class Controller extends Emitter<Events> {
         return this.s
 
       case 'scene.preview': {
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
         this.s.previewSceneId = scene.id
         await this.engine.setPreviewScene(scene.id)
         return this.changed()
       }
       case 'scene.program': {
-        await this.takeLive(this.scene(str(P, 'sceneId')))
+        await this.takeLive(this.showScene(str(P, 'sceneId')))
         return this.changed()
       }
       case 'scene.goLive': {
-        const next = this.scene(this.s.previewSceneId)
+        const next = this.showScene(this.s.previewSceneId)
         const previous = this.s.programSceneId
         await this.takeLive(next)
         // Like a vision mixer: what was live goes back to preview.
@@ -258,8 +258,8 @@ export class Controller extends Emitter<Events> {
         return { sceneId: scene.id }
       }
       case 'scene.remove': {
-        const scene = this.scene(str(P, 'sceneId'))
-        if (this.s.scenes.length === 1) throw new CommandError('Keep at least one scene')
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (showScenes(this.s.scenes).length === 1) throw new CommandError('Keep at least one scene')
         if (scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
         this.s.scenes = this.s.scenes.filter((x) => x !== scene)
         if (this.s.previewSceneId === scene.id) this.s.previewSceneId = this.s.programSceneId
@@ -275,7 +275,7 @@ export class Controller extends Emitter<Events> {
       }
       case 'scene.move': {
         // Change the order of the scene cards (dragged in the main window).
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
         const to = P.index
         if (typeof to !== 'number' || !Number.isInteger(to)) throw new CommandError('index must be a whole number')
         const list = this.s.scenes
@@ -287,7 +287,7 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
       case 'scene.store': {
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
         if (typeof P.stored !== 'boolean') throw new CommandError('stored must be true or false')
         if (P.stored && scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
         if (P.stored) scene.stored = true
@@ -295,7 +295,17 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
       case 'scene.rename': {
-        this.scene(str(P, 'sceneId')).name = name(P, 'name')
+        this.showScene(str(P, 'sceneId')).name = name(P, 'name')
+        return this.changed()
+      }
+      case 'scene.setHideOverlay': {
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (bool(P, 'hide')) scene.hideOverlay = true
+        else delete scene.hideOverlay
+        return this.changed()
+      }
+      case 'overlay.set': {
+        this.s.overlayOn = bool(P, 'on')
         return this.changed()
       }
       case 'layer.add': {
@@ -789,7 +799,7 @@ export class Controller extends Emitter<Events> {
     if (P.seconds !== undefined) layer.seconds = num(P, 'seconds', 1, 3600)
     if (P.showScene !== undefined) {
       if (layer.kind !== 'scene') throw new CommandError('Only scene sources show another scene')
-      layer.sceneId = this.scene(str(P, 'showScene')).id
+      layer.sceneId = this.showScene(str(P, 'showScene')).id
     }
   }
 
@@ -797,7 +807,7 @@ export class Controller extends Emitter<Events> {
   private checkNesting(scene: Scene, layer: Layer) {
     if (layer.kind !== 'scene') return
     if (!layer.sceneId) throw new CommandError('Pick which scene to show')
-    if (scenesOnAir(this.s, layer.sceneId).has(scene.id)) throw new CommandError('A scene can’t show itself, even through another scene')
+    if (scenesOnAir({ scenes: this.s.scenes, programSceneId: '' }, layer.sceneId).has(scene.id)) throw new CommandError('A scene can’t show itself, even through another scene')
   }
 
   /** Which scenes a sound plays in: absent or empty = every scene. */
@@ -876,10 +886,17 @@ export class Controller extends Emitter<Events> {
     return this.s
   }
 
+  /** A scene, or the Overlay (its sources are edited like a scene's). */
   private scene(id: string): Scene {
     const scene = this.s.scenes.find((x) => x.id === id)
     if (!scene) throw new CommandError(`No scene with id ${id}`)
     return scene
+  }
+
+  /** A scene that can be a card, go to Preview or Live: not the Overlay. */
+  private showScene(id: string): Scene {
+    if (isOverlay(id)) throw new CommandError('The Overlay isn’t a scene: it sits on top of every scene. Use its ON AIR button.')
+    return this.scene(id)
   }
 
   private layer(scene: Scene, id: string): Layer {

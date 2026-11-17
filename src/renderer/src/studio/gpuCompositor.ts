@@ -8,7 +8,7 @@
  * change (not every frame) and uploaded as a picture.
  */
 import { renderTemplate } from '../../../shared/template'
-import { countdownText, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { boxFor, Compositor } from './compositor'
 import type { GraphicsFeed } from './graphics'
 
@@ -146,18 +146,25 @@ export class GpuCompositor extends Compositor {
       if (t >= 1) this.fadeFrom = null
       else {
         this.collect(ops, this.fadeFrom.scene, s, w, h, 0, identity, null, 1)
+        this.collectOverlay(ops, this.fadeFrom.scene, s, w, h, 1)
         fadeAlpha = t
       }
     }
     const program = s.scenes.find((x) => x.id === s.programSceneId)
-    if (program) this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
+    if (program) {
+      this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
+      this.collectOverlay(ops, program, s, w, h, fadeAlpha)
+    }
     this.render(enc, this.ctx.program, w, h, ops)
     if (withPreview) {
       const pw = this.preview.width
       const ph = this.preview.height
       const pops: Op[] = []
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
-      if (preview) this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
+      if (preview) {
+        this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
+        this.collectOverlay(pops, preview, s, pw, ph, 1)
+      }
       this.render(enc, this.ctx.preview, pw, ph, pops)
     }
     this.device.queue.submit([enc.finish()])
@@ -177,6 +184,7 @@ export class GpuCompositor extends Compositor {
     const texture = this.device.createTexture({ size: [w, h], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
     const ops: Op[] = []
     this.collect(ops, program, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, 1)
+    this.collectOverlay(ops, program, s, w, h, 1)
     const bpr = Math.ceil((w * 4) / 256) * 256
     const buf = this.device.createBuffer({ size: bpr * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
     const enc = this.device.createCommandEncoder()
@@ -202,6 +210,12 @@ export class GpuCompositor extends Compositor {
     buf.destroy()
     texture.destroy()
     return out
+  }
+
+  /** The Overlay's draws, on top of this scene, when it is on and the scene doesn't hide it. */
+  private collectOverlay(ops: Op[], scene: Scene, s: AppState, w: number, h: number, alpha: number) {
+    const overlay = overlayOver(s, scene.id)
+    if (overlay) this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)
   }
 
   /** The draws for one scene, back to front, in the canvas's pixels. */

@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppState } from '../shared/state'
+import { ensureOverlay, showScenes } from '../shared/state'
 import { defaultState } from '../core/defaults'
 import type { KeyStore } from '../core/ports'
 import type { DeviceStore, StoredDevice } from './control/pairing'
@@ -29,6 +30,7 @@ type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'
   quality: AppState['stream']['quality']
   frameRate?: AppState['stream']['frameRate']
   destinations: AppState['stream']['destinations']
+  overlayOn?: boolean
   recordFolder: string
   recordFormat: AppState['recording']['format']
   /** The devices seen last time, so a device whose id changed is found again by its name. */
@@ -45,12 +47,15 @@ export class SetupFile {
     const base = this.fresh()
     const saved = readJson<Partial<SavedSetup>>(this.file)
     if (!saved) return base
-    return {
+    const scenes = saved.scenes && showScenes(saved.scenes).length ? saved.scenes : base.scenes
+    const first = showScenes(scenes)[0].id
+    return ensureOverlay({
       ...base,
       setupName: saved.setupName ?? base.setupName,
-      scenes: saved.scenes?.length ? saved.scenes : base.scenes,
-      previewSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
-      programSceneId: (saved.scenes?.[0] ?? base.scenes[0]).id,
+      scenes,
+      previewSceneId: first,
+      programSceneId: first,
+      overlayOn: saved.overlayOn ?? base.overlayOn,
       transition: saved.transition ?? base.transition,
       inputs: saved.inputs ?? base.inputs,
       audio: (saved.audio ?? base.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, level: 0 })),
@@ -70,13 +75,14 @@ export class SetupFile {
         folder: saved.recordFolder ?? base.recording.folder,
         format: saved.recordFormat ?? base.recording.format
       },
-    }
+    })
   }
 
   save(s: AppState) {
     const setup: SavedSetup = {
       setupName: s.setupName,
       scenes: s.scenes,
+      overlayOn: s.overlayOn,
       transition: s.transition,
       audio: s.audio.map((a) => ({ ...a, level: 0 })),
       quality: s.stream.quality,

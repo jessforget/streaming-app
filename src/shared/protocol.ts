@@ -38,6 +38,8 @@ export interface CommandMap {
   'scene.goLive': Record<string, never>
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
   'layer.setVisible': { sceneId: string; layerId: string; visible: boolean }
+  /** The Overlay's ON AIR button: its sources on top of every scene, or off. Its sources use sceneId "overlay". */
+  'overlay.set': { on: boolean }
   'audio.setVolume': { sourceId: string; volume: number }
   'audio.setMuted': { sourceId: string; muted: boolean }
   'audio.muteAll': Record<string, never>
@@ -68,6 +70,8 @@ export interface CommandMap {
   'scene.move': { sceneId: string; index: number }
   /** Put a scene away in the Scene library (stored: true), or bring it back into this show. */
   'scene.store': { sceneId: string; stored: boolean }
+  /** Leave the Overlay off while this scene is on air. */
+  'scene.setHideOverlay': { sceneId: string; hide: boolean }
   'layer.add': {
     sceneId: string
     kind: LayerKind
@@ -161,6 +165,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.goLive': 'operate',
   'transition.set': 'operate',
   'layer.setVisible': 'operate',
+  'overlay.set': 'operate',
   'audio.setVolume': 'operate',
   'audio.setMuted': 'operate',
   'audio.muteAll': 'operate',
@@ -180,6 +185,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.rename': 'admin',
   'scene.move': 'admin',
   'scene.store': 'admin',
+  'scene.setHideOverlay': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

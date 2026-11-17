@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { audible, scenesOnAir, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
+import { OVERLAY_ID, audible, isOverlay, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
@@ -40,6 +40,9 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
         <aside className="side">
           <section className="panel">
             <SourceList state={state} run={run} scene={state.scenes.find((s) => s.id === state.previewSceneId) ?? state.scenes[0]} />
+          </section>
+          <section className="panel overlay-panel">
+            <SourceList state={state} run={run} scene={state.scenes.find(isOverlay) ?? { id: OVERLAY_ID, name: 'Overlay', layers: [] }} />
           </section>
           <SoundPanel state={state} stats={stats} run={run} studio={studio} openSettings={setSettings} />
           <section className="panel">
@@ -186,6 +189,7 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
           <kbd className="key-hint" title="Press the space bar to transition">
             Space
           </kbd>
+          <OverlayButton state={state} run={run} />
         </div>
         <section className="monitor program" aria-label="Live">
           <div className="monitor-head">
@@ -199,6 +203,30 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
         </section>
       </div>
     </div>
+  )
+}
+
+/** The Overlay's ON AIR button, like the keyer button on a vision mixer. */
+function OverlayButton({ state, run }: { state: AppState; run: Run }) {
+  const overlay = state.scenes.find(isOverlay)
+  const empty = !overlay?.layers.some((l) => l.visible)
+  const program = state.scenes.find((s) => s.id === state.programSceneId)
+  const hidden = state.overlayOn && !empty && program?.hideOverlay
+  const title = empty
+    ? 'Add a source to the Overlay (in the side panel) to put it over every scene'
+    : state.overlayOn
+      ? `On top of every scene${hidden ? `, but ${program?.name} hides it` : ''}. Click to take it off (O key).`
+      : 'Off. Click to put the Overlay on top of every scene (O key).'
+  return (
+    <button
+      className={`overlay-btn ${state.overlayOn && !empty ? 'on' : ''}`}
+      aria-pressed={state.overlayOn}
+      title={title}
+      onClick={() => run('overlay.set', { on: !state.overlayOn })}
+    >
+      Overlay
+      <small>{empty ? 'EMPTY' : !state.overlayOn ? 'OFF' : hidden ? 'HIDDEN HERE' : 'ON AIR'}</small>
+    </button>
   )
 }
 
@@ -224,6 +252,12 @@ function useSpaceToTransition(state: AppState | null, run: Run, enabled: boolean
   useEffect(() => {
     const isSpace = (e: KeyboardEvent) => e.code === 'Space' || e.key === ' '
     const down = (e: KeyboardEvent) => {
+      // O: the Overlay's ON AIR button.
+      if (e.code === 'KeyO' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !typing(e.target)) {
+        const { state: s, run: go, enabled: on } = latest.current
+        if (on && s) void go('overlay.set', { on: !s.overlayOn })
+        return
+      }
       if (!isSpace(e) || e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return
       const { state: s, run: go, enabled: on } = latest.current
       if (!on || !s) return
@@ -428,8 +462,8 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
   const grid = useRef<HTMLDivElement>(null)
   const library = useRef<HTMLElement>(null)
   // "In this show": every scene not put away in the Scene library.
-  const inShow = state.scenes.filter((s) => !s.stored)
-  const stored = state.scenes.filter((s) => s.stored)
+  const inShow = showScenes(state.scenes).filter((s) => !s.stored)
+  const stored = showScenes(state.scenes).filter((s) => s.stored)
   const { drag, props } = useSceneDrag(run, inShow, state.scenes, state.programSceneId, grid, library)
   // While dragging, show the order it will have when dropped.
   const scenes = [...inShow]

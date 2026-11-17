@@ -97,6 +97,40 @@ export interface Scene {
    * the "In this show" row and the tablet remote. Absent = in this show.
    */
   stored?: boolean
+  /** Leave the Overlay off while this scene is on air (for "Starting soon", "Ending"...). */
+  hideOverlay?: boolean
+}
+
+/**
+ * The Overlay: sources drawn on top of every scene, in Preview and Live, like a
+ * downstream keyer on a vision mixer. Kept as a scene with this id (so its
+ * sources open, play and edit like any other), but never shown as a scene card.
+ */
+export const OVERLAY_ID = 'overlay'
+
+export function isOverlay(scene: Pick<Scene, 'id'> | string): boolean {
+  return (typeof scene === 'string' ? scene : scene.id) === OVERLAY_ID
+}
+
+/** Every scene except the Overlay: the ones that can be cards, go to Preview and Live, or be shown inside another. */
+export function showScenes<S extends Pick<Scene, 'id'>>(scenes: S[]): S[] {
+  return scenes.filter((x) => !isOverlay(x))
+}
+
+/** Add the Overlay to a setup that doesn't have it yet (older saved setups). Changes `state`. */
+export function ensureOverlay<T extends Pick<AppState, 'scenes' | 'overlayOn'>>(state: T): T {
+  if (!state.scenes.some(isOverlay)) state.scenes.push({ id: OVERLAY_ID, name: 'Overlay', layers: [] })
+  if (typeof state.overlayOn !== 'boolean') state.overlayOn = true
+  return state
+}
+
+/** Is the Overlay drawn over this scene? On, and the scene doesn't hide it. */
+export function overlayOver(state: Pick<AppState, 'scenes' | 'overlayOn'>, sceneId: string): Scene | null {
+  if (!state.overlayOn || isOverlay(sceneId)) return null
+  const scene = state.scenes.find((x) => x.id === sceneId)
+  const overlay = state.scenes.find(isOverlay)
+  if (!scene || scene.hideOverlay || !overlay || !overlay.layers.some((l) => l.visible)) return null
+  return overlay
 }
 
 /**
@@ -170,7 +204,7 @@ export function channelName(d: InputDevice | undefined, ch: number): string {
  * The scenes on air right now: the one in Live, plus any scene shown inside
  * it (a "scene" source), so their sound plays too.
  */
-export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, sceneId = state.programSceneId): Set<string> {
+export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'> & Partial<Pick<AppState, 'overlayOn'>>, sceneId = state.programSceneId): Set<string> {
   const out = new Set<string>()
   const walk = (id: string) => {
     if (out.has(id) || out.size > 20) return
@@ -180,6 +214,8 @@ export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, 
     for (const l of scene.layers) if (l.kind === 'scene' && l.visible && l.sceneId) walk(l.sceneId)
   }
   walk(sceneId)
+  // The Overlay is on air too while it is drawn over that scene.
+  if (state.overlayOn !== undefined && overlayOver(state as Pick<AppState, 'scenes' | 'overlayOn'>, sceneId)) walk(OVERLAY_ID)
   return out
 }
 
@@ -284,6 +320,8 @@ export interface AppState {
   scenes: Scene[]
   previewSceneId: string
   programSceneId: string
+  /** The Overlay's ON AIR button: its sources are drawn on top of every scene (except ones that hide it). */
+  overlayOn: boolean
   transition: { kind: 'cut' | 'fade'; durationMs: number }
   audio: AudioSource[]
   stream: {

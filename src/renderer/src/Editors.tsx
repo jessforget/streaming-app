@@ -1,7 +1,7 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
 import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
-import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, scenesOnAir } from '../../shared/state'
+import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, isOverlay, scenesOnAir, showScenes } from '../../shared/state'
 import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
 import { GraphicsCheck, GraphicsDetail } from './GraphicsParts'
 import { deviceName } from './parts'
@@ -133,12 +133,13 @@ export function SceneTools({ state, run, scene, only }: { state: AppState; run: 
 
 /** The source list for one scene, like OBS's Sources panel. */
 export function SourceList({ state, run, scene }: { state: AppState; run: Run; scene: Scene }) {
+  const overlay = isOverlay(scene)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   return (
     <div className="layers">
       <div className="panel-head">
-        <h2>Sources in {scene.name}</h2>
+        <h2>{overlay ? 'Overlay' : `Sources in ${scene.name}`}</h2>
         {!adding && (
           <button className="small" onClick={() => setAdding(true)}>
             + Add
@@ -146,7 +147,13 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         )}
       </div>
       {adding && <AddSourceForm state={state} run={run} scene={scene} onDone={() => setAdding(false)} />}
-      {scene.layers.length === 0 && !adding && <p className="muted">No sources yet. Add the ATEM or HyperDeck as a video input.</p>}
+      {scene.layers.length === 0 && !adding && (
+        <p className="muted">
+          {overlay
+            ? 'Sources here sit on top of every scene, in Preview and Live: add your Graphics (network) source here.'
+            : 'No sources yet. Add the ATEM or HyperDeck as a video input.'}
+        </p>
+      )}
       <ul>
         {scene.layers.map((l, i) => (
           <li key={l.id} className={l.visible ? '' : 'hidden-layer'}>
@@ -205,7 +212,21 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
           </li>
         ))}
       </ul>
-      <p className="hint">Top of the list shows in front. Text in braces, like {'{guest.name}'}, comes from the companion app.</p>
+      {overlay ? (
+        scene.layers.length > 0 && <p className="hint">On top of every scene, in Preview and Live. Switching scenes doesn’t touch it. The Overlay button (O key) turns it on or off.</p>
+      ) : (
+        <>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={!!scene.hideOverlay}
+              onChange={(e) => run('scene.setHideOverlay', { sceneId: scene.id, hide: e.target.checked })}
+            />
+            Hide the Overlay in this scene
+          </label>
+          <p className="hint">Top of the list shows in front. Text in braces, like {'{guest.name}'}, comes from the companion app.</p>
+        </>
+      )}
     </div>
   )
 }
@@ -238,7 +259,7 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
 function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v: Fields; set: SetField }) {
   const { state, kind, scene, v, set } = props
   // A scene can show any other scene that doesn't already show this one.
-  const nestable = state.scenes.filter((x) => x.id !== scene.id && !scenesOnAir(state, x.id).has(scene.id))
+  const nestable = showScenes(state.scenes).filter((x) => x.id !== scene.id && !scenesOnAir({ scenes: state.scenes, programSceneId: '' }, x.id).has(scene.id))
   return (
     <>
       <label>
