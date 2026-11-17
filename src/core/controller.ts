@@ -895,7 +895,7 @@ export class Controller extends Emitter<Events> {
 
   /** A scene that can be a card, go to Preview or Live: not the Overlay. */
   private showScene(id: string): Scene {
-    if (isOverlay(id)) throw new CommandError('The Overlay isn’t a scene: it sits on top of every scene. Use its ON AIR button.')
+    if (isOverlay(id)) throw new CommandError('The Overlay isn’t a scene: it sits on top of every scene. Scenes can hide it with “Hide the Overlay in this scene”.')
     return this.scene(id)
   }
 

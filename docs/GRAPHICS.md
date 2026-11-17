@@ -9,9 +9,9 @@ app loads the page and shows it, and tells the page when it goes on and off
 the stream, so the page can animate in, or start a video, at that moment.
 
 Put the source in the **Overlay** (in the side panel): it then sits on top of
-every scene, in Preview and Live, and switching scenes doesn't touch it. The
-**Overlay** button next to Transition (or the O key) turns it on and off, like
-the keyer button on an ATEM. A scene can **Hide the Overlay** (for "Starting
+every scene, in Preview and Live, and switching scenes doesn't touch it. It is
+always on: what shows is decided in the gfx app (Take and Hide). A scene can
+**Hide the Overlay** (for "Starting
 soon" or "Ending"): tick it under that scene's sources.
 
 Works in the desktop version (`npm run desktop`, or "Start Streaming App

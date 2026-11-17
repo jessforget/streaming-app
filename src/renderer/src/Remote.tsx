@@ -67,15 +67,6 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
           >
             Transition{preview ? `: ${preview.name}` : ''}
           </button>
-          {state.scenes.find(isOverlay)?.layers.length ? (
-            <button
-              className={`remote-overlay ${state.overlayOn ? 'on' : ''}`}
-              aria-pressed={state.overlayOn}
-              onClick={() => run('overlay.set', { on: !state.overlayOn })}
-            >
-              Overlay: {state.overlayOn ? 'ON AIR' : 'off'}
-            </button>
-          ) : null}
           {preview && preview.layers.length > 0 && (
             <>
               <h2>Sources in {preview.name}</h2>

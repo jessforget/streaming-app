@@ -55,7 +55,8 @@ export class SetupFile {
       scenes,
       previewSceneId: first,
       programSceneId: first,
-      overlayOn: saved.overlayOn ?? base.overlayOn,
+      // Always on: there is no Overlay button any more (scenes can hide it).
+      overlayOn: true,
       transition: saved.transition ?? base.transition,
       inputs: saved.inputs ?? base.inputs,
       audio: (saved.audio ?? base.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, level: 0 })),

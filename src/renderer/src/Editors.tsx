@@ -213,7 +213,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         ))}
       </ul>
       {overlay ? (
-        scene.layers.length > 0 && <p className="hint">On top of every scene, in Preview and Live. Switching scenes doesn’t touch it. The Overlay button (O key) turns it on or off.</p>
+        scene.layers.length > 0 && <p className="hint">On top of every scene, in Preview and Live. Switching scenes doesn’t touch it. To keep it off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
       ) : (
         <>
           <label className="check-row">
