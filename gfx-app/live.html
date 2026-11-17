@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Graphics</title>
+<!-- Fonts for the lower thirds. A "font on the streaming PC" uses that PC's own fonts (the page is drawn there). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Montserrat:wght@400;500;700;800&family=Roboto+Slab:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* The rules for a graphics page: see-through background, laid out at 1920 x 1080. */
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
+
+  :root {
+    --font: Inter; --name-size: 52px; --title-size: 30px; --width: auto;
+    --accent: #2563d9; --box: #f2f2f2; --text: #111111;
+  }
+
+  /* Videos, photos and windows. Full = the whole picture (black around it); box = a framed box bottom right. */
+  .media { position: absolute; opacity: 0; transition: opacity 400ms ease; overflow: hidden; }
+  .media.on { opacity: 1; }
+  .media.full { inset: 0; background: #000; }
+  .media.box { right: 96px; bottom: 120px; width: 768px; height: 432px; background: #000; border-radius: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55); }
+  .media video, .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .media img { opacity: 0; transition: opacity 700ms ease; }
+  .media img.cut { transition: none; }
+  .media img.shown { opacity: 1; }
+  .media .note { position: absolute; inset: 0; display: grid; place-items: center; color: #c3c9d4; font: 500 40px Inter, 'Segoe UI', sans-serif; text-align: center; padding: 0 120px; }
+
+  /* Lower thirds. */
+  .place { position: absolute; bottom: 120px; }
+  .place.left { left: 96px; }
+  .place.right { right: 96px; }
+  .place.center { left: 50%; transform: translateX(-50%); }
+
+  .l3 { font-family: var(--font), 'Segoe UI', system-ui, sans-serif; width: var(--width); transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 500ms ease, clip-path 600ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .place.right .l3 { margin-left: auto; }
+  .still .l3 { transition: none; }
+
+  /* In and out. */
+  .anim-slide .l3 { transform: translateX(-140%); }
+  .place.right.anim-slide .l3 { transform: translateX(140%); }
+  .place.center.anim-slide .l3 { transform: translateY(160%); }
+  .anim-fade .l3 { opacity: 0; }
+  .anim-wipe .l3 { clip-path: inset(0 100% 0 0); }
+  /* Shown: wins over every hidden spot above (they are more specific). */
+  .place.on .l3 { transform: none !important; opacity: 1 !important; clip-path: inset(0 0 0 0) !important; }
+
+  /* 1. Classic: name bar over a colour title bar. */
+  .classic .name { display: inline-block; min-width: 100%; box-sizing: border-box; background: var(--box); color: var(--text); font-size: var(--name-size); font-weight: 700; padding: 0.27em 0.7em; border-radius: 10px 10px 0 0; }
+  .classic .title { background: var(--accent); color: #fff; font-size: var(--title-size); font-weight: 500; padding: 0.33em 1.2em; border-radius: 0 0 10px 10px; }
+  .classic .l3 { display: inline-flex; flex-direction: column; }
+  .classic .l3[style*='width'] .name { min-width: 0; }
+
+  /* 2. Bold block: a box with a colour stripe, name in capitals. */
+  .block .l3 { display: inline-flex; background: color-mix(in srgb, var(--box) 90%, transparent); border-left: 14px solid var(--accent); padding: 0.3em 0.9em 0.35em 0.6em; box-sizing: border-box; }
+  .block .inner { display: flex; flex-direction: column; gap: 2px; }
+  .block .name { font-size: var(--name-size); font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.15; }
+  .block .title { font-size: var(--title-size); font-weight: 500; color: color-mix(in srgb, var(--text) 80%, transparent); }
+
+  /* 3. Minimal: words only, a soft shadow and a thin colour line. */
+  .minimal .l3 { display: inline-flex; flex-direction: column; gap: 10px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75); }
+  .minimal .name { font-size: var(--name-size); font-weight: 700; color: var(--text); line-height: 1.1; }
+  .minimal .line { width: 96px; height: 5px; background: var(--accent); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+  .minimal .l3[style*='width'] .line { width: 100%; }
+  .minimal .title { font-size: var(--title-size); color: var(--text); opacity: 0.92; }
+  .place.center.minimal .l3 { align-items: center; text-align: center; }
+
+  /* 4. News strip: a band across the bottom with a LIVE tag. */
+  .place.news { left: 0; right: 0; transform: none; }
+  .news .l3 { display: flex; height: calc(var(--name-size) * 1.7); width: var(--width, 100%); }
+  .place.news.right .l3 { margin-left: auto; }
+  .place.news.center .l3 { margin: 0 auto; }
+  .news .tag { background: var(--accent); color: #fff; font-weight: 800; font-size: calc(var(--name-size) * 0.55); letter-spacing: 0.08em; display: flex; align-items: center; padding: 0 0.9em 0 3em; }
+  .place.news.right .tag, .place.news.center .tag { padding-left: 0.9em; }
+  .news .band { flex: 1; background: color-mix(in srgb, var(--box) 95%, transparent); display: flex; align-items: center; gap: 0.7em; padding: 0 1em; min-width: 0; }
+  .news .name { font-size: var(--name-size); font-weight: 700; color: var(--text); white-space: nowrap; }
+  .news .divider { width: 2px; height: 50%; background: color-mix(in srgb, var(--text) 30%, transparent); }
+  .news .title { font-size: var(--title-size); color: color-mix(in srgb, var(--text) 80%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<div class="media" id="media"></div>
+<div class="place" id="place"></div>
+<script>
+  /*
+   * The graphics page. Three ways to open it:
+   *   /live                 the stream's graphics (in the streaming app): what is on air
+   *   /live?view=onair      the gfx app's "On air" screen: the same, without waiting for the stream
+   *   /live?view=preview    the gfx app's "Preview" screen: the item in Preview, shown straight away
+   *
+   * In the streaming app, the page is told when the stream puts it live ('streamer:live'). An item
+   * set to "start when the stream puts it live" waits for that, then animates in or starts playing.
+   */
+  const view = new URLSearchParams(location.search).get('view') || 'out'
+  const place = document.getElementById('place')
+  const media = document.getElementById('media')
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag)
+    if (cls) e.className = cls
+    if (text !== undefined) e.textContent = text
+    return e
+  }
+  const post = (path, body) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {})
+
+  let state = null
+  /** In the streaming app (it said so), and whether the stream has this page live. */
+  let inStreamer = false
+  let streamerLive = false
+
+  // ---------- Lower thirds ----------
+
+  /** The lower third's parts for one style. Only rebuilt when the style changes, so the animation can run. */
+  let builtStyle = ''
+  let parts = {}
+  function build(style) {
+    place.textContent = ''
+    const l3 = el('div', 'l3')
+    const name = el('div', 'name')
+    const title = el('div', 'title')
+    if (style === 'block') {
+      const inner = el('div', 'inner')
+      inner.append(name, title)
+      l3.append(inner)
+    } else if (style === 'minimal') {
+      l3.append(name, el('div', 'line'), title)
+    } else if (style === 'news') {
+      const band = el('div', 'band')
+      band.append(name, el('div', 'divider'), title)
+      l3.append(el('div', 'tag', 'LIVE'), band)
+    } else {
+      l3.append(name, title)
+    }
+    place.append(l3)
+    parts = { l3, name, title }
+    builtStyle = style
+  }
+
+  /** Show (or hide) a lower third. `still`: no animation (the Preview screen). */
+  function lowerThird(item, show, still) {
+    const look = state.look
+    if (look.style !== builtStyle) {
+      place.classList.remove('on')
+      build(look.style)
+    }
+    const root = document.documentElement.style
+    const font = look.font === 'custom' ? look.customFont || 'Segoe UI' : look.font
+    root.setProperty('--font', `'${font}'`)
+    root.setProperty('--name-size', `${look.nameSize}px`)
+    root.setProperty('--title-size', `${look.titleSize}px`)
+    root.setProperty('--accent', look.accent)
+    root.setProperty('--box', look.box)
+    root.setProperty('--text', look.text)
+    // Length: 0 = as long as the words, else that share of the picture's width.
+    if (look.length > 0) parts.l3.style.width = `${Math.round((1920 * look.length) / 100)}px`
+    else parts.l3.style.removeProperty('width')
+    if (item) {
+      parts.name.textContent = item.name
+      parts.title.textContent = item.title
+    }
+    const wasOn = place.classList.contains('on')
+    place.className = `place ${look.style} ${look.position} anim-${look.animation}${wasOn ? ' on' : ''}${still ? ' still' : ''}`
+    // Next frame, so a freshly built lower third starts from its hidden spot and animates in.
+    requestAnimationFrame(() => requestAnimationFrame(() => place.classList.toggle('on', show)))
+  }
+
+  // ---------- Videos, photos, windows ----------
+
+  let mediaKey = ''
+  let stopMedia = () => {}
+
+  /** Can this page say "it ended, hide it"? The stream's page if the streaming app has it; else the gfx app's On air screen. */
+  const decides = () => (view === 'out' && inStreamer) || (view === 'onair' && !state?.stream?.connected)
+
+  function clearMedia() {
+    media.classList.remove('on')
+    const old = stopMedia
+    stopMedia = () => {}
+    mediaKey = ''
+    setTimeout(() => {
+      if (!mediaKey) {
+        old()
+        media.textContent = ''
+      }
+    }, 450)
+  }
+
+  function startMedia(item, key, take) {
+    stopMedia()
+    stopMedia = () => {}
+    media.textContent = ''
+    mediaKey = key
+    media.className = `media ${item.shows === 'box' ? 'box' : 'full'}`
+    const quiet = view !== 'out'
+    const ended = () => {
+      if (item.end === 'hide' && view !== 'preview' && decides()) post('/api/do', { action: 'hide', take })
+    }
+    if (item.kind === 'video') {
+      if (!item.ok) media.append(el('div', 'note', `${item.file || 'The video'} is not on the gfx laptop any more`))
+      const v = el('video')
+      v.src = `/media/${item.id}`
+      v.playsInline = true
+      v.muted = quiet
+      v.loop = view === 'preview' || item.end === 'loop'
+      v.addEventListener('ended', ended)
+      media.append(v)
+      v.play().catch(() => {
+        // Not allowed to play with sound here (a plain browser): play without.
+        v.muted = true
+        v.play().catch(() => {})
+      })
+      stopMedia = () => {
+        v.pause()
+        v.removeAttribute('src')
+        v.load()
+      }
+    } else if (item.kind === 'photos') {
+      const n = item.count
+      if (!n) media.append(el('div', 'note', 'No photos'))
+      const imgs = [el('img'), el('img')]
+      for (const i of imgs) {
+        if (!item.fade) i.classList.add('cut')
+        media.append(i)
+      }
+      let at = 0
+      let front = 0
+      const showPhoto = (k) => {
+        const next = imgs[1 - front]
+        next.onload = () => {
+          next.classList.add('shown')
+          imgs[front].classList.remove('shown')
+          front = 1 - front
+        }
+        next.src = `/media/${item.id}/${k}`
+      }
+      showPhoto(0)
+      const timer = setInterval(() => {
+        if (view === 'preview') {
+          at = (at + 1) % Math.max(1, n)
+          return showPhoto(at)
+        }
+        if (at + 1 < n) return showPhoto(++at)
+        if (item.end === 'loop') {
+          at = 0
+          return showPhoto(0)
+        }
+        clearInterval(timer)
+        if (item.end === 'hide') ended()
+      }, Math.max(1, item.seconds) * 1000)
+      stopMedia = () => clearInterval(timer)
+    } else if (item.kind === 'window') {
+      const v = el('video')
+      v.playsInline = true
+      v.muted = true
+      media.append(v)
+      const note = el('div', 'note', 'Waiting for the window from the gfx app…')
+      media.append(note)
+      let pc = null
+      let closed = false
+      const connect = async () => {
+        if (closed) return
+        pc?.close()
+        pc = new RTCPeerConnection()
+        pc.addTransceiver('video', { direction: 'recvonly' })
+        pc.ontrack = (e) => {
+          v.srcObject = e.streams[0] ?? new MediaStream([e.track])
+          v.play().catch(() => {})
+          note.remove()
+        }
+        pc.onconnectionstatechange = () => {
+          if (!closed && (pc.connectionState === 'failed' || pc.connectionState === 'disconnected')) setTimeout(connect, 2000)
+        }
+        await pc.setLocalDescription(await pc.createOffer())
+        // Wait for the network addresses (a few hundred milliseconds on a local network).
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') return resolve()
+          pc.addEventListener('icegatheringstatechange', () => pc.iceGatheringState === 'complete' && resolve())
+          setTimeout(resolve, 2000)
+        })
+        try {
+          const r = await fetch('/api/rtc/offer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ itemId: item.id, sdp: pc.localDescription.sdp }) })
+          const answer = await r.json()
+          if (closed) return
+          if (!r.ok || !answer.sdp) throw new Error(answer.error || 'No answer')
+          await pc.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
+        } catch (e) {
+          note.textContent = `Can’t get the window: ${e.message}. Trying again…`
+          if (!note.isConnected) media.append(note)
+          setTimeout(connect, 3000)
+        }
+      }
+      connect()
+      stopMedia = () => {
+        closed = true
+        pc?.close()
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => media.classList.add('on')))
+  }
+
+  // ---------- What to show ----------
+
+  /** What is shown now: the item, its take, and whether its "wait for the stream" gate was open. */
+  let shown = { key: '', kind: '' }
+
+  function render() {
+    if (!state) return
+    const byId = (id) => state.items.find((i) => i.id === id) ?? null
+    let item = null
+    let key = ''
+    let take = null
+    if (view === 'preview') {
+      item = byId(state.previewId)
+      key = item ? `p:${item.id}:${item.kind === 'lowerthird' ? '' : JSON.stringify(item)}` : ''
+    } else if (state.onAir) {
+      item = byId(state.onAir.id)
+      take = state.onAir.take
+      key = item ? `${item.id}:${take}` : ''
+      // In the streaming app, an item that waits for the stream shows only while the stream has this page live.
+      // Each time the stream puts it live again, it starts afresh.
+      if (item && view === 'out' && inStreamer && item.playOnLive !== false) {
+        if (!streamerLive) item = null
+        else key += `:${liveCount}`
+      }
+    }
+    if (!item) key = ''
+
+    const fresh = key !== shown.key
+    const kind = item?.kind ?? ''
+    // Lower third
+    if (kind === 'lowerthird') {
+      if (fresh && shown.kind === 'lowerthird' && view !== 'preview') {
+        // Another lower third: the old one goes out, the new one comes in.
+        lowerThird(null, false, false)
+        const k = key
+        setTimeout(() => shown.key === k && lowerThird(item, true, false), 450)
+      } else lowerThird(item, true, view === 'preview')
+    } else if (builtStyle) lowerThird(null, false, view === 'preview')
+    // Media
+    if (kind && kind !== 'lowerthird') {
+      if (fresh || !mediaKey) startMedia(item, key, take)
+    } else if (mediaKey) clearMedia()
+    shown = { key, kind }
+  }
+
+  // ---------- The stream ----------
+
+  let liveCount = 0
+  let events = null
+  function listen() {
+    events?.close()
+    events = new EventSource(inStreamer ? '/events?role=stream' : '/events')
+    events.onmessage = (e) => {
+      const msg = JSON.parse(e.data)
+      if (msg.type !== 'state') return
+      state = msg
+      render()
+    }
+  }
+  function streamerSays(live) {
+    const first = !inStreamer
+    inStreamer = true
+    if (live && !streamerLive) liveCount++
+    streamerLive = live
+    // Tell the gfx app, so its operator sees "live on the stream".
+    post('/api/stream', { live })
+    if (first) listen()
+    render()
+  }
+  if (view === 'out') window.addEventListener('streamer:live', (e) => streamerSays(!!e.detail?.live))
+  listen()
+  if (view === 'out' && typeof window.streamerLive === 'boolean') streamerSays(window.streamerLive)
+</script>
+</body>
+</html>

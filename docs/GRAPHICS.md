@@ -4,8 +4,15 @@ Your gfx app runs on another computer on the same network. It shows its
 graphics as a web page, and the streaming app adds that page as a
 **Graphics (network)** source, see-through over the cameras.
 
-The gfx app controls everything: what shows, when it animates in and out,
-names and scores. The streaming app only loads the page and shows it.
+The gfx app controls everything: what shows, names and scores. The streaming
+app loads the page and shows it, and tells the page when it goes on and off
+the stream, so the page can animate in, or start a video, at that moment.
+
+Put the source in the **Overlay** (in the side panel): it then sits on top of
+every scene, in Preview and Live, and switching scenes doesn't touch it. The
+**Overlay** button next to Transition (or the O key) turns it on and off, like
+the keyer button on an ATEM. A scene can **Hide the Overlay** (for "Starting
+soon" or "Ending"): tick it under that scene's sources.
 
 Works in the desktop version (`npm run desktop`, or "Start Streaming App
 (desktop)"). The web version in Chrome can't show another site's picture.
@@ -20,6 +27,17 @@ Works in the desktop version (`npm run desktop`, or "Start Streaming App
    source's settings). It is scaled to the stream's size.
 4. **Run on its own**: no pop-ups, log-ins or "click to start" buttons, because
    nobody can click it. Sound from the page is not played.
+5. **Optional: start when the stream puts it live.** The streaming app tells the
+   page when a scene with it goes live, or the Overlay is switched on, and when
+   it comes off:
+
+   ```js
+   window.streamerLive            // true while the graphics are on the stream
+   window.addEventListener('streamer:live', (e) => {
+     if (e.detail.live) playIn()  // animate in, start the video...
+     else reset()                 // off the stream: ready to play in again next time
+   })
+   ```
 
 ## How it behaves
 
@@ -35,20 +53,39 @@ Works in the desktop version (`npm run desktop`, or "Start Streaming App
 - **Reload page** in the source's settings loads it again, for when you changed
   the design.
 
-## Sample gfx app
+## The gfx app (gfx-app)
 
-`examples/gfx-app` is a tiny gfx app to start from: a lower third, and a
-control page to type a name and show or hide it. The control page also sets
-the look: four styles (Classic, Bold block, Minimal, News strip), font,
-position, name and title size, length (fits the words, or a share of the
-width), accent / box / text colours, how long it stays on, and the animation
-(slide, fade, wipe). The look is saved in `gfx-settings.json` next to the
-server. Fonts picked as "a font on the streaming PC" come from the streaming
-PC, because that is where the page is drawn. No installs needed:
+`gfx-app` is our own gfx app, for a Windows laptop. Start it with **Start Gfx
+App.bat** (or `npm run gfx`). Its window fits a laptop screen:
 
-```
-node examples/gfx-app/server.cjs
-```
+- **Rundown** (left): lower thirds, videos, photo slideshows, and windows from
+  the laptop (PowerPoint, Word...). **+ Add**, or drag videos and photos in from
+  Explorer. Click an item to put it in Preview, double-click to take it on air.
+- **Preview** and **On air** (middle), with **Take** (space bar), **Hide** (Esc)
+  and **Next** (arrow keys).
+- **Settings** (right) for the item in Preview:
+  - Lower thirds: name, title, and the look of every lower third (four styles,
+    font, position, sizes, length, colours, how long it stays on, animation).
+  - Videos: full screen or a box, loop / play once then hide / stay on the last
+    frame.
+  - Slideshows: seconds per photo, fade or cut, start again / stay on the last
+    / hide at the end.
+  - Windows: which window, full screen or a box.
+  - **Start when the stream puts it live** (on by default): taken items wait
+    for the streaming app to put the graphics live, then animate in or start
+    playing. Off the stream, they reset, so they start again next time.
+- The top bar says whether the streaming app is connected and has the graphics
+  live, and shows the address to add in the streaming app (`http://<laptop>:8765/live`).
 
-It prints the two addresses: `/live` goes into the streaming app, `/control`
-opens in a browser on the graphics laptop (or a phone).
+How each kind travels: lower thirds, videos and photos are drawn by the page on
+the streaming PC, sharp and see-through; the files are fetched from the gfx
+laptop. A window is sent like a live camera (WebRTC): more network, and a
+fraction of a second late, so a network cable helps. Sound from videos is not
+sent to the stream yet.
+
+The show (rundown and look) is saved in the gfx app's settings folder
+(`%APPDATA%\Gfx app\gfx-show.json`).
+
+Without the window (only Node.js): `node gfx-app/server.cjs --open` runs the
+same server and opens the operator page in a browser. Videos and photos can't
+be picked there, and windows can't be sent.

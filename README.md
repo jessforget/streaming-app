@@ -51,10 +51,15 @@ test for a PC (also published as an artifact).
 ## Graphics from another computer
 
 A gfx app on another computer can show its graphics in the stream: add its
-page as a **Graphics (network)** source (desktop version). The gfx app controls
-what shows; this app only shows it, see-through over the cameras. The rules for
-the page, and a sample gfx app to start from, are in
-[docs/GRAPHICS.md](docs/GRAPHICS.md).
+page as a **Graphics (network)** source (desktop version), best in the
+**Overlay**, which sits on top of every scene and has its own ON AIR button.
+The gfx app controls what shows; this app shows it, see-through over the
+cameras, and tells it when it goes live so it can animate in then.
+
+Our own gfx app for a Windows laptop is in `gfx-app` (**Start Gfx App.bat**, or
+`npm run gfx`): a rundown of lower thirds, videos, photo slideshows and
+windows (PowerPoint, Word), with Preview, On air and Take. The rules for any
+gfx app's page, and how ours works, are in [docs/GRAPHICS.md](docs/GRAPHICS.md).
 
 ## Phones as cameras
 

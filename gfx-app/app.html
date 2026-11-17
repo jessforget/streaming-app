@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gfx app</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e1014; --panel: #14171d; --panel-2: #171a21; --card: #1b1f27; --line: #262b34; --line-2: #2c323d;
+    --text: #e8eaee; --muted: #9ba4b4; --accent: #4c8dff; --accent-strong: #2f6fe0; --live: #c93636; --go: #3fb37f;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line-2); background: var(--card); border-radius: 8px; padding: 0 12px; min-height: 32px; }
+  button:hover { border-color: #3a4250; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input, select { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 6px; padding: 7px 9px; min-width: 0; width: 100%; }
+  input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  input[type='range'] { padding: 0; border: 0; background: transparent; accent-color: var(--accent); height: 24px; }
+  input[type='color'] { height: 34px; padding: 2px; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+
+  /* Top bar */
+  .top { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .top h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--card); color: var(--muted); white-space: nowrap; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #5d6574; }
+  .pill.ok { background: #13261d; color: #8fe0b6; } .pill.ok .dot { background: var(--go); }
+  .pill.live { background: #2a1618; color: #ff9b9b; } .pill.live .dot { background: #ff5a5a; }
+  .addr { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .addr b { color: var(--text); font-weight: 600; user-select: all; }
+
+  .cols { display: grid; grid-template-columns: 280px minmax(0, 1fr) 320px; min-height: 0; }
+  aside, main { min-height: 0; overflow: auto; }
+  h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+  /* Rundown */
+  .rundown { border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .rundown.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
+  .menu { position: absolute; right: 0; top: 36px; z-index: 5; display: grid; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px; min-width: 190px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .menu button { border: 0; background: transparent; text-align: left; min-height: 34px; border-radius: 6px; }
+  .menu button:hover { background: var(--card); }
+  ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .item { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
+  .item.preview { background: #16223a; border-color: var(--accent-strong); }
+  .item.onair { background: #2a1618; border-color: var(--live); }
+  .thumb { height: 30px; border-radius: 4px; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
+  .thumb.lowerthird { background: #20242c; }
+  .thumb.lowerthird::before { content: ''; position: absolute; left: 5px; bottom: 9px; width: 28px; height: 6px; background: #f2f2f2; }
+  .thumb.lowerthird::after { content: ''; position: absolute; left: 5px; bottom: 5px; width: 32px; height: 4px; background: var(--accent); }
+  .thumb.video { background: linear-gradient(135deg, #3d5a80, #98c1d9); }
+  .thumb.photos { background: linear-gradient(135deg, #7a5f52, #e0b48a); }
+  .thumb.window { background: #4b5563; }
+  .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item.preview .sub { color: #9fc1ff; } .item.onair .sub { color: #ff9b9b; }
+  .tools { display: flex; gap: 2px; opacity: 0; }
+  .item:hover .tools, .item:focus-within .tools { opacity: 1; }
+  .tools button { min-height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--muted); }
+  .tools button:hover { color: var(--text); background: var(--card); }
+  .hint { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 0; }
+
+  /* Monitors */
+  main { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .monitors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .mon { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .mon-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .mon-head strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-weight: 700; font-size: 11px; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; color: #fff; }
+  .badge.next { background: var(--accent-strong); } .badge.live { background: var(--live); }
+  .screen { position: relative; aspect-ratio: 16 / 9; border: 2px solid var(--accent-strong); border-radius: 6px; overflow: hidden;
+    background-color: #20242c; background-image: linear-gradient(45deg, #2a2f38 25%, transparent 25%, transparent 75%, #2a2f38 75%), linear-gradient(45deg, #2a2f38 25%, transparent 25%, transparent 75%, #2a2f38 75%);
+    background-size: 16px 16px; background-position: 0 0, 8px 8px; }
+  .screen.live { border-color: var(--live); }
+  .screen iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; background: transparent; }
+  .actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+  .actions button { min-height: 52px; font-size: 15px; font-weight: 600; }
+  .actions .take { background: var(--go); border-color: var(--go); color: #08170f; font-size: 16px; font-weight: 700; }
+  .waiting { color: #f0c36b; }
+
+  /* Settings */
+  .settings { border-left: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .row { display: flex; justify-content: space-between; } .row .v { color: var(--text); }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .sep { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .file { display: flex; gap: 8px; align-items: center; } .file span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+  .styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .styles button { min-height: 0; padding: 6px 4px; font-size: 11px; display: grid; gap: 4px; }
+  .styles button[aria-checked='true'] { background: #1d2a44; border-color: var(--accent); }
+  .st { height: 26px; border-radius: 4px; position: relative; overflow: hidden; } .st span { position: absolute; }
+  .warn { color: #f0c36b; font-size: 12px; }
+  .empty { color: var(--muted); }
+
+  /* A laptop screen (1366 x 768 and up). Narrower: the settings move under. */
+  @media (max-width: 1180px) {
+    .cols { grid-template-columns: 250px minmax(0, 1fr); }
+    .settings { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+    body { overflow: auto; } .app { height: auto; min-height: 100vh; } aside, main { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Gfx app</h1>
+    <span class="pill" id="streamPill"><span class="dot"></span><span id="streamText">Streaming app not connected</span></span>
+    <span class="addr" id="addr"></span>
+  </header>
+  <div class="cols">
+    <aside class="rundown" id="rundown" aria-label="Rundown">
+      <div class="head">
+        <h2>Rundown</h2>
+        <button id="addBtn" aria-haspopup="true" aria-expanded="false">+ Add</button>
+        <div class="menu" id="addMenu" hidden>
+          <button data-add="lowerthird">Lower third</button>
+          <button data-add="video">Video…</button>
+          <button data-add="photos">Photos or slideshow…</button>
+          <button data-add="window">A window on this laptop…</button>
+        </div>
+      </div>
+      <ul class="items" id="items"></ul>
+      <p class="hint" id="dropHint">Click to put in Preview, double-click to take it on air. Drag videos and photos from Explorer straight in.</p>
+    </aside>
+
+    <main>
+      <div class="monitors">
+        <section class="mon" aria-label="Preview">
+          <div class="mon-head"><span class="badge next">PREVIEW</span><strong id="previewName"></strong></div>
+          <div class="screen" id="previewScreen"><iframe src="/live?view=preview" title="Preview" tabindex="-1"></iframe></div>
+        </section>
+        <section class="mon" aria-label="On air">
+          <div class="mon-head"><span class="badge live">ON AIR</span><strong id="onairName"></strong></div>
+          <div class="screen live" id="onairScreen"><iframe src="/live?view=onair" title="On air" tabindex="-1"></iframe></div>
+        </section>
+      </div>
+      <div class="actions">
+        <button class="take" id="take">Take</button>
+        <button id="hide">Hide</button>
+        <button id="next">Next ↓</button>
+      </div>
+      <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
+    </main>
+
+    <aside class="settings" id="settings" aria-label="Item settings"></aside>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  const desk = window.gfxDesktop || null
+  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window' }
+  const STYLE_COLORS = {
+    classic: { box: '#f2f2f2', text: '#111111' },
+    block: { box: '#0c0e12', text: '#ffffff' },
+    minimal: { box: '#000000', text: '#ffffff' },
+    news: { box: '#f5f6f8', text: '#111111' }
+  }
+  let S = null
+
+  async function act(body) {
+    const r = await fetch('/api/do', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const out = await r.json().catch(() => ({}))
+    if (!r.ok) alertBar(out.error || 'That didn’t work')
+    return out
+  }
+  let barTimer = null
+  function alertBar(text) {
+    $('liveHint').textContent = text
+    $('liveHint').classList.add('warn')
+    clearTimeout(barTimer)
+    barTimer = setTimeout(() => {
+      $('liveHint').classList.remove('warn')
+      renderMain()
+    }, 5000)
+  }
+
+  // ---------- Screens: the graphics page at 1920 x 1080, shrunk to fit ----------
+  const fit = () => {
+    for (const s of document.querySelectorAll('.screen')) s.querySelector('iframe').style.transform = `scale(${s.clientWidth / 1920})`
+  }
+  new ResizeObserver(fit).observe(document.querySelector('.monitors'))
+
+  // ---------- The address to add in the streaming app ----------
+  fetch('/api/info').then((r) => r.json()).then((info) => {
+    const host = info.addresses[0] || location.hostname
+    $('addr').textContent = 'Add to the streaming app (Overlay → + Add → Graphics): '
+    const b = document.createElement('b')
+    b.textContent = `http://${host}:${info.port}/live`
+    $('addr').append(b)
+  }).catch(() => {})
+
+  // ---------- Rundown ----------
+  const byId = (id) => S?.items.find((i) => i.id === id) ?? null
+  function subText(i) {
+    if (i.kind === 'lowerthird') return i.title || 'Lower third'
+    if (i.kind === 'video') return `Video · ${i.file}${i.ok ? '' : ' (missing)'}`
+    if (i.kind === 'photos') return `Slideshow · ${i.count} photo${i.count === 1 ? '' : 's'}`
+    return `Window · ${i.windowName || 'pick one'}`
+  }
+  function renderItems() {
+    const ul = $('items')
+    ul.textContent = ''
+    if (!S.items.length) {
+      const li = document.createElement('li')
+      li.className = 'empty'
+      li.textContent = 'Nothing yet. Press + Add, or drag videos and photos in.'
+      ul.append(li)
+    }
+    S.items.forEach((i, n) => {
+      const li = document.createElement('li')
+      const onAir = S.onAir?.id === i.id
+      const preview = S.previewId === i.id
+      li.className = `item ${onAir ? 'onair' : preview ? 'preview' : ''}`
+      li.tabIndex = 0
+      const thumb = document.createElement('span')
+      thumb.className = `thumb ${i.kind}`
+      if (i.kind === 'video') thumb.textContent = '▶'
+      if (i.kind === 'window') thumb.textContent = '▢'
+      const txt = document.createElement('span')
+      txt.style.minWidth = '0'
+      const nm = document.createElement('div')
+      nm.className = 'name'
+      nm.textContent = i.kind === 'lowerthird' ? i.name || '(no name)' : i.name
+      const sub = document.createElement('div')
+      sub.className = 'sub'
+      sub.textContent = `${subText(i)}${onAir ? ' · ON AIR' : preview ? ' · PREVIEW' : ''}`
+      txt.append(nm, sub)
+      const tools = document.createElement('span')
+      tools.className = 'tools'
+      const tool = (label, title, fn, off) => {
+        const b = document.createElement('button')
+        b.textContent = label
+        b.title = title
+        b.setAttribute('aria-label', `${title}: ${i.name}`)
+        b.disabled = !!off
+        b.onclick = (e) => {
+          e.stopPropagation()
+          fn()
+        }
+        tools.append(b)
+      }
+      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0)
+      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1)
+      tool('✕', 'Remove', () => confirmRemove(i))
+      li.append(thumb, txt, tools)
+      li.onclick = () => act({ action: 'preview', id: i.id })
+      li.ondblclick = () => act({ action: 'take', id: i.id })
+      li.onkeydown = (e) => {
+        if (e.key === 'Enter') act({ action: 'preview', id: i.id })
+      }
+      ul.append(li)
+    })
+  }
+  function confirmRemove(i) {
+    if (S.onAir?.id === i.id) return alertBar('That item is on air. Hide it first.')
+    act({ action: 'remove', id: i.id })
+  }
+
+  // ---------- Adding ----------
+  const menu = $('addMenu')
+  $('addBtn').onclick = (e) => {
+    e.stopPropagation()
+    menu.hidden = !menu.hidden
+    $('addBtn').setAttribute('aria-expanded', String(!menu.hidden))
+  }
+  document.addEventListener('click', () => {
+    menu.hidden = true
+    $('addBtn').setAttribute('aria-expanded', 'false')
+  })
+  for (const b of menu.querySelectorAll('[data-add]')) b.onclick = () => add(b.dataset.add)
+
+  async function add(kind) {
+    menu.hidden = true
+    if (kind === 'lowerthird') return act({ action: 'add', item: { kind, name: 'New name', title: 'Title' } })
+    if (kind === 'window') {
+      if (!desk) return alertBar('Windows can be sent from the gfx app window only (Start Gfx App), not from a browser.')
+      return act({ action: 'add', item: { kind, name: 'Window' } })
+    }
+    if (!desk) return alertBar('Pick files in the gfx app window (Start Gfx App), or drag them in from Explorer there.')
+    const paths = await desk.pickFiles(kind)
+    if (!paths?.length) return
+    if (kind === 'video') for (const p of paths) await act({ action: 'add', item: { kind: 'video', path: p } })
+    else act({ action: 'add', item: { kind: 'photos', paths } })
+  }
+
+  // Drag files from Explorer: videos become video items, pictures one slideshow.
+  const rundown = $('rundown')
+  rundown.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].includes('Files')) return
+    e.preventDefault()
+    rundown.classList.add('drop')
+  })
+  rundown.addEventListener('dragleave', () => rundown.classList.remove('drop'))
+  rundown.addEventListener('drop', async (e) => {
+    e.preventDefault()
+    rundown.classList.remove('drop')
+    if (!desk) return alertBar('Drag files in the gfx app window (Start Gfx App), not a browser.')
+    const paths = [...e.dataTransfer.files].map((f) => desk.pathFor(f)).filter(Boolean)
+    const videos = paths.filter((p) => /\.(mp4|webm|mov|m4v|mkv)$/i.test(p))
+    const photos = paths.filter((p) => !videos.includes(p))
+    for (const p of videos) await act({ action: 'add', item: { kind: 'video', path: p } })
+    if (photos.length) await act({ action: 'add', item: { kind: 'photos', paths: photos } })
+  })
+
+  // ---------- Take, Hide, Next ----------
+  $('take').onclick = () => S?.previewId && act({ action: 'take', id: S.previewId })
+  $('hide').onclick = () => act({ action: 'hide' })
+  $('next').onclick = () => act({ action: 'next' })
+  const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+  document.addEventListener('keydown', (e) => {
+    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.code === 'Space') {
+      e.preventDefault()
+      if (!e.repeat) $('take').click()
+    } else if (e.key === 'Escape') act({ action: 'hide' })
+    else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      act({ action: 'next' })
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      act({ action: 'next', back: true })
+    }
+  })
+
+  function renderMain() {
+    const p = byId(S.previewId)
+    const o = S.onAir ? byId(S.onAir.id) : null
+    $('previewName').textContent = p ? p.name : 'Nothing'
+    $('onairName').textContent = o ? o.name : 'Nothing'
+    $('take').disabled = !p
+    $('hide').disabled = !o
+    const pill = $('streamPill')
+    pill.className = `pill ${S.stream.live ? 'live' : S.stream.connected ? 'ok' : ''}`
+    $('streamText').textContent = S.stream.live
+      ? 'Streaming app connected · graphics live on the stream'
+      : S.stream.connected
+        ? 'Streaming app connected · graphics not on the stream now'
+        : 'Streaming app not connected'
+    if ($('liveHint').classList.contains('warn')) return
+    const waits = o && o.playOnLive !== false && S.stream.connected && !S.stream.live
+    $('liveHint').className = `hint ${waits ? 'waiting' : ''}`
+    $('liveHint').textContent = waits
+      ? `${o.name} is ready: it starts when the streaming app puts the graphics live (Overlay on, or a scene with them).`
+      : 'Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.'
+  }
+
+  // ---------- Settings for the item in Preview ----------
+  let builtFor = ''
+  let typingTimer = null
+  /** Send a change to the item, a moment after the last key or slider move. */
+  const change = (id, patch, now) => {
+    clearTimeout(typingTimer)
+    typingTimer = setTimeout(() => act({ action: 'update', id, item: patch }), now ? 0 : 250)
+  }
+  let lookPatch = {}
+  let lookTimer = null
+  const changeLook = (patch, now) => {
+    lookPatch = { ...lookPatch, ...patch }
+    clearTimeout(lookTimer)
+    lookTimer = setTimeout(() => {
+      const look = { ...S.look, ...lookPatch }
+      lookPatch = {}
+      act({ action: 'look', look })
+    }, now ? 0 : 120)
+  }
+
+  function field(label, input) {
+    const l = document.createElement('label')
+    l.append(label, input)
+    return l
+  }
+  function input(value, oninput, attrs = {}) {
+    const i = document.createElement('input')
+    Object.assign(i, attrs)
+    i.value = value ?? ''
+    i.oninput = () => oninput(i)
+    return i
+  }
+  function select(options, value, onchange) {
+    const s = document.createElement('select')
+    for (const [v, t] of options) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = t
+      s.append(o)
+    }
+    s.value = value
+    s.onchange = () => onchange(s.value)
+    return s
+  }
+  function check(text, checked, onchange) {
+    const l = document.createElement('label')
+    l.className = 'check'
+    const c = document.createElement('input')
+    c.type = 'checkbox'
+    c.checked = !!checked
+    c.onchange = () => onchange(c.checked)
+    l.append(c, text)
+    return l
+  }
+  const h2 = (t) => {
+    const h = document.createElement('h2')
+    h.textContent = t
+    return h
+  }
+  const div = (cls, ...kids) => {
+    const d = document.createElement('div')
+    d.className = cls
+    d.append(...kids)
+    return d
+  }
+
+  function renderSettings() {
+    const box = $('settings')
+    const it = byId(S.previewId)
+    const key = it ? `${it.id}|${it.kind}|${it.kind === 'window' ? it.sourceId : ''}|${it.kind === 'photos' ? it.count : ''}|${it.kind === 'video' ? it.file : ''}` : ''
+    // Rebuilt only for another item, so typing isn't interrupted; else just the values.
+    if (key === builtFor && box.childElementCount) return refreshValues(box)
+    builtFor = key
+    box.textContent = ''
+    if (!it) {
+      box.append(h2('Settings'), div('empty', 'Pick an item in the rundown.'))
+      return
+    }
+    box.append(h2(`${KIND_LABEL[it.kind]} in Preview`))
+    const id = it.id
+    if (it.kind === 'lowerthird') {
+      box.append(
+        field('Name', input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80 })),
+        field('Title', input(it.title, (i) => change(id, { title: i.value }), { maxLength: 120 }))
+      )
+      box.querySelectorAll('input')[0].dataset.k = 'name'
+      box.querySelectorAll('input')[1].dataset.k = 'title'
+    } else {
+      const n = field('Name in the rundown', input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80 }))
+      n.querySelector('input').dataset.k = 'name'
+      box.append(n)
+    }
+    if (it.kind === 'video') {
+      const name = document.createElement('span')
+      name.textContent = it.file + (it.ok ? '' : ' (missing)')
+      const pick = document.createElement('button')
+      pick.textContent = 'Change…'
+      pick.disabled = !desk
+      pick.onclick = async () => {
+        const paths = await desk.pickFiles('video')
+        if (paths?.[0]) act({ action: 'update', id, item: { path: paths[0] } })
+      }
+      box.append(
+        field('File', div('file', name, pick)),
+        field('Shows as', select([['full', 'Full screen'], ['box', 'A box over the cameras (bottom right)']], it.shows, (v) => change(id, { shows: v }, true))),
+        field('At the end', select([['loop', 'Loop'], ['hide', 'Play once, then hide'], ['hold', 'Play once, stay on the last frame']], it.end, (v) => change(id, { end: v }, true)))
+      )
+    }
+    if (it.kind === 'photos') {
+      const name = document.createElement('span')
+      name.textContent = `${it.count} photo${it.count === 1 ? '' : 's'}`
+      const pick = document.createElement('button')
+      pick.textContent = 'Change…'
+      pick.disabled = !desk
+      pick.onclick = async () => {
+        const paths = await desk.pickFiles('photos')
+        if (paths?.length) act({ action: 'update', id, item: { paths } })
+      }
+      const secs = input(it.seconds, (i) => Number(i.value) >= 1 && change(id, { seconds: Number(i.value) }), { type: 'number', min: 1, max: 600 })
+      secs.dataset.k = 'seconds'
+      box.append(
+        field('Photos', div('file', name, pick)),
+        div('two', field('Seconds each', secs), field('Change', select([['fade', 'Fade'], ['cut', 'Cut']], it.fade ? 'fade' : 'cut', (v) => change(id, { fade: v === 'fade' }, true)))),
+        div('two',
+          field('At the end', select([['loop', 'Start again'], ['hold', 'Stay on the last'], ['hide', 'Hide']], it.end, (v) => change(id, { end: v }, true))),
+          field('Shows as', select([['full', 'Full screen'], ['box', 'A box']], it.shows, (v) => change(id, { shows: v }, true))))
+      )
+    }
+    if (it.kind === 'window') {
+      const sel = document.createElement('select')
+      const refresh = document.createElement('button')
+      refresh.textContent = 'Refresh'
+      const fill = async () => {
+        sel.textContent = ''
+        const list = desk ? await desk.listWindows() : []
+        const none = document.createElement('option')
+        none.value = ''
+        none.textContent = list.length ? 'Pick a window…' : desk ? 'No windows found' : 'Only in the gfx app window'
+        sel.append(none)
+        let found = false
+        for (const w of list) {
+          const o = document.createElement('option')
+          o.value = w.id
+          o.textContent = w.name
+          if (w.id === it.sourceId) found = true
+          sel.append(o)
+        }
+        if (it.sourceId && !found) {
+          const o = document.createElement('option')
+          o.value = it.sourceId
+          o.textContent = `${it.windowName} (closed?)`
+          sel.append(o)
+        }
+        sel.value = it.sourceId || ''
+      }
+      sel.onchange = () => {
+        const name = sel.selectedOptions[0]?.textContent ?? ''
+        act({ action: 'update', id, item: { sourceId: sel.value, windowName: name, name: it.name === 'Window' ? name.slice(0, 80) : it.name } })
+      }
+      refresh.onclick = fill
+      fill()
+      box.append(
+        field('Window', div('file', sel, refresh)),
+        div('hint', 'Keep that app open on this laptop (not minimised). It is sent like a live camera, so it uses more network and arrives a fraction of a second late. A network cable helps.'),
+        field('Shows as', select([['full', 'Full screen'], ['box', 'A box over the cameras (bottom right)']], it.shows, (v) => change(id, { shows: v }, true)))
+      )
+    }
+    const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
+    box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
+    if (it.kind === 'lowerthird') box.append(lookSection())
+    if (it.kind === 'video') box.append(div('hint', 'Sound from videos isn’t sent to the stream yet: it’s the next step.'))
+  }
+
+  function refreshValues(box) {
+    const it = byId(S.previewId)
+    for (const i of box.querySelectorAll('[data-k]')) {
+      if (document.activeElement === i) continue
+      i.value = i.dataset.k in (it ?? {}) ? it[i.dataset.k] : i.value
+    }
+    for (const i of box.querySelectorAll('[data-look]')) if (document.activeElement !== i) i.value = S.look[i.dataset.look]
+    for (const b of box.querySelectorAll('[data-style]')) b.setAttribute('aria-checked', String(b.dataset.style === S.look.style))
+    for (const v of box.querySelectorAll('[data-lookv]')) v.textContent = lookValue(v.dataset.lookv)
+    const custom = box.querySelector('#customRow')
+    if (custom) custom.hidden = S.look.font !== 'custom'
+    const boxRow = box.querySelector('#boxRow')
+    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+  }
+
+  const lookValue = (k) => (k === 'length' ? (S.look.length > 0 ? `${S.look.length}% of the width` : 'Fits the words') : `${S.look[k]} px`)
+
+  function lookSection() {
+    const sec = div('sep', h2('Look of every lower third'))
+    const styles = div('styles')
+    styles.setAttribute('role', 'radiogroup')
+    styles.setAttribute('aria-label', 'Style')
+    const thumbs = {
+      classic: ['Classic', '#2b3038', '<span style="left:5px;bottom:7px;width:30px;height:7px;background:#f2f2f2"></span><span style="left:5px;bottom:3px;width:36px;height:4px;background:#2563d9"></span>'],
+      block: ['Bold block', '#33291f', '<span style="left:5px;bottom:4px;width:38px;height:12px;background:#0c0e12;border-left:3px solid #2563d9"></span>'],
+      minimal: ['Minimal', '#24302e', '<span style="left:5px;bottom:10px;width:30px;height:5px;background:#fff"></span><span style="left:5px;bottom:6px;width:12px;height:2px;background:#2563d9"></span>'],
+      news: ['News strip', '#2a2a38', '<span style="left:0;right:0;bottom:4px;height:8px;background:#f5f6f8;border-left:9px solid #2563d9"></span>']
+    }
+    for (const [k, [label, bg, inner]] of Object.entries(thumbs)) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.setAttribute('role', 'radio')
+      b.dataset.style = k
+      b.setAttribute('aria-checked', String(S.look.style === k))
+      b.innerHTML = `<span class="st" style="background:${bg}">${inner}</span>`
+      b.append(label)
+      b.onclick = () => changeLook({ style: k, ...STYLE_COLORS[k] }, true)
+      styles.append(b)
+    }
+    sec.append(styles)
+    const lookSelect = (k, options) => {
+      const s = select(options, S.look[k], (v) => changeLook({ [k]: k === 'stayFor' ? Number(v) : v }, true))
+      s.dataset.look = k
+      return s
+    }
+    const slider = (k, label, min, max) => {
+      const l = document.createElement('label')
+      const row = div('row', label)
+      const v = document.createElement('span')
+      v.className = 'v'
+      v.dataset.lookv = k
+      v.textContent = lookValue(k)
+      row.append(v)
+      const i = input(S.look[k], (x) => changeLook({ [k]: Number(x.value) }), { type: 'range', min, max })
+      i.dataset.look = k
+      l.append(row, i)
+      return l
+    }
+    const color = (k, label) => {
+      const i = input(S.look[k], (x) => changeLook({ [k]: x.value }), { type: 'color' })
+      i.dataset.look = k
+      const f = field(label, i)
+      if (k === 'box') f.id = 'boxRow'
+      return f
+    }
+    const custom = input(S.look.customFont, (x) => changeLook({ customFont: x.value }), { maxLength: 60, placeholder: 'e.g. Arial Black' })
+    custom.dataset.look = 'customFont'
+    const customRow = field('Font name (as installed on the streaming PC)', custom)
+    customRow.id = 'customRow'
+    customRow.hidden = S.look.font !== 'custom'
+    sec.append(
+      div('two',
+        field('Font', lookSelect('font', [['Inter', 'Inter'], ['Space Grotesk', 'Space Grotesk'], ['Montserrat', 'Montserrat'], ['Roboto Slab', 'Roboto Slab'], ['custom', 'A font on the streaming PC…']])),
+        field('Position', lookSelect('position', [['left', 'Bottom left'], ['center', 'Bottom centre'], ['right', 'Bottom right']]))),
+      customRow,
+      slider('nameSize', 'Name size', 20, 120),
+      slider('titleSize', 'Title size', 12, 80),
+      slider('length', 'Length', 0, 100),
+      div('three', color('accent', 'Accent'), color('box', 'Box'), color('text', 'Text')),
+      div('two',
+        field('Stays on for', lookSelect('stayFor', [['0', 'Until Hide'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds']])),
+        field('Animation', lookSelect('animation', [['slide', 'Slide in'], ['fade', 'Fade'], ['wipe', 'Wipe']])))
+    )
+    const boxRow = sec.querySelector('#boxRow')
+    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+    return sec
+  }
+
+  // ---------- Sending a window (WebRTC), when a graphics page asks ----------
+  /** The windows being captured now: item id -> { sourceId, promise of its stream }. */
+  const captures = new Map()
+  let captureQueue = Promise.resolve()
+  async function windowStream(item) {
+    const have = captures.get(item.id)
+    if (have && have.sourceId === item.sourceId) {
+      const s = await have.promise.catch(() => null)
+      if (s && s.getVideoTracks()[0]?.readyState === 'live') return s
+    }
+    if (have) (await have.promise.catch(() => null))?.getTracks().forEach((t) => t.stop())
+    if (!desk) throw new Error('only the gfx app window can send a window')
+    if (!item.sourceId) throw new Error('no window picked yet')
+    // One at a time: the gfx app gets the window ready, then the page asks for it.
+    const promise = captureQueue.then(async () => {
+      const sourceId = await desk.findWindow(item.sourceId, item.windowName)
+      if (!sourceId) throw new Error(`${item.windowName || 'the window'} is closed`)
+      return navigator.mediaDevices.getDisplayMedia({ audio: false, video: { width: { max: 1920 }, height: { max: 1080 }, frameRate: { max: 30 } } })
+    })
+    captureQueue = promise.catch(() => {})
+    captures.set(item.id, { sourceId: item.sourceId, promise })
+    try {
+      return await promise
+    } catch (e) {
+      captures.delete(item.id)
+      throw e
+    }
+  }
+  async function answerOffer(msg) {
+    const reply = (body) => fetch('/api/rtc/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: msg.id, ...body }) })
+    try {
+      const it = byId(msg.itemId)
+      if (!it || it.kind !== 'window') throw new Error('not a window item')
+      const stream = await windowStream(it)
+      const pc = new RTCPeerConnection()
+      for (const t of stream.getVideoTracks()) {
+        const sender = pc.addTrack(t, stream)
+        // A sharp picture for text (slides, documents): keep the resolution, drop frames if the network is short.
+        const p = sender.getParameters()
+        p.degradationPreference = 'maintain-resolution'
+        p.encodings = [{ ...(p.encodings?.[0] ?? {}), maxBitrate: 8_000_000 }]
+        sender.setParameters(p).catch(() => {})
+      }
+      pc.onconnectionstatechange = () => ['failed', 'closed', 'disconnected'].includes(pc.connectionState) && setTimeout(() => pc.close(), 5000)
+      await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp })
+      await pc.setLocalDescription(await pc.createAnswer())
+      await new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') return resolve()
+        pc.addEventListener('icegatheringstatechange', () => pc.iceGatheringState === 'complete' && resolve())
+        setTimeout(resolve, 2000)
+      })
+      reply({ sdp: pc.localDescription.sdp })
+    } catch (e) {
+      reply({ error: e.message })
+    }
+  }
+  // Stop capturing windows nothing shows any more.
+  function dropCaptures() {
+    const used = new Set([S.previewId, S.onAir?.id].filter(Boolean))
+    for (const [id, c] of captures) {
+      if (used.has(id)) continue
+      c.promise.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => {})
+      captures.delete(id)
+    }
+  }
+
+  // ---------- State from the gfx app's server ----------
+  const events = new EventSource('/events?role=operator')
+  events.onmessage = (e) => {
+    const msg = JSON.parse(e.data)
+    if (msg.type === 'rtc-offer') return answerOffer(msg)
+    if (msg.type !== 'state') return
+    S = msg
+    renderItems()
+    renderMain()
+    renderSettings()
+    dropCaptures()
+    fit()
+  }
+</script>
+</body>
+</html>

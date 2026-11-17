@@ -29,6 +29,8 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// Graphics pages that receive a window from the gfx app (WebRTC): use real network addresses, not hidden ".local" names some networks can't find.
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
 
 const PORT = Number(process.env.STREAMING_CONTROL_PORT) || 7420
 const ROOT = join(__dirname, '..')
