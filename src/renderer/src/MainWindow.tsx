@@ -837,6 +837,8 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
   // Sound follows the scene: the one picked (in Preview), and only its channels, unless "Show all".
   const [showAll, setShowAll] = useState(false)
   const focus = state.scenes.find((s) => s.id === state.previewSceneId && !isOverlay(s))
+  // Another scene picked: show its sound (not every channel, which hides the scene's own picker).
+  useEffect(() => setShowAll(false), [focus?.id])
   const heard = focus ? state.audio.filter((a) => audible(a, new Set([focus.id]))) : state.audio
   const shown = showAll || !focus ? state.audio : focus.commercial ? [] : heard
   return (
@@ -865,11 +867,15 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
         {shown.map((a) => (
           <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} inScene={focus && !showAll ? focus : undefined} />
         ))}
-        {(showAll || focus?.commercial) && <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />}
+        {!showAll && focus && !focus.commercial && shown.length === 0 && (
+          <p className="muted small sound-none">No sound in {focus.name}. Pick one above, or + Add a channel.</p>
+        )}
+        {showAll && shown.length === 0 && <p className="muted small sound-none">No sound channels yet. + Add one, or pick a scene’s sound.</p>}
+        {focus?.commercial && <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />}
       </div>
       {focus && (
         <button className="ghost small sound-all" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
-          {showAll ? `Only ${focus.name}’s sound` : `Show all sound channels (${state.audio.length})`}
+          {showAll ? `Back to ${focus.name}’s sound` : `Show all sound channels (${state.audio.length})`}
         </button>
       )}
       {edited && <AudioEditor key={edited.id} state={state} run={run} source={edited} onDone={() => setEditing(null)} />}
