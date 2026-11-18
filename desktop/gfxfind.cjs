@@ -128,6 +128,11 @@ function setupFind(ipcMain, fromMain) {
     if (running === ctl) running = null
     return found
   })
+  // The gfx app on this PC (one operator, two monitors): start it, or bring its window forward when it already runs.
+  ipcMain.handle('gfx:open-app', (e) => {
+    if (!fromMain(e)) return { ok: false }
+    return openGfxApp()
+  })
   ipcMain.on('gfx:find-stop', (e) => {
     if (!fromMain(e)) return
     running?.abort()
@@ -135,4 +140,30 @@ function setupFind(ipcMain, fromMain) {
   })
 }
 
-module.exports = { setupFind, find, test, localNets }
+/**
+ * Start the gfx app on this PC with the same Electron as the streaming app. It is a
+ * program of its own (it keeps running when the streaming app closes); started again,
+ * it just brings its window forward (single instance).
+ */
+function openGfxApp() {
+  const { app } = require('electron')
+  const { spawn } = require('node:child_process')
+  const { existsSync } = require('node:fs')
+  const path = require('node:path')
+  const main = path.join(__dirname, '..', 'gfx-app', 'main.cjs')
+  if (app.isPackaged || !existsSync(main)) return { ok: false, why: 'The gfx-app folder isn’t next to this app. Start it with “Start Gfx App.bat”.' }
+  try {
+    const env = { ...process.env }
+    delete env.ELECTRON_RUN_AS_NODE
+    // Started the same way as this app (e.g. --no-sandbox where that is needed).
+    const flags = process.argv.filter((a) => a === '--no-sandbox')
+    const child = spawn(process.execPath, [...flags, main], { cwd: path.join(__dirname, '..'), detached: true, stdio: 'ignore', env })
+    child.on('error', () => {})
+    child.unref()
+    return { ok: true, url: 'http://127.0.0.1:8765/live' }
+  } catch (err) {
+    return { ok: false, why: String(err?.message || err) }
+  }
+}
+
+module.exports = { setupFind, find, test, localNets, openGfxApp }

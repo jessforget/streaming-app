@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, linkedNames, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Layer, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
-import { AddAudioForm, AudioEditor, KIND_LABEL, SceneTools, SourceList } from './Editors'
+import { AddAudioForm, AddSourceForm, AudioEditor, KIND_LABEL, SceneTools, SourceList } from './Editors'
+import { canOpenGfxApp, openGfxAppHere } from './GraphicsParts'
 import { InstallButton } from './install'
 import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
@@ -541,11 +542,8 @@ function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: Re
     }
     g.classList.toggle('gfx-dragging', !!dragged)
   })
-  const addGraphics = () => {
-    const panel = document.querySelector<HTMLElement>('.overlay-panel')
-    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    panel?.querySelector<HTMLButtonElement>('.panel-head button')?.click()
-  }
+  // "+ Add overlay": the add form right here, under the cards; the new one appears as a card.
+  const [adding, setAdding] = useState(false)
   const dragged = drag ? layers.find((l) => l.id === drag.id) : undefined
   return (
     <section className="gfx-row" aria-label="Overlays">
@@ -574,16 +572,45 @@ function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: Re
             }}
           />
         ))}
-        <button className="gfx-add" onClick={addGraphics} title="Add an overlay: graphics, an image, a window, text… (opens the Overlay panel)">
-          + Add overlay
+        <button className="gfx-add" onClick={() => setAdding(!adding)} aria-expanded={adding} title="Add an overlay: graphics, an image, a window, text…">
+          {adding ? 'Close' : '+ Add overlay'}
         </button>
+        {canOpenGfxApp() && <OpenGfxButton />}
       </div>
+      {adding && (
+        <div className="gfx-add-form panel">
+          <AddSourceForm state={state} run={run} scene={overlay ?? { id: OVERLAY_ID, name: 'Overlay', layers: [] }} onDone={() => setAdding(false)} />
+        </div>
+      )}
       {dragged && drag && (
         <div className="gfx-card floating" style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w }} aria-hidden="true">
           <GfxCardBody layer={dragged} state={state} />
         </div>
       )}
     </section>
+  )
+}
+
+/** Start the gfx app on this PC (or bring its window forward): one operator, two monitors. */
+function OpenGfxButton() {
+  const [state, setState] = useState<{ busy: boolean; note?: string }>({ busy: false })
+  return (
+    <span className="gfx-open">
+      <button
+        className="gfx-add"
+        disabled={state.busy}
+        title="Start the gfx app on this PC (it opens on the second monitor), or bring its window forward. It can also be started on its own."
+        onClick={async () => {
+          setState({ busy: true })
+          const r = await openGfxAppHere()
+          setState({ busy: false, note: r.ok ? 'Gfx app is open' : r.why })
+          window.setTimeout(() => setState((s) => (s.busy ? s : { busy: false })), 6000)
+        }}
+      >
+        {state.busy ? 'Opening…' : '▶ Open gfx app'}
+      </button>
+      {state.note && <span className="muted small gfx-open-note">{state.note}</span>}
+    </span>
   )
 }
 

@@ -536,7 +536,7 @@ function kindFields(kind: LayerKind, v: Fields) {
   }
 }
 
-function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
+export function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
   const [kind, setKind] = useState<LayerKind>('video')
   const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
   const pick = (k: LayerKind) => {
