@@ -131,6 +131,15 @@ export class Controller extends Emitter<Events> {
       case 'state.get':
         return this.s
 
+      case 'phone.facing': {
+        const device = str(P, 'device')
+        const facing = P.facing
+        if (facing !== 'user' && facing !== 'environment') throw new CommandError('facing must be "user" (front) or "environment" (back)')
+        if (!device.startsWith('phone:') || !this.s.inputs.video.some((d) => d.id === device)) throw new CommandError('That phone camera is not connected')
+        const flips = (this.s.phoneFlips ??= {})
+        flips[device] = { facing, seq: (flips[device]?.seq ?? 0) + 1 }
+        return this.changed()
+      }
       case 'scene.preview': {
         const scene = this.showScene(str(P, 'sceneId'))
         this.s.previewSceneId = scene.id
@@ -562,6 +571,7 @@ export class Controller extends Emitter<Events> {
             if (typeof d.group === 'string') out.group = d.group.slice(0, 256)
             if (Number.isInteger(d.channels) && d.channels >= 1 && d.channels <= 64) out.channels = d.channels
             if (Array.isArray(d.channelNames)) out.channelNames = d.channelNames.slice(0, 64).map((n: unknown) => String(n).slice(0, 60))
+            if (d.facing === 'user' || d.facing === 'environment') out.facing = d.facing
             return out
           })
         }

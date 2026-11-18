@@ -4,7 +4,7 @@ import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, P
 import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, isOverlay, scenesOnAir, showScenes } from '../../shared/state'
 import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
 import { GraphicsAddress, GraphicsCheck, GraphicsDetail } from './GraphicsParts'
-import { deviceName } from './parts'
+import { PhoneFacingSwitch, deviceName } from './parts'
 import type { Run } from './useApp'
 
 export const KIND_LABEL: Record<LayerKind, string> = {
@@ -171,6 +171,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
               </label>
               <span className="layer-name">{l.name}</span>
               <LayerDetail state={state} layer={l} />
+              {l.kind === 'video' && <PhoneFacingSwitch state={state} run={run} device={l.device} />}
               <span className="layer-tools">
                 <button
                   className="ghost icon"

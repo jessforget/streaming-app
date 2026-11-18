@@ -184,6 +184,7 @@ export class Studio {
     this.mixer.graphicsVideo = (l) => (this.state ? this.compositor.graphics.videoFor(l, this.state) : null)
     this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
+    this.phones.onFacing(() => void this.reportDevices())
     this.phones.subscribe(() => {
       this.compositor.refreshPhones()
       this.mixer.refreshPhones()
@@ -238,8 +239,18 @@ export class Studio {
   }
 
   /** Called by the screen on every state change. */
+  /** Phone flips already passed on (by device: the last ask's number). */
+  private flipsSent = new Map<string, number>()
+
   update(state: AppState) {
     if (this.state && this.state.programSceneId !== state.programSceneId) this.liveBefore = this.state.programSceneId
+    // The app or the remote asked a phone to switch to its other camera: tell the phone.
+    for (const [device, f] of Object.entries(state.phoneFlips ?? {})) {
+      if (this.flipsSent.get(device) === f.seq) continue
+      this.flipsSent.set(device, f.seq)
+      if (!this.state) continue // asked before this window opened: already done (or out of date)
+      if (!this.phones.flip(device, f.facing)) this.notice('That phone can’t be flipped from here yet. Reload the camera page on the phone (it needs the new page), or flip it on the phone.')
+    }
     this.state = state
     const preset = presetFor(state.stream.quality, state.stream.family)
     if (!state.stream.live && !state.recording.active) this.compositor.setSize(preset.width, preset.height)

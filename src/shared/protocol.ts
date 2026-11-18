@@ -34,6 +34,8 @@ export type DataValue = string | number | boolean | null
 export interface CommandMap {
   'state.get': Record<string, never>
   'scene.preview': { sceneId: string }
+  /** Switch a phone camera to its front ('user') or back ('environment') camera. */
+  'phone.facing': { device: string; facing: 'user' | 'environment' }
   'scene.program': { sceneId: string }
   'scene.goLive': Record<string, never>
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
@@ -183,6 +185,7 @@ type Permission = 'read' | 'operate' | 'data' | 'admin'
 export const ACTION_PERMISSION: Record<Action, Permission> = {
   'state.get': 'read',
   'scene.preview': 'operate',
+  'phone.facing': 'operate',
   'scene.program': 'operate',
   'scene.goLive': 'operate',
   'transition.set': 'operate',

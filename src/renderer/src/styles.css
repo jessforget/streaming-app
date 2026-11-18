@@ -619,3 +619,13 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 /* "Plays in: Every scene" with its "Only in <scene>" button */
 .strip-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .strip-where button { min-height: 28px; padding: 0 8px; }
+
+/* A phone camera's Front / Back switch (Sources list and tablet remote) */
+.phone-facing { display: inline-flex; gap: 0; flex: none; }
+.phone-facing button { min-height: 28px; padding: 0 10px; border-radius: 0; }
+.phone-facing button:first-child { border-radius: 6px 0 0 6px; }
+.phone-facing button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.phone-facing button.on { background: var(--accent, #4c8dff); color: #0b1a33; border-color: transparent; opacity: 1; }
+.phone-facing.big button { min-height: 48px; padding: 0 22px; font-size: 16px; }
+.remote-phone { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.layer-row .phone-facing { grid-column: 2 / -1; grid-row: 3; justify-self: start; margin-top: 4px; }

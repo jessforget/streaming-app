@@ -29,6 +29,9 @@ export const PHONE_PAGE = `<!doctype html>
   .badge { position:absolute; top:10px; left:10px; padding:4px 10px; border-radius:999px; font-size:13px; font-weight:600; background:#000a; color:var(--muted); }
   .badge.on { background:var(--live); color:#fff; }
   .badge.wait { background:var(--warn); color:#111; }
+  /* Flip between the front and back camera, on the picture itself (big enough for a thumb). */
+  .flipcam { position:absolute; top:8px; right:8px; width:auto; min-height:48px; padding:0 16px; border-radius:999px; font-size:15px; font-weight:600; background:#000b; color:#fff; border:1px solid #fff5; display:none; }
+  .flipcam:disabled { opacity:0.6; }
   label { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted); }
   input, select { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; width:100%; }
   .row { display:flex; gap:10px; }
@@ -61,6 +64,7 @@ export const PHONE_PAGE = `<!doctype html>
     <video id="video" playsinline muted autoplay></video>
     <canvas id="out" width="1280" height="720"></canvas>
     <span id="badge" class="badge">Not started</span>
+    <button id="flipCam" class="flipcam" type="button" aria-label="Switch between the front and back camera">⟲ Front</button>
   </div>
   <div class="controls">
   <div class="status" id="status">Name this camera, then press Start.</div>
@@ -83,6 +87,7 @@ export const PHONE_PAGE = `<!doctype html>
   </div>
   <label class="check"><input type="checkbox" id="mic" checked> Send the phone's microphone too</label>
   <label class="check"><input type="checkbox" id="flip"> Picture upside down? Turn it over</label>
+  <label class="check"><input type="checkbox" id="mirror"> Mirror the front camera (like a selfie; text reads backwards on the stream)</label>
   <button id="start">Start camera</button>
   <button id="land" class="secondary">Full screen, sideways</button>
   <button id="install" class="secondary" style="display:none">Install as an app</button>
@@ -127,9 +132,11 @@ export const PHONE_PAGE = `<!doctype html>
   $('facing').value = store.get('cam-facing') || 'environment';
   $('flip').checked = store.get('cam-flip') === '1';
   $('flip').addEventListener('change', function () { store.set('cam-flip', $('flip').checked ? '1' : '0'); });
+  $('mirror').checked = store.get('cam-mirror') === '1';
+  $('mirror').addEventListener('change', function () { store.set('cam-mirror', $('mirror').checked ? '1' : '0'); });
   $('quality').value = store.get('cam-quality') || '720';
 
-  var stream = null, pc = null, running = false, retryTimer = null, wakeLock = null, attempt = 0;
+  var stream = null, pc = null, ctl = null, running = false, retryTimer = null, wakeLock = null, attempt = 0, switching = false;
 
   function status(text, bad) { $('status').textContent = text; $('status').className = 'status' + (bad ? ' bad' : ''); }
   function badge(text, cls) { $('badge').textContent = text; $('badge').className = 'badge ' + (cls || ''); }
@@ -216,6 +223,7 @@ export const PHONE_PAGE = `<!doctype html>
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.save();
       ctx.translate(c.width / 2, c.height / 2);
+      if ($('mirror').checked && $('facing').value === 'user') ctx.scale(-1, 1);
       ctx.rotate((turn + ($('flip').checked ? 180 : 0)) * Math.PI / 180);
       ctx.drawImage(v, -vw * k / 2, -vh * k / 2, vw * k, vh * k);
       ctx.restore();
@@ -249,6 +257,61 @@ export const PHONE_PAGE = `<!doctype html>
     if (stream && stream.camera) stream.camera.getTracks().forEach(function (t) { t.stop(); });
     if (stream) stream.getAudioTracks().forEach(function (t) { t.stop(); });
   }
+
+  // ---- Front / back camera, while live ----
+  // Only the camera changes: the page keeps sending the same picture (its canvas), so the app's
+  // connection stays up. The stream holds the last frame for a moment while the other camera opens.
+  function flipLabel() {
+    $('flipCam').textContent = $('facing').value === 'user' ? '⟲ Back camera' : '⟲ Front camera';
+    $('flipCam').style.display = running ? 'block' : 'none';
+  }
+  function tellApp() {
+    if (ctl && ctl.readyState === 'open') { try { ctl.send(JSON.stringify({ facing: $('facing').value })); } catch (e) {} }
+  }
+  var facingNow = $('facing').value; // the camera in use (the select can be ahead of it while switching)
+  function switchCamera(facing, from) {
+    var was = from || facingNow;
+    if (switching) { $('facing').value = was; return Promise.resolve(); }
+    $('facing').value = facing;
+    store.set('cam-facing', facing);
+    flipLabel();
+    if (!running || !stream || !stream.camera) { facingNow = facing; tellApp(); return Promise.resolve(); }
+    switching = true;
+    $('flipCam').disabled = true;
+    var cam = stream.camera;
+    // Most phones can't open both cameras at once: let go of this one first.
+    cam.getVideoTracks().forEach(function (t) { t.stop(); });
+    var video = constraints().video;
+    return navigator.mediaDevices.getUserMedia({ video: video, audio: false }).catch(function () {
+      // Some phones only answer a plain ask for the other camera.
+      return navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+    }).then(function (s) {
+      var next = new MediaStream(s.getVideoTracks().concat(cam.getAudioTracks()));
+      stream.camera = next;
+      $('video').srcObject = next;
+      $('video').play().catch(function () {});
+      drawLoop();
+    }).catch(function (e) {
+      // Back to the camera it had.
+      $('facing').value = was;
+      store.set('cam-facing', was);
+      status('Could not switch the camera: ' + (e && e.message ? e.message : e), true);
+      return navigator.mediaDevices.getUserMedia({ video: constraints().video, audio: false }).then(function (s) {
+        var back = new MediaStream(s.getVideoTracks().concat(cam.getAudioTracks()));
+        stream.camera = back;
+        $('video').srcObject = back;
+        $('video').play().catch(function () {});
+        drawLoop();
+      }).catch(function () {});
+    }).then(function () {
+      facingNow = $('facing').value;
+      switching = false;
+      $('flipCam').disabled = false;
+      flipLabel();
+      tellApp();
+    });
+  }
+  $('flipCam').addEventListener('click', function () { switchCamera($('facing').value === 'user' ? 'environment' : 'user'); });
 
   function waitForIce(peer) {
     return new Promise(function (resolve) {
@@ -285,6 +348,7 @@ export const PHONE_PAGE = `<!doctype html>
   function closePeer() {
     if (pc) { try { pc.close(); } catch (e) {} }
     pc = null;
+    ctl = null;
   }
 
   function connectSoon(ms) {
@@ -301,6 +365,16 @@ export const PHONE_PAGE = `<!doctype html>
       var tr = peer.addTransceiver(t, { direction: 'sendonly', streams: [stream] });
       if (t.kind === 'video') preferH264(tr);
     });
+    // A small message link: the app can flip this phone's camera, and sees which one it's on.
+    var ch = peer.createDataChannel('control');
+    ctl = ch;
+    ch.onopen = function () { if (ctl === ch) tellApp(); };
+    ch.onmessage = function (m) {
+      if (ctl !== ch) return;
+      var msg = null;
+      try { msg = JSON.parse(m.data); } catch (e) { return; }
+      if (msg && (msg.facing === 'user' || msg.facing === 'environment') && msg.facing !== $('facing').value) switchCamera(msg.facing);
+    };
     peer.onconnectionstatechange = function () {
       if (pc !== peer) return;
       var s = peer.connectionState;
@@ -344,6 +418,7 @@ export const PHONE_PAGE = `<!doctype html>
       $('start').disabled = false;
       $('start').textContent = 'Stop camera';
       $('start').className = 'stop';
+      flipLabel();
       connect();
     }).catch(function (e) {
       $('start').disabled = false;
@@ -369,6 +444,7 @@ export const PHONE_PAGE = `<!doctype html>
     if (wakeLock) { wakeLock.release().catch(function () {}); wakeLock = null; }
     $('start').textContent = 'Start camera';
     $('start').className = '';
+    flipLabel();
     badge('Not started');
     status('Stopped. The camera left the app\\'s device list.');
   }
@@ -406,7 +482,9 @@ export const PHONE_PAGE = `<!doctype html>
   });
 
   // Changing the camera, quality or microphone while running: open it again and reconnect.
-  ['facing', 'quality', 'mic'].forEach(function (k) {
+  // The camera (front / back) switches without reconnecting, like the Flip button.
+  $('facing').addEventListener('change', function () { switchCamera($('facing').value, facingNow); });
+  ['quality', 'mic'].forEach(function (k) {
     $(k).addEventListener('change', function () {
       store.set('cam-facing', $('facing').value);
       store.set('cam-quality', $('quality').value);

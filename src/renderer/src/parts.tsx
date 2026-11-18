@@ -1,6 +1,7 @@
 /** Pieces shared by the main window and the tablet remote. */
 import type { AppState, HealthStats, Scene } from '../../shared/state'
 import { renderTemplate } from '../../shared/template'
+import type { Run } from './useApp'
 
 export function HealthPill({ stats }: { stats: HealthStats | null }) {
   const h = stats?.health ?? 'idle'
@@ -49,5 +50,36 @@ export function Notice({ text, onClose }: { text: string | null; onClose: () => 
         ✕
       </button>
     </div>
+  )
+}
+
+/**
+ * A phone camera's Front / Back switch (the phone flips without dropping off the stream).
+ * Shows nothing for other devices, or while the phone isn't connected.
+ */
+export function PhoneFacingSwitch({ state, run, device, big }: { state: AppState; run: Run; device: string | undefined; big?: boolean }) {
+  if (!device?.startsWith('phone:')) return null
+  const d = state.inputs.video.find((x) => x.id === device)
+  if (!d) return null
+  const want = state.phoneFlips?.[device]?.facing
+  // Until the phone says, it may be an older camera page that can't be flipped from here.
+  const now = d.facing
+  const pick = (facing: 'user' | 'environment') => run('phone.facing', { device, facing })
+  return (
+    <span className={`phone-facing ${big ? 'big' : ''}`} role="group" aria-label={`${d.name}: front or back camera`} title={now ? undefined : 'Reload the camera page on the phone to flip it from here'}>
+      {(['user', 'environment'] as const).map((f) => (
+        <button
+          key={f}
+          type="button"
+          className={`small ${now === f ? 'on' : ''}`}
+          aria-pressed={now === f}
+          disabled={!now || now === f}
+          onClick={() => void pick(f)}
+        >
+          {f === 'user' ? 'Front' : 'Back'}
+          {want === f && now !== f ? '…' : ''}
+        </button>
+      ))}
+    </span>
   )
 }

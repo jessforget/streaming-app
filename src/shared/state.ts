@@ -210,6 +210,8 @@ export interface InputDevice {
   channels?: number
   /** Audio devices: each input channel's name from the driver ("Ch 1", "Analogue 3"), when it gives them. */
   channelNames?: string[]
+  /** Phone cameras: which camera the phone is sending now (front = 'user', back = 'environment'). */
+  facing?: PhoneFacing
 }
 
 /**
@@ -370,4 +372,9 @@ export interface AppState {
   data: Record<string, DataField>
   devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[] }
   stats: HealthStats
+  /** Asked from the app or the remote: switch a phone to its front or back camera (by device id; seq tells a new ask). Not saved. */
+  phoneFlips?: Record<string, { facing: PhoneFacing; seq: number }>
 }
+
+/** A phone's camera: front ('user', the selfie one) or back ('environment'). */
+export type PhoneFacing = 'user' | 'environment'

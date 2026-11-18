@@ -4,7 +4,7 @@
  * with the other devices as "phone:<id>" (video, and its microphone as audio),
  * so it can be used in a scene like any webcam.
  */
-import type { InputDevice } from '../../../shared/state'
+import type { InputDevice, PhoneFacing } from '../../../shared/state'
 
 export const PHONE_PREFIX = 'phone:'
 
@@ -16,11 +16,21 @@ interface Phone {
   /** Chrome only lets remote sound into the mixer while a media element plays it too. */
   sink: HTMLAudioElement
   connected: boolean
+  /** A small message link to the phone page (its camera flip), once the phone opens it. */
+  ctl: RTCDataChannel | null
+  /** Which camera the phone says it is sending. */
+  facing?: PhoneFacing
 }
 
 export class PhoneCams {
   private phones = new Map<string, Phone>()
   private listeners = new Set<() => void>()
+  private facingListeners = new Set<() => void>()
+  /** A phone switched between its front and back camera. */
+  onFacing(fn: () => void) {
+    this.facingListeners.add(fn)
+    return () => this.facingListeners.delete(fn)
+  }
 
   /** Answer one phone's offer; the video arrives a moment later. */
   async answer(offer: { id: string; name: string; sdp: string }): Promise<string> {
@@ -34,13 +44,30 @@ export class PhoneCams {
     const stream = new MediaStream()
     const sink = new Audio()
     sink.muted = true
-    const phone: Phone = { id: offer.id, name: offer.name, pc, stream, sink, connected: false }
+    const phone: Phone = { id: offer.id, name: offer.name, pc, stream, sink, connected: false, ctl: null }
     this.phones.set(offer.id, phone)
     pc.ontrack = (e) => {
       if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track)
       if (e.track.kind === 'audio') {
         sink.srcObject = stream
         void sink.play().catch(() => {})
+      }
+    }
+    pc.ondatachannel = (e) => {
+      if (e.channel.label !== 'control') return
+      phone.ctl = e.channel
+      e.channel.onmessage = (m) => {
+        if (this.phones.get(offer.id) !== phone || typeof m.data !== 'string' || m.data.length > 1000) return
+        try {
+          const msg = JSON.parse(m.data)
+          if ((msg.facing === 'user' || msg.facing === 'environment') && msg.facing !== phone.facing) {
+            phone.facing = msg.facing
+            // Same picture track, other camera: only the device list changes (no reopening the video).
+            this.facingListeners.forEach((fn) => fn())
+          }
+        } catch {
+          // not ours
+        }
       }
     }
     pc.onconnectionstatechange = () => {
@@ -71,7 +98,7 @@ export class PhoneCams {
     for (const p of this.phones.values()) {
       if (!p.connected) continue
       const id = PHONE_PREFIX + p.id
-      if (p.stream.getVideoTracks().length) video.push({ id, name: `${p.name} (phone)`, group: id })
+      if (p.stream.getVideoTracks().length) video.push({ id, name: `${p.name} (phone)`, group: id, ...(p.facing ? { facing: p.facing } : {}) })
       if (p.stream.getAudioTracks().length) audio.push({ id, name: `${p.name} (phone mic)`, driver: 'wasapi', group: id, channels: 1 })
     }
     return { video, audio }
@@ -81,6 +108,14 @@ export class PhoneCams {
   stream(deviceId: string): MediaStream | null {
     const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
     return p?.connected ? p.stream : null
+  }
+
+  /** Ask a phone to switch to its front or back camera. False when it can't be told (an older phone page). */
+  flip(deviceId: string, facing: PhoneFacing): boolean {
+    const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
+    if (!p?.ctl || p.ctl.readyState !== 'open') return false
+    p.ctl.send(JSON.stringify({ facing }))
+    return true
   }
 
   subscribe(fn: () => void) {
