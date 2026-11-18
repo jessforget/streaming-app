@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { OVERLAY_ID, audible, isOverlay, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
@@ -422,6 +422,7 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
       </span>
       <SceneSounds scene={scene} state={state} studio={studio} />
       {studio && <MediaClock scene={scene} studio={studio} live={live} />}
+      {scene.commercial && !scene.layers.some((l) => l.kind === 'media') && <span className="media-clock empty">Nothing cued · cue videos from the gfx app</span>}
     </>
   )
 }
@@ -484,7 +485,24 @@ function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; liv
       <span className="media-clock-bar">
         <span style={{ width: `${total ? Math.min(100, (100 * done) / total) : 0}%` }} />
       </span>
+      {scene.commercial && (
+        <span className="media-clock-sound" title="The break’s sound on the stream (the Commercials channel in Sound)">
+          <SpeakerIcon />
+          <span className="hmeter">
+            <LiveMeter studio={studio} id={COMMERCIALS_CHANNEL} horizontal />
+          </span>
+        </span>
+      )}
     </span>
+  )
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    </svg>
   )
 }
 
@@ -799,9 +817,50 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
         {state.audio.map((a) => (
           <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} />
         ))}
+        <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />
       </div>
       {edited && <AudioEditor key={edited.id} state={state} run={run} source={edited} onDone={() => setEditing(null)} />}
     </section>
+  )
+}
+
+/**
+ * The Commercials channel: one fader for every video in a gfx commercial break,
+ * and what the mics do while a break is on air.
+ */
+function BreakStrip(props: { state: AppState; level: number; studio: Studio | null; run: Run }) {
+  const { state, level, studio, run } = props
+  const scene = state.scenes.find((s) => s.commercial)
+  if (!scene) return null
+  const bs = { ...BREAK_SOUND, ...scene.breakSound }
+  const media = scene.layers.filter((l) => l.kind === 'media')
+  const at = media.findIndex((l) => l.visible)
+  const onAir = state.programSceneId === scene.id && media.length > 0
+  const now = !media.length ? 'Nothing cued' : onAir ? `Now: ${media[Math.max(0, at)].name}${media.length > 1 ? ` (${at + 1} of ${media.length})` : ''}` : `${media.length} cued · plays with the Gfx commercial scene`
+  return (
+    <div className={`strip break-strip ${bs.muted ? 'muted' : ''} ${onAir ? '' : 'off-air'}`}>
+      <div className="strip-head">
+        <strong>Commercials</strong>
+        {onAir && <em className="tag live">ON AIR</em>}
+        <button className={`small mute ${bs.muted ? 'danger' : ''}`} aria-pressed={bs.muted} onClick={() => run('cue.sound', { muted: !bs.muted })}>
+          {bs.muted ? 'Muted' : 'Mute'}
+        </button>
+      </div>
+      <span className="small muted">{now} · one fader for every video in the break</span>
+      <div className="strip-level">
+        <div className="hmeter">{studio ? <LiveMeter studio={studio} id={COMMERCIALS_CHANNEL} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
+        <input type="range" min={0} max={100} value={Math.round(bs.volume * 100)} aria-label="Commercials volume" onChange={(e) => run('cue.sound', { volume: Number(e.target.value) / 100 })} />
+      </div>
+      <label className="break-mics small">
+        Mics during a break
+        <select value={bs.mics} onChange={(e) => run('cue.sound', { mics: e.target.value as typeof bs.mics })}>
+          <option value="off">Off</option>
+          <option value="duck">15 dB lower</option>
+          <option value="on">As they are</option>
+        </select>
+      </label>
+      {onAir && bs.mics !== 'on' && <span className="small warn-text">{bs.mics === 'off' ? 'Mics and live inputs are off for the break' : 'Mics and live inputs are 15 dB lower for the break'}</span>}
+    </div>
   )
 }
 

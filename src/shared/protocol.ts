@@ -79,6 +79,8 @@ export interface CommandMap {
   'cue.commercial': { name?: string; path?: string; items?: { name: string; path: string }[]; extend?: boolean }
   /** The break's video (layerId) ended: show the next one in the Gfx commercial scene. */
   'cue.next': { layerId: string }
+  /** The commercial break's sound: its level, mute, and what the mics do during a break. */
+  'cue.sound': { volume?: number; muted?: boolean; mics?: 'off' | 'duck' | 'on' }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -202,6 +204,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'cue.commercial': 'admin',
   'cue.clear': 'admin',
   'cue.next': 'admin',
+  'cue.sound': 'operate',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

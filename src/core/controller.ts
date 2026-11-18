@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -371,6 +371,22 @@ export class Controller extends Emitter<Events> {
         if (at < 0 || !media[at].visible || at === media.length - 1) return null
         for (const l of media) l.visible = l === media[at + 1]
         await this.engine.setScene(scene)
+        return this.changed()
+      }
+      case 'cue.sound': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) throw new CommandError('No commercial break yet: cue one from the gfx app first')
+        const bs = { ...BREAK_SOUND, ...scene.breakSound }
+        if (P.volume !== undefined) {
+          if (typeof P.volume !== 'number' || !Number.isFinite(P.volume)) throw new CommandError('volume must be a number')
+          bs.volume = Math.min(2, Math.max(0, P.volume))
+        }
+        if (P.muted !== undefined) bs.muted = bool(P, 'muted')
+        if (P.mics !== undefined) {
+          if (!['off', 'duck', 'on'].includes(P.mics as string)) throw new CommandError('mics must be off, duck or on')
+          bs.mics = P.mics as BreakSound['mics']
+        }
+        scene.breakSound = bs
         return this.changed()
       }
       case 'cue.clear': {

@@ -600,6 +600,8 @@ function startServer(opts = {}) {
             pos: Number(body.pos) || 0,
             dur: Number(body.dur) || 0,
             left: Number(body.left) || 0,
+            // The break's sound on the stream, 0 to 1 (the On air bar's meter).
+            level: Math.max(0, Math.min(1, Number(body.level) || 0)),
             error: body.error ? text(body.error, 200) : undefined,
             pending: latest ? false : cue.pending,
             liveTake: body.status === 'onair' ? (latest ? body.take : cue.liveTake ?? body.take) : cue.liveTake

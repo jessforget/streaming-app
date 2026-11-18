@@ -9,7 +9,7 @@
  * - sends the result to the app's server while streaming or recording.
  */
 import { QUALITY_PRESETS, cameraRate, presetFor } from '../../../shared/presets'
-import type { AppState } from '../../../shared/state'
+import { COMMERCIALS_CHANNEL, type AppState } from '../../../shared/state'
 import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
 import { listDevices, onDeviceChange } from './devices'
@@ -157,6 +157,12 @@ export class Studio {
       const to = live.commercial && preview && preview !== live.id && st.scenes.some((s) => s.id === preview) ? preview : this.liveBefore
       if (!to || to === st.programSceneId || !st.scenes.some((s) => s.id === to)) return
       void this.bridge.command('scene.program', { sceneId: to }).catch(() => {})
+      // A break that has played is over: empty the Gfx commercial scene (once the Transition is done),
+      // so it can't air the same videos again by mistake.
+      if (live.commercial) {
+        const wait = (st.transition.kind === 'fade' ? st.transition.durationMs : 0) + 600
+        window.setTimeout(() => void this.bridge.command('cue.clear', {}).catch(() => {}), wait)
+      }
     }
     this.mixer.graphicsVideo = (l) => (this.state ? this.compositor.graphics.videoFor(l, this.state) : null)
     this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
@@ -185,7 +191,8 @@ export class Studio {
       () => this.state,
       (c) => this.compositor.drawLive(c),
       (url) => this.compositor.mediaElement(url),
-      (m) => this.notice(m)
+      (m) => this.notice(m),
+      () => this.mixer.levels()[COMMERCIALS_CHANNEL] ?? 0
     )
     this.gfxLink.start()
     await this.reportDevices()

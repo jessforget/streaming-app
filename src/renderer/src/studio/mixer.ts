@@ -7,7 +7,7 @@
  * mic. The program mix goes into the stream and the recording.
  */
 import { TONE_GAIN, TONE_HZ } from '../../../shared/bars'
-import { audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, DUCK_GAIN, audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
 import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
 
@@ -37,6 +37,8 @@ export const GFX_SOUND_PREFIX = 'gfxsound-'
 const GFX_DEVICE = 'gfx:'
 /** The line-up tone of a Color bars source, keyed by layer id. */
 const TONE_PREFIX = 'bartone-'
+/** How many times (a second apart) to try a video's sound before saying it can't. */
+const RETRIES = 20
 const TONE_DEVICE = 'tone:'
 
 interface DeviceInput {
@@ -130,6 +132,11 @@ export class Mixer {
     const fadeS = state.transition.kind === 'fade' ? Math.max(0.03, state.transition.durationMs / 1000) : 0.03
 
     const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir), ...this.graphicsChannels(state, onAir), ...this.toneChannels(state, onAir)]
+    // A commercial break on Live: the mics and other live inputs go off (or 15 dB down), as set on the break.
+    const brk = state.scenes.find((s) => s.commercial)
+    const inBreak = !!brk && state.programSceneId === brk.id && brk.layers.some((l) => l.kind === 'media')
+    const mics = { ...BREAK_SOUND, ...brk?.breakSound }.mics
+    const micGain = !inBreak || mics === 'on' ? 1 : mics === 'duck' ? DUCK_GAIN : 0
     const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
     for (const { a, on } of channels) {
@@ -143,7 +150,10 @@ export class Mixer {
       const fresh = !chain
       if (!chain) chain = this.build(a, key, device)
       const t = this.ctx.currentTime
-      chain.gain.gain.setTargetAtTime(a.muted ? 0 : a.volume, t, 0.02)
+      const live = a.kind === 'device' || a.kind === 'video'
+      const level = a.muted ? 0 : a.volume * (live && state.audio.includes(a) ? micGain : 1)
+      // Mics follow the break with the Transition's fade; a fader move is quick.
+      chain.gain.gain.setTargetAtTime(level, t, live && sceneChanged ? fadeS / 3 : 0.02)
       chain.delay.delayTime.setTargetAtTime(Math.max(0, a.syncOffsetMs ?? 0) / 1000, t, 0.05)
       if (fresh || chain.open !== on || sceneChanged) {
         const opening = on && !chain.open
@@ -169,6 +179,18 @@ export class Mixer {
   private mediaChannels(state: AppState, onAir: Set<string>): { a: AudioSource; on: boolean }[] {
     const out: { a: AudioSource; on: boolean }[] = []
     for (const scene of state.scenes) {
+      if (scene.commercial) {
+        // A commercial break: one channel, playing the sound of the video showing now.
+        const media = scene.layers.filter((l) => l.kind === 'media' && l.url)
+        const now = media.find((l) => l.visible) ?? media[0]
+        if (!now || now.sound === false) continue
+        const bs = { ...BREAK_SOUND, ...scene.breakSound }
+        out.push({
+          a: { id: COMMERCIALS_CHANNEL, name: 'Commercials', kind: 'file', url: now.url, syncOffsetMs: 0, volume: bs.volume, muted: bs.muted, level: 0 },
+          on: onAir.has(scene.id)
+        })
+        continue
+      }
       for (const l of scene.layers) {
         if (l.kind !== 'media' || !l.sound || !l.url) continue
         out.push({
@@ -223,7 +245,7 @@ export class Mixer {
 
   /** A music file starts from the top when its scene goes on air, and pauses once it has faded out. */
   private playFile(device: string, a: AudioSource, on: boolean, restart: boolean, fadeS: number) {
-    if (a.id.startsWith(LAYER_PREFIX)) return // a video file plays with its picture
+    if (a.id.startsWith(LAYER_PREFIX) || a.id === COMMERCIALS_CHANNEL) return // a video file plays with its picture
     void this.devices.get(device)?.then((d) => {
       const el = d?.el
       if (!el) return
@@ -351,7 +373,7 @@ export class Mixer {
     const sourceId = rest.slice(0, rest.indexOf(':'))
     const url = rest.slice(rest.indexOf(':') + 1)
     let el: HTMLMediaElement | null
-    if (sourceId.startsWith(LAYER_PREFIX)) {
+    if (sourceId.startsWith(LAYER_PREFIX) || sourceId === COMMERCIALS_CHANNEL) {
       el = this.mediaElement(url)
       if (!el) return null
       el.muted = false
@@ -389,8 +411,24 @@ export class Mixer {
       this.problems.set(a.id, a.kind === 'video' ? 'No sound found for this video input' : a.kind === 'file' ? 'Pick a file' : 'Pick a device')
       return chain
     }
+    this.attach(a, chain, device, 0)
+    return chain
+  }
+
+  /** Open the channel's device and wire it in. A video's sound that isn't ready yet is tried again. */
+  private attach(a: AudioSource, chain: Chain, device: string, tries: number) {
     void this.openDevice(device).then((d) => {
       if (this.chains.get(a.id) !== chain) return
+      const merger = chain.merger
+      if (!d && device.startsWith('file:') && tries < RETRIES) {
+        // Don't keep the failure: the next try opens it afresh (the video may not be loaded yet).
+        this.devices.delete(device)
+        const what = (a.url ?? '').split(/[\\/]/).pop()
+        this.problems.set(a.id, `No sound yet from “${what}” · trying again…`)
+        window.setTimeout(() => this.chains.get(a.id) === chain && this.attach(a, chain, device, tries + 1), 1000)
+        return
+      }
+      this.problems.delete(a.id)
       if (!d) {
         this.problems.set(
           a.id,
@@ -399,7 +437,7 @@ export class Mixer {
             : device.startsWith(PHONE_PREFIX)
               ? 'Phone not connected'
               : device.startsWith('file:')
-                ? 'Could not play the file'
+                ? `Could not play “${(a.url ?? '').split(/[\\/]/).pop()}”`
                 : 'Could not open the device'
         )
         return
@@ -416,7 +454,6 @@ export class Mixer {
         }
       }
     })
-    return chain
   }
 
   private drop(id: string) {

@@ -123,6 +123,10 @@
   .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
   .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cue-sound { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .cue-sound[hidden] { display: none; }
+  .cue-meter { flex: 1; height: 8px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .cue-meter span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3fb37f 0%, #3fb37f 70%, #e2b93b 100%); transition: width 0.18s linear; }
   .cue-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--line); min-width: 60px; } .cue-prog span { display: block; height: 100%; border-radius: 2px; background: #ff5a5a; }
   .cue-head button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
   .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
@@ -210,6 +214,7 @@
           <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
           <button id="uncue" class="small">Uncue</button>
         </div>
+        <div class="cue-sound" id="cueSound" hidden><span>Sound on the stream</span><span class="cue-meter" role="meter" aria-label="Sound on the stream" aria-valuemin="0" aria-valuemax="100" id="cueMeter"><span id="cueLevel"></span></span><span id="cueSoundNote"></span></div>
         <p class="cue-list-head" id="cueListHead" hidden>In the break, in play order · drag to change the order</p>
         <ol class="cue-list" id="cueList"></ol>
       </div>
@@ -547,6 +552,12 @@
     $('cueState').textContent = `${what}: ${words[0]}`
     $('cueText').textContent = onAir && c.error && !c.pending ? `${words[1]} · couldn’t add: ${c.error}` : words[1]
     $('cueProg').hidden = !onAir || !c.dur
+    // The break's sound as the streaming app hears it (a meter like the one in its Sound panel).
+    $('cueSound').hidden = !onAir
+    const lvl = Math.round(Math.sqrt(Math.max(0, Math.min(1, c.level || 0))) * 100)
+    $('cueLevel').style.width = `${lvl}%`
+    $('cueMeter').setAttribute('aria-valuenow', String(lvl))
+    $('cueSoundNote').textContent = onAir && c.pos > 2 && !c.level ? 'no sound' : ''
     $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
     $('uncue').hidden = onAir
     $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : n > 1 ? 'Uncue all' : 'Uncue'

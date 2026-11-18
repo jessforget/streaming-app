@@ -110,7 +110,22 @@ export interface Scene {
   hideOverlay?: boolean
   /** The scene a gfx app's "Cue to stream" fills with its commercial (made the first time, then reused). */
   commercial?: boolean
+  /** The commercial scene's sound: one channel for every video in the break, and what the mics do meanwhile. */
+  breakSound?: BreakSound
 }
+
+/** Mics during a commercial break: off, 15 dB lower, or left as they are. */
+export type BreakMics = 'off' | 'duck' | 'on'
+export interface BreakSound {
+  volume: number
+  muted: boolean
+  mics: BreakMics
+}
+export const BREAK_SOUND: BreakSound = { volume: 1, muted: false, mics: 'off' }
+/** The one sound channel of a commercial break (in the mixer and its meters). */
+export const COMMERCIALS_CHANNEL = 'commercials'
+/** -15 dB, for mics while a break plays when they are set to "lower". */
+export const DUCK_GAIN = 0.178
 
 /**
  * The Overlay: sources drawn on top of every scene, in Preview and Live, like a

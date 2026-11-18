@@ -66,7 +66,9 @@ export class GfxLink {
     private readonly getState: () => AppState | null,
     private readonly drawLive: (canvas: HTMLCanvasElement) => boolean,
     private readonly mediaElement: (url: string) => HTMLVideoElement | null,
-    private readonly notice: (m: string) => void
+    private readonly notice: (m: string) => void,
+    /** The commercial break's sound level now, 0 to 1 (for the gfx app's meter). */
+    private readonly breakLevel: () => number = () => 0
   ) {}
 
   get available() {
@@ -79,7 +81,8 @@ export class GfxLink {
     this.small.width = PICTURE_W
     this.small.height = PICTURE_H
     this.pictureTimer = setInterval(() => this.sendPicture(), 1000 / PICTURE_FPS)
-    this.statusTimer = setInterval(() => this.followCue(), 500)
+    // Five times a second: often enough for the gfx app's sound meter to move.
+    this.statusTimer = setInterval(() => this.followCue(), 200)
   }
 
   stop() {
@@ -181,7 +184,7 @@ export class GfxLink {
       const el = this.mediaElement(cue.paths[at])
       const pos = el?.currentTime ?? 0
       const left = Math.max(0, dur(cue.paths[at]) - pos) + cue.paths.slice(at + 1).reduce((t, p) => t + dur(p), 0)
-      this.tell(cue.origin, cue.take, 'onair', { at, pos, dur: dur(cue.paths[at]), left })
+      this.tell(cue.origin, cue.take, 'onair', { at, pos, dur: dur(cue.paths[at]), left, level: Math.round(this.breakLevel() * 1000) / 1000 })
     } else if (cue.status === 'onair') {
       this.tell(cue.origin, cue.take, 'done')
       this.cue = null

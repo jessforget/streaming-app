@@ -582,3 +582,12 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .gfx-test.other strong { color: var(--warn); }
 .layers .gfx-test li { display: list-item; background: none; padding: 0; border-radius: 0; }
 .layers .gfx-found li { background: none; }
+
+/* A commercial break's sound: a meter on the Gfx commercial card, and its channel in Sound. */
+.media-clock-sound { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.media-clock-sound .hmeter { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.media-clock-sound .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; height: 100%; width: 0; background: var(--good); transition: none; }
+.media-clock.empty { color: var(--muted); font-size: 12px; }
+.break-strip { border: 1px solid var(--line); }
+.break-mics { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.break-mics select { max-width: 60%; }
