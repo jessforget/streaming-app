@@ -510,6 +510,7 @@
   /** The break video being dragged (its index), or -1; a rundown video being dragged in (its id), or ''. */
   let dragFrom = -1
   let dragItem = ''
+  let cueListSig = ''
   function renderCue(p) {
     const c = S.cue
     // (An older gfx app server sends one video, not a list.)
@@ -526,7 +527,10 @@
     $('cue').textContent = inBreak ? 'In the break' : open ? addText : 'Cue to stream'
     $('askCue').textContent = open ? addText : 'Cue to stream'
     $('cueBar').hidden = !c
-    if (!c) return
+    if (!c) {
+      cueListSig = ''
+      return
+    }
     const n = items.length
     const last = at === n - 1
     const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
@@ -573,6 +577,11 @@
     // The break's videos, in play order. Not rebuilt while dragging (it would change under the mouse).
     const list = $('cueList')
     if (dragFrom >= 0 || dragItem) return
+    // The streaming app reports 5 times a second: rebuild only when the list itself changes,
+    // so its buttons stay put under the mouse (a click on a row replaced mid-click is lost).
+    const sig = JSON.stringify([open, onAir, at, items.map((x) => [x.id, x.name])])
+    if (sig === cueListSig) return
+    cueListSig = sig
     list.textContent = ''
     $('cueListHead').hidden = !open
     $('cueListHead').textContent = onAir

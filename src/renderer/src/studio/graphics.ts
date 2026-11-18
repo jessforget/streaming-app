@@ -206,7 +206,17 @@ export class GraphicsFeeds {
         feed.status = status
         this.changed()
       }),
-      this.desktop.onClear(({ id }) => this.feeds.get(id)?.clear())
+      this.desktop.onClear(({ id }) => {
+        const feed = this.feeds.get(id)
+        if (!feed) return
+        feed.clear()
+        // The page can't be reached: nothing of it stays on the stream, its video neither.
+        if (feed.video) {
+          stopVideo(feed.video)
+          feed.video = null
+          this.changed()
+        }
+      })
     )
     if (this.desktop.onAudioOffer) this.offs.push(this.desktop.onAudioOffer((o) => void this.answerAudio(o)))
     if (this.desktop.onVideo) this.offs.push(this.desktop.onVideo((v) => this.playVideo(v)))
@@ -218,7 +228,7 @@ export class GraphicsFeeds {
     if (!feed) return
     const old = feed.video
     if (m.stop) {
-      if (old?.take !== m.take) return
+      if (!old || (m.take !== '*' && old.take !== m.take)) return
       feed.video = null
       stopVideo(old)
       this.changed()

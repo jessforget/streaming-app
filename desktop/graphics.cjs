@@ -105,6 +105,10 @@ class GraphicsFeed {
     wc.setFrameRate(opts.fps)
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     wc.on('paint', (_e, dirty, image) => this.paint(dirty, image))
+    // A new page (the gfx app restarted, or the page reloaded) has handed nothing over yet: stop a video
+    // the old page left playing. If it is still on air, the new page hands it over again.
+    // (did-navigate comes before the new page's scripts run.)
+    wc.on('did-navigate', () => this.send('gfx:video', { id: this.id, take: '*', stop: true }))
     wc.on('did-finish-load', () => {
       this.loaded = true
       this.misses = 0
