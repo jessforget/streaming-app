@@ -92,6 +92,105 @@ export class Mixer {
     this.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' })
     this.output = this.ctx.createMediaStreamDestination()
     this.output.channelCount = 2
+    // Everything heard goes through one bus: to the stream, and (when listening) to headphones.
+    this.bus = this.ctx.createGain()
+    this.bus.connect(this.output)
+    this.monitorGain = this.ctx.createGain()
+    this.monitorGain.gain.value = 0
+    this.monitorOut = this.ctx.createMediaStreamDestination()
+    // Listening hears the whole stream (busTap), or one channel alone (soloTap).
+    this.busTap = this.ctx.createGain()
+    this.soloTap = this.ctx.createGain()
+    this.bus.connect(this.busTap).connect(this.monitorGain)
+    this.soloTap.connect(this.monitorGain)
+    this.monitorGain.connect(this.monitorOut)
+    // Left and right of what goes out, for the stream meter.
+    const split = this.ctx.createChannelSplitter(2)
+    this.bus.connect(split)
+    for (let i = 0; i < 2; i++) {
+      const a = this.ctx.createAnalyser()
+      a.fftSize = 1024
+      split.connect(a, i)
+      this.sides.push({ a, buf: new Float32Array(a.fftSize) })
+    }
+  }
+
+  private readonly busTap: GainNode
+  private readonly soloTap: GainNode
+  private readonly sides: { a: AnalyserNode; buf: Float32Array<ArrayBuffer> }[] = []
+  /** The one channel heard alone while listening, or null for the whole stream. */
+  solo: string | null = null
+  private soloed: GainNode | null = null
+  private monitorListeners = new Set<() => void>()
+
+  /** Peak of the stream's left and right, 0 to 1. */
+  streamLevels(): [number, number] {
+    const out = this.sides.map(({ a, buf }) => {
+      a.getFloatTimeDomainData(buf)
+      let p = 0
+      for (const v of buf) p = Math.max(p, Math.abs(v))
+      return p
+    })
+    return [out[0] ?? 0, out[1] ?? 0]
+  }
+
+  /** Called when listening changes (on/off, output, the channel heard alone). */
+  onMonitor(fn: () => void) {
+    this.monitorListeners.add(fn)
+    return () => void this.monitorListeners.delete(fn)
+  }
+
+  /** Hear one channel alone (null: the whole stream again). Turns listening on. */
+  async setSolo(id: string | null) {
+    this.solo = id
+    this.linkSolo()
+    this.busTap.gain.setTargetAtTime(id ? 0 : 1, this.ctx.currentTime, 0.02)
+    await this.setMonitor(id ? { on: true } : {})
+  }
+
+  /** Wire the channel heard alone to the headphones (again after its chain is rebuilt). */
+  private linkSolo() {
+    const want = this.solo ? (this.chains.get(this.solo)?.gain ?? null) : null
+    if (want === this.soloed) return
+    try {
+      this.soloed?.disconnect(this.soloTap)
+    } catch {
+      // already gone
+    }
+    this.soloed = want
+    want?.connect(this.soloTap)
+  }
+
+  private readonly bus: GainNode
+  private readonly monitorGain: GainNode
+  private readonly monitorOut: MediaStreamAudioDestinationNode
+  private monitorEl: HTMLAudioElement | null = null
+  /** Listening to the stream's sound on this PC, and on which output (a device id, '' = Windows' default). */
+  monitor = { on: false, device: '', volume: 0.8 }
+
+  /** Hear what goes out to the stream, on headphones or speakers; it never changes the stream itself. */
+  async setMonitor(m: Partial<{ on: boolean; device: string; volume: number }>) {
+    this.monitor = { ...this.monitor, ...m }
+    const { on, device, volume } = this.monitor
+    this.monitorGain.gain.setTargetAtTime(on ? volume : 0, this.ctx.currentTime, 0.03)
+    if (on && !this.monitorEl) {
+      const el = new Audio()
+      el.srcObject = this.monitorOut.stream
+      this.monitorEl = el
+    }
+    const el = this.monitorEl
+    if (!el) {
+      for (const fn of this.monitorListeners) fn()
+      return
+    }
+    const sink = el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void>; sinkId?: string }
+    if (sink.setSinkId && sink.sinkId !== device) await sink.setSinkId(device)
+    try {
+      if (on) await el.play()
+      else el.pause()
+    } finally {
+      for (const fn of this.monitorListeners) fn()
+    }
   }
 
   resume() {
@@ -165,6 +264,8 @@ export class Mixer {
       }
       if (a.kind === 'file' && device) void this.devices.get(device)?.then((d) => d?.el && (d.el.loop = a.loop !== false))
     }
+    if (this.solo && !wanted.has(this.solo)) void this.setSolo(null)
+    else this.linkSolo()
     // Close devices nobody uses any more (frees the L-12 for other apps).
     const used = new Set(channels.map(({ a }) => this.deviceFor(a, state.inputs) ?? ''))
     for (const id of [...this.devices.keys()]) {
@@ -318,10 +419,9 @@ export class Mixer {
         // Now its sound goes only through the mixer (not straight to the speakers).
         el.muted = false
         const splitter = this.ctx.createChannelSplitter(2)
-        node.channelCountMode = 'explicit'
-        node.channelCount = 2
-        node.connect(splitter)
-        return { node, splitter, channels: 2 }
+        const up = this.stereo(node)
+        up.connect(splitter)
+        return { node: up, splitter, channels: 2 }
       } else if (id.startsWith(GFX_DEVICE)) {
         const want = id.slice(GFX_DEVICE.length)
         const st = this.state?.scenes
@@ -389,10 +489,22 @@ export class Mixer {
       this.mediaNodes.set(el, node)
     }
     const splitter = this.ctx.createChannelSplitter(2)
-    node.channelCountMode = 'explicit'
-    node.channelCount = 2
-    node.connect(splitter)
-    return { el: el instanceof HTMLAudioElement ? el : undefined, node, splitter, channels: 2 }
+    const up = this.stereo(node)
+    up.connect(splitter)
+    return { el: el instanceof HTMLAudioElement ? el : undefined, node: up, splitter, channels: 2 }
+  }
+
+  /**
+   * A video's sound as left and right. A mono video would otherwise play on the
+   * left only: a channel splitter does not spread one channel to both sides.
+   */
+  private stereo(node: AudioNode) {
+    const up = this.ctx.createGain()
+    up.channelCount = 2
+    up.channelCountMode = 'explicit'
+    up.channelInterpretation = 'speakers'
+    node.connect(up)
+    return up
   }
 
   private build(a: AudioSource, key: string, device: string | undefined): Chain {
@@ -403,7 +515,7 @@ export class Mixer {
     const analyser = this.ctx.createAnalyser()
     analyser.fftSize = 1024
     merger.connect(delay).connect(gain).connect(analyser)
-    gain.connect(gate).connect(this.output)
+    gain.connect(gate).connect(this.bus)
     const chain: Chain = { key, merger, delay, gain, gate, open: false, analyser, buf: new Float32Array(analyser.fftSize) }
     this.chains.set(a.id, chain)
     this.problems.delete(a.id)
@@ -468,6 +580,7 @@ export class Mixer {
   }
 
   close() {
+    this.monitorEl?.pause()
     for (const [id, p] of this.devices) void p.then((d) => stopTracks(id, d))
     void this.ctx.close()
   }

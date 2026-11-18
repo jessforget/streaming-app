@@ -591,3 +591,18 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .break-strip { border: 1px solid var(--line); }
 .break-mics { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .break-mics select { max-width: 60%; }
+
+/* Listen: hear the stream's sound on this PC. */
+.listen { position: relative; display: inline-flex; gap: 2px; }
+.listen button svg { vertical-align: -2px; }
+.listen .listen-on { background: var(--good); color: #0b1a12; border-color: transparent; }
+.listen-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 280px; display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 30px #0008; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.listen-pop label { display: grid; gap: 4px; }
+.listen-pop input[type='range'] { width: 100%; accent-color: var(--accent); }
+
+.solo.on { color: var(--good); background: var(--good-bg); }
+.stream-meter { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; margin-bottom: 8px; border-radius: 8px; background: var(--row); }
+.stream-meter-bars { display: grid; gap: 3px; }
+.stream-meter-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 6px; align-items: center; }
+.stream-meter .hmeter { position: relative; height: 6px; border-radius: 3px; background: #262c37; overflow: hidden; }
+.stream-meter .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--good); transition: none; }

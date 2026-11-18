@@ -805,6 +805,7 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
           <button className="ghost small" onClick={() => run('audio.muteAll')}>
             Mute all
           </button>
+          {studio && <ListenButton studio={studio} />}
           {!adding && (
             <button className="small" onClick={() => setAdding(true)}>
               + Add
@@ -813,6 +814,7 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
         </span>
       </div>
       {adding && <AddAudioForm state={state} run={run} onDone={() => setAdding(false)} />}
+      {studio && <StreamMeter studio={studio} />}
       <div className="strips">
         {state.audio.map((a) => (
           <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} />
@@ -842,6 +844,7 @@ function BreakStrip(props: { state: AppState; level: number; studio: Studio | nu
       <div className="strip-head">
         <strong>Commercials</strong>
         {onAir && <em className="tag live">ON AIR</em>}
+        {studio && media.length > 0 && <SoloButton studio={studio} id={COMMERCIALS_CHANNEL} name="Commercials" />}
         <button className={`small mute ${bs.muted ? 'danger' : ''}`} aria-pressed={bs.muted} onClick={() => run('cue.sound', { muted: !bs.muted })}>
           {bs.muted ? 'Muted' : 'Mute'}
         </button>
@@ -861,6 +864,182 @@ function BreakStrip(props: { state: AppState; level: number; studio: Studio | nu
       </label>
       {onAir && bs.mics !== 'on' && <span className="small warn-text">{bs.mics === 'off' ? 'Mics and live inputs are off for the break' : 'Mics and live inputs are 15 dB lower for the break'}</span>}
     </div>
+  )
+}
+
+const LISTEN_KEY = 'listen-output-v1'
+
+/**
+ * Listen: hear everything that goes out to the stream on headphones or
+ * speakers of this PC, at its own volume. It never changes the stream.
+ * Off each time the app starts (speakers near a live mic would echo).
+ */
+function ListenButton({ studio }: { studio: Studio }) {
+  const [m, setM] = useState(studio.mixer.monitor)
+  const [open, setOpen] = useState(false)
+  const [outs, setOuts] = useState<MediaDeviceInfo[]>([])
+  const [error, setError] = useState('')
+  const [solo, setSolo] = useState(studio.mixer.solo)
+  useEffect(
+    () =>
+      studio.mixer.onMonitor(() => {
+        setM({ ...studio.mixer.monitor })
+        setSolo(studio.mixer.solo)
+      }),
+    [studio]
+  )
+  useEffect(() => {
+    // The output and volume picked last time (not whether it was on).
+    try {
+      const saved = JSON.parse(localStorage.getItem(LISTEN_KEY) ?? 'null') as { device?: string; volume?: number } | null
+      if (saved && !studio.mixer.monitor.on) {
+        studio.mixer.monitor = { ...studio.mixer.monitor, device: saved.device ?? '', volume: saved.volume ?? 0.8 }
+        setM(studio.mixer.monitor)
+      }
+    } catch {
+      // no saved choice
+    }
+    const list = () =>
+      void navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((d) => setOuts(d.filter((x) => x.kind === 'audiooutput' && x.deviceId !== 'default' && x.deviceId !== 'communications')))
+        .catch(() => {})
+    list()
+    navigator.mediaDevices?.addEventListener('devicechange', list)
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', list)
+  }, [studio])
+  const change = async (p: Partial<typeof m>) => {
+    setError('')
+    try {
+      await studio.mixer.setMonitor(p)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setM({ ...studio.mixer.monitor })
+    try {
+      localStorage.setItem(LISTEN_KEY, JSON.stringify({ device: studio.mixer.monitor.device, volume: studio.mixer.monitor.volume }))
+    } catch {
+      // not kept
+    }
+  }
+  const name = outs.find((o) => o.deviceId === m.device)?.label || 'Windows default output'
+  return (
+    <span className="listen">
+      <button
+        className={`small ${m.on ? 'listen-on' : 'ghost'}`}
+        aria-pressed={m.on}
+        title="Hear everything that goes out to the stream, on headphones or speakers of this PC"
+        onClick={() => {
+          if (!m.on) setOpen(true)
+          else void studio.mixer.setSolo(null)
+          void change({ on: !m.on })
+        }}
+      >
+        <HeadphonesIcon /> {m.on ? (solo ? 'Listening (solo)' : 'Listening') : 'Listen'}
+      </button>
+      <button className="ghost small icon" aria-label="Listen settings" aria-expanded={open} onClick={() => setOpen(!open)}>
+        ▾
+      </button>
+      {open && (
+        <div className="listen-pop" role="group" aria-label="Listen to the stream">
+          <strong>Listen to the stream</strong>
+          <span className="small muted">Everything that goes out, a little behind the room. Use headphones near a live mic, or it echoes.</span>
+          <label className="small">
+            Hear it on
+            <select value={m.device} onChange={(e) => void change({ device: e.target.value })}>
+              <option value="">Windows default output</option>
+              {outs.map((o) => (
+                <option key={o.deviceId} value={o.deviceId}>
+                  {o.label || 'An output'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="small">
+            Listen volume (the stream doesn’t change)
+            <input type="range" min={0} max={100} value={Math.round(m.volume * 100)} onChange={(e) => void change({ volume: Number(e.target.value) / 100 })} />
+          </label>
+          <span className="small muted">{m.on ? `On: ${name}` : 'Off'}{m.on && solo ? ' · one channel alone (press its headphones again for the whole stream)' : ''}</span>
+          {error && <span className="small warn-text">Could not play on that output: {error}</span>}
+          <button className="small" onClick={() => setOpen(false)}>
+            Done
+          </button>
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** Hear this channel alone in the headphones (press again for the whole stream). */
+function SoloButton({ studio, id, name }: { studio: Studio; id: string; name: string }) {
+  const [on, setOn] = useState(studio.mixer.solo === id && studio.mixer.monitor.on)
+  useEffect(() => {
+    const sync = () => setOn(studio.mixer.solo === id && studio.mixer.monitor.on)
+    sync()
+    return studio.mixer.onMonitor(sync)
+  }, [studio, id])
+  return (
+    <button
+      className={`ghost icon solo ${on ? 'on' : ''}`}
+      aria-pressed={on}
+      aria-label={`Listen to ${name} alone`}
+      title={on ? 'Listening to this alone · press for the whole stream' : 'Listen to this alone in your headphones (even before it is on air)'}
+      onClick={() => void studio.mixer.setSolo(on ? null : id).catch(() => {})}
+    >
+      <HeadphonesIcon />
+    </button>
+  )
+}
+
+/** Left and right of what goes out to the stream, with a red mark when it gets too loud (near 0 dB). */
+function StreamMeter({ studio }: { studio: Studio }) {
+  const bars = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)]
+  const clip = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    let frame = 0
+    const shown = [0, 0]
+    let loudUntil = 0
+    const loop = () => {
+      const lv = studio.mixer.streamLevels()
+      lv.forEach((v, i) => {
+        shown[i] = v > shown[i] ? v : shown[i] * 0.9
+        const el = bars[i].current
+        if (el) el.style.width = `${Math.round(Math.sqrt(shown[i]) * 100)}%`
+      })
+      if (Math.max(...lv) >= 0.89) loudUntil = performance.now() + 2000
+      if (clip.current) clip.current.hidden = performance.now() > loudUntil
+      frame = requestAnimationFrame(loop)
+    }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio])
+  return (
+    <div className="stream-meter" title="What goes out to the stream, left and right">
+      <span className="small muted">Stream</span>
+      <div className="stream-meter-bars">
+        {['L', 'R'].map((side, i) => (
+          <div key={side} className="stream-meter-row">
+            <span className="small muted">{side}</span>
+            <div className="hmeter">
+              <div ref={bars[i]} className="meter" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <span ref={clip} className="tag live" hidden>
+        TOO LOUD
+      </span>
+    </div>
+  )
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+      <path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" />
+    </svg>
   )
 }
 
@@ -934,6 +1113,7 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
         <strong>{a.name}</strong>
         {onAir && a.scenes && <em className="tag live" title="Its scene is on air">ON AIR</em>}
         {a.syncOffsetMs > 0 && <span className="muted small">+{a.syncOffsetMs} ms</span>}
+        {studio && <SoloButton studio={studio} id={a.id} name={a.name} />}
         <span className="strip-tools">
           <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, device, inputs, sync offset" onClick={onEdit}>
             ✎
