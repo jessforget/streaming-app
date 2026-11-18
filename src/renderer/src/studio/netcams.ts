@@ -172,6 +172,9 @@ export class NetCams {
     return c?.connected ? c.fps : 0
   }
 
+  /** The camera's sound as it arrives (set by the studio, for the mixer): device id, samples L R L R... */
+  onSound: ((deviceId: string, pcm: Int16Array) => void) | null = null
+
   stream(deviceId: string): MediaStream | null {
     const c = this.cams.get(deviceId.slice(NET_PREFIX.length))
     return c?.connected ? c.stream : null
@@ -217,7 +220,13 @@ export class NetCams {
     cam.ws = ws
     ws.onmessage = (e) => {
       if (typeof e.data === 'string') return this.onText(cam, e.data)
-      this.onPicture(cam, new Uint8Array(e.data as ArrayBuffer))
+      const msg = new Uint8Array(e.data as ArrayBuffer)
+      // The camera's sound (48 kHz stereo, 16-bit): to the mixer.
+      if (msg[0] === 2) {
+        if (msg.length > 4) this.onSound?.(NET_PREFIX + cam.cfg.id, new Int16Array(msg.buffer.slice(1)))
+        return
+      }
+      this.onPicture(cam, msg)
     }
     ws.onclose = () => {
       if (cam.ws !== ws) return

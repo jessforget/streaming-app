@@ -427,6 +427,10 @@ export class Controller extends Emitter<Events> {
         scene.layers.unshift(layer) // new sources go on top, like OBS
         await this.engine.setScene(scene)
         if (layer.kind === 'text') await this.pushText(scene, layer)
+        // A camera in a scene with no sound of its own yet: the scene's sound is the camera's (follow the picture).
+        if (layer.kind === 'video' && layer.device && !isOverlay(scene) && !scene.commercial && !this.s.audio.some((a) => a.scenes?.includes(scene.id))) {
+          await this.setSceneSound(scene, this.pictureSound(scene))
+        }
         this.changed()
         return { layerId: layer.id }
       }
@@ -513,6 +517,29 @@ export class Controller extends Emitter<Events> {
           src.channels = this.channels(src.kind, src.device, P.channels)
         }
         if (P.syncOffsetMs !== undefined) src.syncOffsetMs = syncOffset(P)
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'scene.setSound': {
+        // The one sound for this scene: 'picture' (the sound with its camera), a channel, or none.
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const want = P.sourceId === null ? null : P.sourceId === 'picture' ? this.pictureSound(scene) : this.audio(str(P, 'sourceId'))
+        await this.setSceneSound(scene, want)
+        return this.changed()
+      }
+      case 'scene.addSound': {
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const src = P.sourceId === 'picture' ? this.pictureSound(scene) : this.audio(str(P, 'sourceId'))
+        const set = new Set(src.scenes ?? this.soundSceneIds())
+        set.add(scene.id)
+        src.scenes = [...set]
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'scene.removeSound': {
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const src = this.audio(str(P, 'sourceId'))
+        src.scenes = (src.scenes ?? this.soundSceneIds()).filter((id) => id !== scene.id)
         await this.engine.setAudioSources(this.s.audio)
         return this.changed()
       }
@@ -985,6 +1012,46 @@ export class Controller extends Emitter<Events> {
       throw new CommandError(`channels must be one or two different channel numbers from 1 to ${max}`)
     }
     return [...value]
+  }
+
+  /** A scene whose sound can be picked (not the Overlay, not the Gfx commercial: that plays its videos' sound only). */
+  private soundScene(id: string): Scene {
+    const scene = this.showScene(id)
+    if (scene.commercial) throw new CommandError('The Gfx commercial plays only its videos’ sound')
+    return scene
+  }
+
+  /** Every scene a sound can play in (what "every scene" means when one scene is taken out). */
+  private soundSceneIds(): string[] {
+    return this.s.scenes.filter((s) => !isOverlay(s) && !s.commercial).map((s) => s.id)
+  }
+
+  /** The sound that comes with the scene's camera: its channel, made the first time. */
+  private pictureSound(scene: Scene): AudioSource {
+    const cam = scene.layers.find((l) => l.kind === 'video' && l.device && l.visible) ?? scene.layers.find((l) => l.kind === 'video' && l.device)
+    if (!cam?.device) throw new CommandError('This scene has no camera or video input to take the sound from')
+    const have = this.s.audio.find((a) => a.kind === 'video' && a.device === cam.device)
+    if (have) return have
+    const dev = this.s.inputs.video.find((d) => d.id === cam.device)
+    // The same box's audio input already in the Sound panel (the ATEM Mini's USB audio with its picture).
+    const boxAudio = dev?.group ? this.s.inputs.audio.filter((d) => d.group === dev.group).map((d) => d.id) : []
+    const box = this.s.audio.find((a) => a.kind === 'device' && !!a.device && boxAudio.includes(a.device))
+    if (box) return box
+    const src: AudioSource = { id: this.newId('audio'), name: `${dev?.name ?? cam.name} sound`.slice(0, 60), kind: 'video', device: cam.device, syncOffsetMs: 0, scenes: [], volume: 0.8, muted: false, level: 0 }
+    this.s.audio.push(src)
+    return src
+  }
+
+  /** Make this the scene's only sound (null: no sound). Other scenes keep theirs. */
+  private async setSceneSound(scene: Scene, want: AudioSource | null) {
+    const all = this.soundSceneIds()
+    for (const a of this.s.audio) {
+      const set = new Set(a.scenes ?? all)
+      if (a === want) set.add(scene.id)
+      else set.delete(scene.id)
+      a.scenes = [...set]
+    }
+    await this.engine.setAudioSources(this.s.audio)
   }
 
   /** What was in Preview before a commercial was cued there. */

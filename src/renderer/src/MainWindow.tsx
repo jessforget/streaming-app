@@ -834,6 +834,11 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const edited = state.audio.find((a) => a.id === editing)
+  // Sound follows the scene: the one picked (in Preview), and only its channels, unless "Show all".
+  const [showAll, setShowAll] = useState(false)
+  const focus = state.scenes.find((s) => s.id === state.previewSceneId && !isOverlay(s))
+  const heard = focus ? state.audio.filter((a) => audible(a, new Set([focus.id]))) : state.audio
+  const shown = showAll || !focus ? state.audio : focus.commercial ? [] : heard
   return (
     <section className="panel" aria-label="Sound">
       <div className="panel-head">
@@ -855,14 +860,88 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
       </div>
       {adding && <AddAudioForm state={state} run={run} onDone={() => setAdding(false)} />}
       {studio && <StreamMeter studio={studio} />}
+      {focus && !showAll && <SceneSoundPicker scene={focus} state={state} run={run} heard={heard} />}
       <div className="strips">
-        {state.audio.map((a) => (
-          <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} />
+        {shown.map((a) => (
+          <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} inScene={focus && !showAll ? focus : undefined} />
         ))}
-        <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />
+        {(showAll || focus?.commercial) && <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />}
       </div>
+      {focus && (
+        <button className="ghost small sound-all" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? `Only ${focus.name}’s sound` : `Show all sound channels (${state.audio.length})`}
+        </button>
+      )}
       {edited && <AudioEditor key={edited.id} state={state} run={run} source={edited} onDone={() => setEditing(null)} />}
     </section>
+  )
+}
+
+/**
+ * The sound of the scene in Preview: by default the one that comes with its
+ * camera (ATEM audio with the ATEM's picture, the Z CAM's own sound); pick
+ * another, or add more.
+ */
+function SceneSoundPicker({ scene, state, run, heard }: { scene: Scene; state: AppState; run: Run; heard: AudioSource[] }) {
+  const cam = scene.layers.find((l) => l.kind === 'video' && l.device && l.visible) ?? scene.layers.find((l) => l.kind === 'video' && l.device)
+  const pictureSrc = cam ? state.audio.find((a) => a.kind === 'video' && a.device === cam.device) : undefined
+  const camName = cam ? (state.inputs.video.find((d) => d.id === cam.device)?.name ?? cam.name) : ''
+  if (scene.commercial) {
+    return (
+      <div className="scene-sound-pick">
+        <span className="small">
+          Sound for <b>{scene.name}</b> <em className="tag next">PREVIEW</em>
+        </span>
+        <span className="small muted">Only the commercials’ sound (below). Every other channel is off while it’s live.</span>
+      </div>
+    )
+  }
+  const value = heard.length === 0 ? '' : heard.length > 1 ? '__several' : heard[0] === pictureSrc ? 'picture' : heard[0].id
+  const others = state.audio.filter((a) => !heard.includes(a))
+  return (
+    <div className="scene-sound-pick">
+      <span className="small">
+        Sound for <b>{scene.name}</b> <em className="tag next">PREVIEW</em>
+      </span>
+      <label className="small">
+        Sound for this scene
+        <select
+          value={value}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v !== '__several') run('scene.setSound', { sceneId: scene.id, sourceId: v === '' ? null : v })
+          }}
+        >
+          {cam && <option value="picture">With the picture: {pictureSrc?.name ?? `${camName} sound`}</option>}
+          {state.audio
+            .filter((a) => a !== pictureSrc)
+            .map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          {heard.length > 1 && <option value="__several">Several ({heard.length}): pick one to keep only it</option>}
+          <option value="">No sound</option>
+        </select>
+      </label>
+      {(others.length > 0 || (cam && !pictureSrc)) && (
+        <label className="small">
+          <select
+            value=""
+            aria-label="Add sound to this scene"
+            onChange={(e) => e.target.value && run('scene.addSound', { sceneId: scene.id, sourceId: e.target.value })}
+          >
+            <option value="">+ Add sound to this scene</option>
+            {cam && !pictureSrc && <option value="picture">{camName} sound (with the picture)</option>}
+            {others.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
   )
 }
 
@@ -894,15 +973,7 @@ function BreakStrip(props: { state: AppState; level: number; studio: Studio | nu
         <div className="hmeter">{studio ? <LiveMeter studio={studio} id={COMMERCIALS_CHANNEL} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
         <input type="range" min={0} max={100} value={Math.round(bs.volume * 100)} aria-label="Commercials volume" onChange={(e) => run('cue.sound', { volume: Number(e.target.value) / 100 })} />
       </div>
-      <label className="break-mics small">
-        Mics during a break
-        <select value={bs.mics} onChange={(e) => run('cue.sound', { mics: e.target.value as typeof bs.mics })}>
-          <option value="off">Off</option>
-          <option value="duck">15 dB lower</option>
-          <option value="on">As they are</option>
-        </select>
-      </label>
-      {onAir && bs.mics !== 'on' && <span className="small warn-text">{bs.mics === 'off' ? 'Mics and live inputs are off for the break' : 'Mics and live inputs are 15 dB lower for the break'}</span>}
+      <span className={`small ${onAir ? 'warn-text' : 'muted'}`}>Only the videos’ sound: every other channel is off while the break is live.</span>
     </div>
   )
 }
@@ -1139,8 +1210,8 @@ function SceneSounds({ scene, state, studio }: { scene: Scene; state: AppState; 
   )
 }
 
-function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
-  const { a, state, level, studio, run, onEdit } = props
+function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void; inScene?: Scene }) {
+  const { a, state, level, studio, run, onEdit, inScene } = props
   const { from, chs, unplugged } = soundFrom(a, state)
   // Sound follows the scene: heard only while one of its scenes is on air.
   const onAir = audible(a, scenesOnAir(state))
@@ -1158,9 +1229,15 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
           <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, device, inputs, sync offset" onClick={onEdit}>
             ✎
           </button>
-          <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
-            ✕
-          </button>
+          {inScene ? (
+            <button className="ghost icon" aria-label={`Take ${a.name} out of ${inScene.name}`} title={`Take out of ${inScene.name} (the channel stays for other scenes)`} onClick={() => run('scene.removeSound', { sceneId: inScene.id, sourceId: a.id })}>
+              ✕
+            </button>
+          ) : (
+            <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
+              ✕
+            </button>
+          )}
         </span>
         <button className={`small mute ${a.muted ? 'danger' : ''}`} aria-pressed={a.muted} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
           {a.muted ? 'Muted' : 'Mute'}

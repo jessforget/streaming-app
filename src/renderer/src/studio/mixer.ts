@@ -7,7 +7,7 @@
  * mic. The program mix goes into the stream and the recording.
  */
 import { TONE_GAIN, TONE_HZ } from '../../../shared/bars'
-import { BREAK_SOUND, COMMERCIALS_CHANNEL, DUCK_GAIN, audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
 import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
 
@@ -37,6 +37,8 @@ export const GFX_SOUND_PREFIX = 'gfxsound-'
 const GFX_DEVICE = 'gfx:'
 /** The line-up tone of a Color bars source, keyed by layer id. */
 const TONE_PREFIX = 'bartone-'
+/** Mixer device for a network camera's sound: this, then its video device id ("net:..."). */
+const NET_SOUND = 'netsound:'
 /** How many times (a second apart) to try a video's sound before saying it can't. */
 const RETRIES = 20
 const TONE_DEVICE = 'tone:'
@@ -122,6 +124,31 @@ export class Mixer {
   solo: string | null = null
   private soloed: GainNode | null = null
   private monitorListeners = new Set<() => void>()
+
+  /** Network cameras' sound, by device id: where it plays into, and when the next piece starts. */
+  private netSound = new Map<string, { node: GainNode; next: number }>()
+
+  /** A piece of a network camera's sound (48 kHz stereo, L R L R...). Played a little behind, evenly. */
+  pushNetSound(deviceId: string, pcm: Int16Array) {
+    const s = this.netSound.get(deviceId)
+    const frames = pcm.length >> 1
+    if (!s || !frames || this.ctx.state !== 'running') return
+    const buf = this.ctx.createBuffer(2, frames, 48000)
+    const l = buf.getChannelData(0)
+    const r = buf.getChannelData(1)
+    for (let i = 0; i < frames; i++) {
+      l[i] = pcm[2 * i] / 32768
+      r[i] = pcm[2 * i + 1] / 32768
+    }
+    const src = this.ctx.createBufferSource()
+    src.buffer = buf
+    src.connect(s.node)
+    const t = this.ctx.currentTime
+    // Fell behind (a gap) or too far ahead (a burst): start again 0.12 s behind now.
+    if (s.next < t + 0.01 || s.next > t + 0.6) s.next = t + 0.12
+    src.start(s.next)
+    s.next += frames / 48000
+  }
 
   /** Peak of the stream's left and right, 0 to 1. */
   streamLevels(): [number, number] {
@@ -231,11 +258,10 @@ export class Mixer {
     const fadeS = state.transition.kind === 'fade' ? Math.max(0.03, state.transition.durationMs / 1000) : 0.03
 
     const channels = [...state.audio.map((a) => ({ a, on: audible(a, onAir) })), ...this.mediaChannels(state, onAir), ...this.graphicsChannels(state, onAir), ...this.toneChannels(state, onAir)]
-    // A commercial break on Live: the mics and other live inputs go off (or 15 dB down), as set on the break.
+    // A commercial break on Live: only its videos' sound. Every channel of the Sound panel goes off.
     const brk = state.scenes.find((s) => s.commercial)
     const inBreak = !!brk && state.programSceneId === brk.id && brk.layers.some((l) => l.kind === 'media')
-    const mics = { ...BREAK_SOUND, ...brk?.breakSound }.mics
-    const micGain = !inBreak || mics === 'on' ? 1 : mics === 'duck' ? DUCK_GAIN : 0
+    const micGain = inBreak ? 0 : 1
     const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
     for (const { a, on } of channels) {
@@ -249,10 +275,10 @@ export class Mixer {
       const fresh = !chain
       if (!chain) chain = this.build(a, key, device)
       const t = this.ctx.currentTime
-      const live = a.kind === 'device' || a.kind === 'video'
-      const level = a.muted ? 0 : a.volume * (live && state.audio.includes(a) ? micGain : 1)
-      // Mics follow the break with the Transition's fade; a fader move is quick.
-      chain.gain.gain.setTargetAtTime(level, t, live && sceneChanged ? fadeS / 3 : 0.02)
+      const channel = state.audio.includes(a)
+      const level = a.muted ? 0 : a.volume * (channel ? micGain : 1)
+      // Channels follow the break with the Transition's fade; a fader move is quick.
+      chain.gain.gain.setTargetAtTime(level, t, channel && sceneChanged ? fadeS / 3 : 0.02)
       chain.delay.delayTime.setTargetAtTime(Math.max(0, a.syncOffsetMs ?? 0) / 1000, t, 0.05)
       if (fresh || chain.open !== on || sceneChanged) {
         const opening = on && !chain.open
@@ -270,6 +296,7 @@ export class Mixer {
     const used = new Set(channels.map(({ a }) => this.deviceFor(a, state.inputs) ?? ''))
     for (const id of [...this.devices.keys()]) {
       if (!used.has(id) && id !== 'desktop') {
+        if (id.startsWith(NET_SOUND)) this.netSound.delete(id.slice(NET_SOUND.length))
         void this.devices.get(id)?.then((d) => stopTracks(id, d))
         this.devices.delete(id)
       }
@@ -379,6 +406,8 @@ export class Mixer {
     if (a.kind === 'desktop') return 'desktop'
     if (a.kind === 'file') return a.url ? `file:${a.id}:${a.url}` : undefined
     if (a.kind === 'video') {
+      // A network camera's sound comes with its picture, from the app (see netcams).
+      if (a.device?.startsWith('net:')) return NET_SOUND + a.device
       // A capture device's sound is the audio input from the same box (same group).
       const v = inputs.video.find((d) => d.id === a.device)
       return inputs.audio.find((d: InputDevice) => v?.group && d.group === v.group)?.id
@@ -392,6 +421,16 @@ export class Mixer {
     p = (async () => {
       let stream: MediaStream
       if (id.startsWith('file:')) return this.openFile(id)
+      if (id.startsWith(NET_SOUND)) {
+        // Filled as the camera's sound arrives (pushNetSound).
+        const node = this.ctx.createGain()
+        node.channelCount = 2
+        node.channelCountMode = 'explicit'
+        const splitter = this.ctx.createChannelSplitter(2)
+        node.connect(splitter)
+        this.netSound.set(id.slice(NET_SOUND.length), { node, next: 0 })
+        return { node, splitter, channels: 2 }
+      }
       if (id.startsWith(TONE_DEVICE)) {
         // A sine tone, made here (one per channel that uses it).
         const osc = this.ctx.createOscillator()

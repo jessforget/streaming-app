@@ -138,6 +138,7 @@ export class Studio {
     // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
     this.compositor.phoneStream = (id) => this.phones.stream(id) ?? this.netcams.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
+    this.netcams.onSound = (id, pcm) => this.mixer.pushNetSound(id, pcm)
     this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
     // A commercial ended: go back to the scene before, if its source says so and its scene is still the one live.
     this.compositor.onMediaEnded = (url) => {

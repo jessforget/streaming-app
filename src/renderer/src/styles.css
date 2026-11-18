@@ -609,3 +609,9 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 
 .loop-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin: 0 10px 10px; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; font-weight: 600; cursor: pointer; }
 .loop-toggle.on { background: var(--accent); color: #0b1a33; border-color: transparent; }
+
+/* Sound follows the scene: the scene in Preview and its sound. */
+.scene-sound-pick { display: grid; gap: 8px; padding: 10px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-bg, #182238); }
+.scene-sound-pick label { display: grid; gap: 4px; }
+.scene-sound-pick select { width: 100%; }
+.sound-all { margin-top: 8px; }

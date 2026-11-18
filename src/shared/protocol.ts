@@ -83,6 +83,11 @@ export interface CommandMap {
   'cue.sound': { volume?: number; muted?: boolean; mics?: 'off' | 'duck' | 'on' }
   /** Loop the commercial break (on), or let it end after this round (off). */
   'cue.loop': { on: boolean }
+  /** The one sound for a scene: 'picture' (the sound with its camera), a channel's id, or null for none. */
+  'scene.setSound': { sceneId: string; sourceId: string | null }
+  /** Add a sound to a scene ('picture' or a channel's id), next to the ones it has. */
+  'scene.addSound': { sceneId: string; sourceId: string }
+  'scene.removeSound': { sceneId: string; sourceId: string }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -208,6 +213,9 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'cue.next': 'admin',
   'cue.sound': 'operate',
   'cue.loop': 'operate',
+  'scene.setSound': 'admin',
+  'scene.addSound': 'admin',
+  'scene.removeSound': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',
