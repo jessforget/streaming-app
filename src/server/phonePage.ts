@@ -32,6 +32,21 @@ export const PHONE_PAGE = `<!doctype html>
   /* Flip between the front and back camera, on the picture itself (big enough for a thumb). */
   .flipcam { position:absolute; top:8px; right:8px; width:auto; min-height:48px; padding:0 16px; border-radius:999px; font-size:15px; font-weight:600; background:#000b; color:#fff; border:1px solid #fff5; display:none; }
   .flipcam:disabled { opacity:0.6; }
+  /* Camera settings: only what this phone allows */
+  details.camset { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:4px 12px; }
+  details.camset summary { cursor:pointer; padding:10px 0; font-weight:600; min-height:44px; display:flex; align-items:center; }
+  .camctl { display:flex; flex-direction:column; gap:12px; padding:4px 0 12px; }
+  .camctl .ctl { display:flex; flex-direction:column; gap:6px; }
+  .camctl .head { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
+  .camctl .head b { font-weight:600; }
+  .camctl .val { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .camctl input[type=range] { width:100%; padding:0; height:32px; }
+  .seg { display:flex; }
+  .seg button { flex:1; padding:10px; font-size:15px; border-radius:0; background:var(--bg); border:1px solid var(--line); color:var(--fg); }
+  .seg button:first-child { border-radius:8px 0 0 8px; }
+  .seg button:last-child { border-radius:0 8px 8px 0; border-left:0; }
+  .seg button.on { background:var(--accent); color:#0b1a33; border-color:var(--accent); }
+  .camctl .note { font-size:13px; color:var(--muted); margin:0; }
   label { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted); }
   input, select { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; width:100%; }
   .row { display:flex; gap:10px; }
@@ -88,6 +103,10 @@ export const PHONE_PAGE = `<!doctype html>
   <label class="check"><input type="checkbox" id="mic" checked> Send the phone's microphone too</label>
   <label class="check"><input type="checkbox" id="flip"> Picture upside down? Turn it over</label>
   <label class="check"><input type="checkbox" id="mirror"> Mirror the front camera (like a selfie; text reads backwards on the stream)</label>
+  <details class="camset" id="camSet" style="display:none">
+    <summary>Camera settings (exposure, white balance, focus)</summary>
+    <div class="camctl" id="camCtl"></div>
+  </details>
   <button id="start">Start camera</button>
   <button id="land" class="secondary">Full screen, sideways</button>
   <button id="install" class="secondary" style="display:none">Install as an app</button>
@@ -246,6 +265,7 @@ export const PHONE_PAGE = `<!doctype html>
       stream = new MediaStream(outStream.getVideoTracks().concat(cam.getAudioTracks()));
       stream.camera = cam;
       $('video').srcObject = cam;
+      setupCamera();
       var started = $('video').play().catch(function () {});
       drawing = true;
       drawLoop();
@@ -256,6 +276,203 @@ export const PHONE_PAGE = `<!doctype html>
     drawing = false;
     if (stream && stream.camera) stream.camera.getTracks().forEach(function (t) { t.stop(); });
     if (stream) stream.getAudioTracks().forEach(function (t) { t.stop(); });
+  }
+
+  // ---- Camera settings: manual exposure, white balance, focus, zoom, torch ----
+  // Only what this phone's camera allows (Chrome on Android allows most; Safari on iPhone very little).
+  // Set here or from the app; remembered per camera (front / back) and put back after a flip or restart.
+  var CAM_CONTROLS = [
+    { key: 'exposure', label: 'Exposure', type: 'mode', cap: 'exposureMode' },
+    { key: 'ev', label: 'Brightness', cap: 'exposureCompensation', unit: 'EV', show: ['exposure', 'auto'] },
+    { key: 'shutter', label: 'Shutter', cap: 'exposureTime', scale: 'log', fmt: 'shutter', show: ['exposure', 'manual'] },
+    { key: 'iso', label: 'ISO', cap: 'iso', scale: 'log', show: ['exposure', 'manual'] },
+    { key: 'wb', label: 'White balance', type: 'mode', cap: 'whiteBalanceMode' },
+    { key: 'kelvin', label: 'Colour temperature', cap: 'colorTemperature', unit: 'K', show: ['wb', 'manual'] },
+    { key: 'focus', label: 'Focus', type: 'mode', cap: 'focusMode' },
+    { key: 'focusDist', label: 'Focus distance', cap: 'focusDistance', unit: 'm', show: ['focus', 'manual'] },
+    { key: 'zoom', label: 'Zoom', cap: 'zoom', unit: 'x' },
+    { key: 'torch', label: 'Torch (light)', type: 'bool', cap: 'torch' }
+  ];
+  var camWant = {}, camDesc = [], camTimer = null, camReportTimer = null;
+  function camTrack() { return stream && stream.camera ? stream.camera.getVideoTracks()[0] : null; }
+  function camKey() { return 'cam-set-' + facingNow; }
+  function modeOk(modes) { return Array.isArray(modes) && modes.indexOf('manual') >= 0 && (modes.indexOf('continuous') >= 0 || modes.indexOf('single-shot') >= 0); }
+  /** What this camera allows, as controls (the same list goes to the app). */
+  function describeCamera() {
+    var t = camTrack();
+    var caps = t && t.getCapabilities ? t.getCapabilities() : {};
+    var now = t && t.getSettings ? t.getSettings() : {};
+    var out = [];
+    var modes = {};
+    CAM_CONTROLS.forEach(function (c) { if (c.type === 'mode') modes[c.key] = modeOk(caps[c.cap]); });
+    CAM_CONTROLS.forEach(function (c) {
+      var cap = caps[c.cap];
+      var d = { key: c.key, label: c.label, type: c.type || 'range' };
+      if (c.type === 'mode') {
+        if (!modes[c.key]) return;
+        d.options = ['auto', 'manual'];
+        d.value = camWant[c.key] || (now[c.cap] === 'manual' ? 'manual' : 'auto');
+      } else if (c.type === 'bool') {
+        if (cap !== true && !(Array.isArray(cap) && cap.indexOf(true) >= 0)) return;
+        d.value = camWant[c.key] === true || (camWant[c.key] === undefined && now[c.cap] === true);
+      } else {
+        if (!cap || typeof cap.min !== 'number' || typeof cap.max !== 'number' || !(cap.max > cap.min)) return;
+        d.min = cap.min; d.max = cap.max; d.step = cap.step || 0;
+        if (c.unit) d.unit = c.unit;
+        if (c.scale && cap.min > 0) d.scale = c.scale;
+        if (c.fmt) d.fmt = c.fmt;
+        var v = typeof camWant[c.key] === 'number' ? camWant[c.key] : now[c.cap];
+        d.value = typeof v === 'number' ? Math.min(cap.max, Math.max(cap.min, v)) : cap.min;
+      }
+      // Shown only while its mode is set that way (and only if that mode can be set here at all).
+      if (c.show && modes[c.show[0]]) d.show = c.show;
+      out.push(d);
+    });
+    return out;
+  }
+  function camConstraints() {
+    var c = {};
+    var has = function (k) { return camDesc.some(function (d) { return d.key === k; }); };
+    var val = function (k) { var d = camDesc.filter(function (x) { return x.key === k; })[0]; return d ? d.value : undefined; };
+    if (has('exposure')) c.exposureMode = val('exposure') === 'manual' ? 'manual' : 'continuous';
+    if (val('exposure') === 'manual') {
+      if (has('shutter')) c.exposureTime = val('shutter');
+      if (has('iso')) c.iso = val('iso');
+    } else if (has('ev')) c.exposureCompensation = val('ev');
+    if (has('wb')) c.whiteBalanceMode = val('wb') === 'manual' ? 'manual' : 'continuous';
+    if (val('wb') === 'manual' && has('kelvin')) c.colorTemperature = val('kelvin');
+    if (has('focus')) c.focusMode = val('focus') === 'manual' ? 'manual' : 'continuous';
+    if (val('focus') === 'manual' && has('focusDist')) c.focusDistance = val('focusDist');
+    if (has('zoom')) c.zoom = val('zoom');
+    if (has('torch')) c.torch = val('torch') === true;
+    return c;
+  }
+  function applyCamera() {
+    var t = camTrack();
+    if (!t || !t.applyConstraints) return;
+    var c = camConstraints();
+    t.applyConstraints({ advanced: [c] }).catch(function () {
+      // Some phones refuse a set of several at once: one at a time, skipping what it won't take.
+      var keys = Object.keys(c);
+      var next = function (i) {
+        if (i >= keys.length) return;
+        var one = {}; one[keys[i]] = c[keys[i]];
+        t.applyConstraints({ advanced: [one] }).catch(function () {}).then(function () { next(i + 1); });
+      };
+      next(0);
+    });
+  }
+  function reportCamera() {
+    clearTimeout(camReportTimer);
+    camReportTimer = setTimeout(function () {
+      if (ctl && ctl.readyState === 'open') { try { ctl.send(JSON.stringify({ camera: camDesc })); } catch (e) {} }
+    }, 150);
+  }
+  /** Change some settings (from this page or from the app). */
+  function setCamera(changes) {
+    Object.keys(changes).forEach(function (k) {
+      var d = camDesc.filter(function (x) { return x.key === k; })[0];
+      if (!d) return;
+      var v = changes[k];
+      if (d.type === 'mode') { if (v !== 'auto' && v !== 'manual') return; }
+      else if (d.type === 'bool') v = v === true;
+      else { v = Number(v); if (!isFinite(v)) return; v = Math.min(d.max, Math.max(d.min, v)); }
+      d.value = v;
+      camWant[k] = v;
+    });
+    store.set(camKey(), JSON.stringify(camWant));
+    renderCamera();
+    clearTimeout(camTimer);
+    camTimer = setTimeout(applyCamera, 60);
+    reportCamera();
+  }
+  /** The camera just opened (start, flip, quality): read what it allows and put the saved settings back. */
+  function setupCamera() {
+    try { camWant = JSON.parse(store.get(camKey()) || '{}') || {}; } catch (e) { camWant = {}; }
+    camDesc = describeCamera();
+    $('camSet').style.display = running || stream ? 'block' : 'none';
+    renderCamera();
+    if (Object.keys(camWant).length) applyCamera();
+    reportCamera();
+  }
+  function camFmt(d, v) {
+    if (d.fmt === 'shutter') {
+      var s = v / 10000; // the browser counts in 100-microsecond steps
+      return s >= 0.3 ? (Math.round(s * 10) / 10) + ' s' : '1/' + Math.round(1 / s);
+    }
+    var r = d.step && d.step >= 1 ? Math.round(v) : Math.round(v * 100) / 100;
+    return r + (d.unit ? (d.unit === 'x' ? 'x' : ' ' + d.unit) : '');
+  }
+  // Log settings (shutter, ISO) move in ratios over 1000 slider steps; the rest use the camera's own steps.
+  function toPos(d, v) { return d.scale === 'log' ? Math.round(1000 * Math.log(v / d.min) / Math.log(d.max / d.min)) : v; }
+  function fromPos(d, p) {
+    var v = d.scale === 'log' ? d.min * Math.pow(d.max / d.min, p / 1000) : p;
+    if (d.step && d.scale === 'log') v = d.min + Math.round((v - d.min) / d.step) * d.step;
+    return Math.min(d.max, Math.max(d.min, v));
+  }
+  function renderCamera() {
+    var box = $('camCtl');
+    // Don't rebuild under a finger that is moving a slider.
+    if (box.contains(document.activeElement) && document.activeElement.type === 'range') {
+      camDesc.forEach(function (d) { var el = document.getElementById('cv-' + d.key); if (el) el.textContent = d.type === 'range' ? camFmt(d, d.value) : ''; });
+      return;
+    }
+    box.textContent = '';
+    if (!camDesc.length) {
+      var n = document.createElement('p');
+      n.className = 'note';
+      n.textContent = isIphone ? 'iPhones don\u2019t let web pages change exposure, white balance or focus. The camera stays on auto.' : 'This phone\u2019s browser doesn\u2019t let the page change its camera settings. The camera stays on auto.';
+      box.appendChild(n);
+      return;
+    }
+    var val = function (k) { var d = camDesc.filter(function (x) { return x.key === k; })[0]; return d ? d.value : undefined; };
+    camDesc.forEach(function (d) {
+      if (d.show && val(d.show[0]) !== d.show[1]) return;
+      var row = document.createElement('div');
+      row.className = 'ctl';
+      var head = document.createElement('div');
+      head.className = 'head';
+      var b = document.createElement('b'); b.textContent = d.label; head.appendChild(b);
+      row.appendChild(head);
+      if (d.type === 'mode') {
+        var seg = document.createElement('div');
+        seg.className = 'seg';
+        d.options.forEach(function (o) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = o === 'auto' ? 'Auto' : 'Manual';
+          btn.className = d.value === o ? 'on' : '';
+          btn.setAttribute('aria-pressed', d.value === o ? 'true' : 'false');
+          btn.addEventListener('click', function () { var ch = {}; ch[d.key] = o; setCamera(ch); });
+          seg.appendChild(btn);
+        });
+        row.appendChild(seg);
+      } else if (d.type === 'bool') {
+        var seg2 = document.createElement('div');
+        seg2.className = 'seg';
+        [false, true].forEach(function (o) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = o ? 'On' : 'Off';
+          btn.className = d.value === o ? 'on' : '';
+          btn.addEventListener('click', function () { var ch = {}; ch[d.key] = o; setCamera(ch); });
+          seg2.appendChild(btn);
+        });
+        row.appendChild(seg2);
+      } else {
+        var v = document.createElement('span'); v.className = 'val'; v.id = 'cv-' + d.key; v.textContent = camFmt(d, d.value); head.appendChild(v);
+        var r = document.createElement('input');
+        r.type = 'range';
+        if (d.scale === 'log') { r.min = '0'; r.max = '1000'; r.step = '1'; }
+        else { r.min = String(d.min); r.max = String(d.max); r.step = d.step ? String(d.step) : 'any'; }
+        r.value = String(toPos(d, d.value));
+        r.setAttribute('aria-label', d.label);
+        r.addEventListener('input', function () { var ch = {}; ch[d.key] = fromPos(d, Number(r.value)); setCamera(ch); });
+        r.addEventListener('change', function () { renderCamera(); });
+        row.appendChild(r);
+      }
+      $('camCtl').appendChild(row);
+    });
   }
 
   // ---- Front / back camera, while live ----
@@ -289,6 +506,8 @@ export const PHONE_PAGE = `<!doctype html>
       var next = new MediaStream(s.getVideoTracks().concat(cam.getAudioTracks()));
       stream.camera = next;
       $('video').srcObject = next;
+      facingNow = facing;
+      setupCamera();
       $('video').play().catch(function () {});
       drawLoop();
     }).catch(function (e) {
@@ -300,6 +519,8 @@ export const PHONE_PAGE = `<!doctype html>
         var back = new MediaStream(s.getVideoTracks().concat(cam.getAudioTracks()));
         stream.camera = back;
         $('video').srcObject = back;
+        facingNow = was;
+        setupCamera();
         $('video').play().catch(function () {});
         drawLoop();
       }).catch(function () {});
@@ -368,12 +589,13 @@ export const PHONE_PAGE = `<!doctype html>
     // A small message link: the app can flip this phone's camera, and sees which one it's on.
     var ch = peer.createDataChannel('control');
     ctl = ch;
-    ch.onopen = function () { if (ctl === ch) tellApp(); };
+    ch.onopen = function () { if (ctl === ch) { tellApp(); reportCamera(); } };
     ch.onmessage = function (m) {
       if (ctl !== ch) return;
       var msg = null;
       try { msg = JSON.parse(m.data); } catch (e) { return; }
       if (msg && (msg.facing === 'user' || msg.facing === 'environment') && msg.facing !== $('facing').value) switchCamera(msg.facing);
+      if (msg && msg.set && typeof msg.set === 'object') setCamera(msg.set);
     };
     peer.onconnectionstatechange = function () {
       if (pc !== peer) return;
@@ -445,6 +667,7 @@ export const PHONE_PAGE = `<!doctype html>
     $('start').textContent = 'Start camera';
     $('start').className = '';
     flipLabel();
+    $('camSet').style.display = 'none';
     badge('Not started');
     status('Stopped. The camera left the app\\'s device list.');
   }

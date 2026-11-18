@@ -239,8 +239,9 @@ export class Studio {
   }
 
   /** Called by the screen on every state change. */
-  /** Phone flips already passed on (by device: the last ask's number). */
+  /** Phone flips and camera settings already passed on (by device: the last ask's number). */
   private flipsSent = new Map<string, number>()
+  private setsSent = new Map<string, number>()
 
   update(state: AppState) {
     if (this.state && this.state.programSceneId !== state.programSceneId) this.liveBefore = this.state.programSceneId
@@ -250,6 +251,12 @@ export class Studio {
       this.flipsSent.set(device, f.seq)
       if (!this.state) continue // asked before this window opened: already done (or out of date)
       if (!this.phones.flip(device, f.facing)) this.notice('That phone can’t be flipped from here yet. Reload the camera page on the phone (it needs the new page), or flip it on the phone.')
+    }
+    for (const [device, f] of Object.entries(state.phoneSets ?? {})) {
+      if (this.setsSent.get(device) === f.seq) continue
+      this.setsSent.set(device, f.seq)
+      if (!this.state) continue
+      this.phones.setCamera(device, f.set)
     }
     this.state = state
     const preset = presetFor(state.stream.quality, state.stream.family)

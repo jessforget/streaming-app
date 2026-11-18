@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene, PHONE_CAM_KEYS, type PhoneCamControl, type PhoneCamValue } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -138,6 +138,24 @@ export class Controller extends Emitter<Events> {
         if (!device.startsWith('phone:') || !this.s.inputs.video.some((d) => d.id === device)) throw new CommandError('That phone camera is not connected')
         const flips = (this.s.phoneFlips ??= {})
         flips[device] = { facing, seq: (flips[device]?.seq ?? 0) + 1 }
+        return this.changed()
+      }
+      case 'phone.camera': {
+        const device = str(P, 'device')
+        const dev = this.s.inputs.video.find((d) => d.id === device)
+        if (!device.startsWith('phone:') || !dev) throw new CommandError('That phone camera is not connected')
+        const raw = P.set
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CommandError('set must be the settings to change')
+        const set: Record<string, PhoneCamValue> = {}
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+          if (!(PHONE_CAM_KEYS as readonly string[]).includes(k)) throw new CommandError(`Not a phone camera setting: ${k}`)
+          if (v === 'auto' || v === 'manual' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) set[k] = v
+          else throw new CommandError(`Bad value for ${k}`)
+        }
+        const sets = (this.s.phoneSets ??= {})
+        sets[device] = { set, seq: (sets[device]?.seq ?? 0) + 1 }
+        // Show it right away (the phone confirms a moment later).
+        if (dev.camera) dev.camera = dev.camera.map((c) => (c.key in set ? { ...c, value: set[c.key] } : c))
         return this.changed()
       }
       case 'scene.preview': {
@@ -572,6 +590,7 @@ export class Controller extends Emitter<Events> {
             if (Number.isInteger(d.channels) && d.channels >= 1 && d.channels <= 64) out.channels = d.channels
             if (Array.isArray(d.channelNames)) out.channelNames = d.channelNames.slice(0, 64).map((n: unknown) => String(n).slice(0, 60))
             if (d.facing === 'user' || d.facing === 'environment') out.facing = d.facing
+            if (Array.isArray(d.camera)) out.camera = phoneCamControls(d.camera)
             return out
           })
         }
@@ -1165,4 +1184,30 @@ export function errorText(e: unknown): string {
 /** The last 4 characters of a stream key, so it can be matched against the platform's (the rest stays secret). */
 function keyEnd(key: string | undefined): string | undefined {
   return key && key.length > 8 ? key.slice(-4) : undefined
+}
+
+/** A phone's list of camera settings, checked (it comes from the phone page). */
+function phoneCamControls(v: unknown[]): PhoneCamControl[] {
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+  const out: PhoneCamControl[] = []
+  for (const c of v.slice(0, 12) as Record<string, unknown>[]) {
+    if (!c || typeof c.key !== 'string' || !(PHONE_CAM_KEYS as readonly string[]).includes(c.key)) continue
+    const type = c.type === 'mode' || c.type === 'bool' ? c.type : 'range'
+    const value = c.value === 'auto' || c.value === 'manual' || typeof c.value === 'boolean' ? c.value : num(c.value)
+    if (value === undefined) continue
+    const d: PhoneCamControl = { key: c.key, label: String(c.label ?? c.key).slice(0, 40), type, value }
+    if (type === 'mode') d.options = ['auto', 'manual']
+    if (type === 'range') {
+      const min = num(c.min)
+      const max = num(c.max)
+      if (min === undefined || max === undefined || !(max > min)) continue
+      Object.assign(d, { min, max, step: num(c.step) ?? 0 })
+      if (typeof c.unit === 'string') d.unit = c.unit.slice(0, 8)
+      if (c.scale === 'log' && min > 0) d.scale = 'log'
+      if (c.fmt === 'shutter') d.fmt = 'shutter'
+    }
+    if (Array.isArray(c.show) && typeof c.show[0] === 'string' && typeof c.show[1] === 'string') d.show = [c.show[0].slice(0, 20), c.show[1].slice(0, 20)]
+    out.push(d)
+  }
+  return out
 }

@@ -629,3 +629,17 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .phone-facing.big button { min-height: 48px; padding: 0 22px; font-size: 16px; }
 .remote-phone { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .layer-row .phone-facing { grid-column: 2 / -1; grid-row: 3; justify-self: start; margin-top: 4px; }
+
+/* A phone camera's settings (exposure, white balance, focus...) */
+.phone-cam { grid-column: 2 / -1; grid-row: 4; display: flex; flex-direction: column; gap: 8px; margin-top: 4px; min-width: 0; }
+.phone-cam > button { align-self: flex-start; }
+.phone-cam-box { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1px solid var(--line, #2c323d); border-radius: 8px; background: rgba(0, 0, 0, 0.2); }
+.pc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pc-range { flex-direction: column; align-items: stretch; gap: 4px; }
+.pc-range input { width: 100%; }
+.pc-label { font-weight: 600; }
+.pc-label .muted { font-weight: 400; font-variant-numeric: tabular-nums; }
+.phone-cam.big .pc-row { font-size: 16px; }
+.phone-cam.big .phone-cam-box input[type='range'] { height: 40px; }
+.remote-phone { flex-wrap: wrap; }
+.remote-phone .phone-cam { flex-basis: 100%; }

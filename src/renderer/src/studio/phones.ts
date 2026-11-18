@@ -4,7 +4,7 @@
  * with the other devices as "phone:<id>" (video, and its microphone as audio),
  * so it can be used in a scene like any webcam.
  */
-import type { InputDevice, PhoneFacing } from '../../../shared/state'
+import type { InputDevice, PhoneCamValue, PhoneFacing } from '../../../shared/state'
 
 export const PHONE_PREFIX = 'phone:'
 
@@ -20,6 +20,8 @@ interface Phone {
   ctl: RTCDataChannel | null
   /** Which camera the phone says it is sending. */
   facing?: PhoneFacing
+  /** The camera settings the phone allows, as it describes them (checked again by the app's server). */
+  camera?: unknown[]
 }
 
 export class PhoneCams {
@@ -65,6 +67,10 @@ export class PhoneCams {
             // Same picture track, other camera: only the device list changes (no reopening the video).
             this.facingListeners.forEach((fn) => fn())
           }
+          if (Array.isArray(msg.camera)) {
+            phone.camera = msg.camera.slice(0, 12)
+            this.facingListeners.forEach((fn) => fn())
+          }
         } catch {
           // not ours
         }
@@ -98,7 +104,7 @@ export class PhoneCams {
     for (const p of this.phones.values()) {
       if (!p.connected) continue
       const id = PHONE_PREFIX + p.id
-      if (p.stream.getVideoTracks().length) video.push({ id, name: `${p.name} (phone)`, group: id, ...(p.facing ? { facing: p.facing } : {}) })
+      if (p.stream.getVideoTracks().length) video.push({ id, name: `${p.name} (phone)`, group: id, ...(p.facing ? { facing: p.facing } : {}), ...(p.camera ? { camera: p.camera as InputDevice['camera'] } : {}) })
       if (p.stream.getAudioTracks().length) audio.push({ id, name: `${p.name} (phone mic)`, driver: 'wasapi', group: id, channels: 1 })
     }
     return { video, audio }
@@ -112,9 +118,18 @@ export class PhoneCams {
 
   /** Ask a phone to switch to its front or back camera. False when it can't be told (an older phone page). */
   flip(deviceId: string, facing: PhoneFacing): boolean {
+    return this.tell(deviceId, { facing })
+  }
+
+  /** Change a phone camera's settings (exposure, white balance, focus...). */
+  setCamera(deviceId: string, set: Record<string, PhoneCamValue>): boolean {
+    return this.tell(deviceId, { set })
+  }
+
+  private tell(deviceId: string, msg: object): boolean {
     const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
     if (!p?.ctl || p.ctl.readyState !== 'open') return false
-    p.ctl.send(JSON.stringify({ facing }))
+    p.ctl.send(JSON.stringify(msg))
     return true
   }
 

@@ -36,6 +36,8 @@ export interface CommandMap {
   'scene.preview': { sceneId: string }
   /** Switch a phone camera to its front ('user') or back ('environment') camera. */
   'phone.facing': { device: string; facing: 'user' | 'environment' }
+  /** Change a phone camera's settings: { exposure: 'manual', shutter: 200, iso: 400 }... (only what that phone allows). */
+  'phone.camera': { device: string; set: Record<string, number | boolean | 'auto' | 'manual'> }
   'scene.program': { sceneId: string }
   'scene.goLive': Record<string, never>
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
@@ -186,6 +188,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'state.get': 'read',
   'scene.preview': 'operate',
   'phone.facing': 'operate',
+  'phone.camera': 'operate',
   'scene.program': 'operate',
   'scene.goLive': 'operate',
   'transition.set': 'operate',

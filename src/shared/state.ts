@@ -212,6 +212,8 @@ export interface InputDevice {
   channelNames?: string[]
   /** Phone cameras: which camera the phone is sending now (front = 'user', back = 'environment'). */
   facing?: PhoneFacing
+  /** Phone cameras: the settings the phone's camera lets us change (exposure, white balance, focus...), with their values now. */
+  camera?: PhoneCamControl[]
 }
 
 /**
@@ -374,7 +376,34 @@ export interface AppState {
   stats: HealthStats
   /** Asked from the app or the remote: switch a phone to its front or back camera (by device id; seq tells a new ask). Not saved. */
   phoneFlips?: Record<string, { facing: PhoneFacing; seq: number }>
+  /** Asked from the app or the remote: change a phone camera's settings (by device id). Not saved. */
+  phoneSets?: Record<string, { set: Record<string, PhoneCamValue>; seq: number }>
 }
 
 /** A phone's camera: front ('user', the selfie one) or back ('environment'). */
 export type PhoneFacing = 'user' | 'environment'
+
+export type PhoneCamValue = number | boolean | 'auto' | 'manual'
+
+/** One setting of a phone's camera, as the phone describes it (only the ones that phone allows). */
+export interface PhoneCamControl {
+  /** exposure, ev, shutter, iso, wb, kelvin, focus, focusDist, zoom, torch */
+  key: string
+  label: string
+  type: 'mode' | 'range' | 'bool'
+  value: PhoneCamValue
+  /** type 'mode': auto / manual */
+  options?: ('auto' | 'manual')[]
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  /** 'log': the slider moves in ratios (shutter, ISO). */
+  scale?: 'log'
+  /** 'shutter': shown as 1/x of a second (the value is in 100-microsecond steps). */
+  fmt?: 'shutter'
+  /** Shown only while another setting has this value, e.g. ['exposure', 'manual']. */
+  show?: [string, string]
+}
+
+export const PHONE_CAM_KEYS = ['exposure', 'ev', 'shutter', 'iso', 'wb', 'kelvin', 'focus', 'focusDist', 'zoom', 'torch'] as const

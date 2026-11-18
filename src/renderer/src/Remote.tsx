@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Bridge } from './bridge/bridge'
 import { WsBridge } from './bridge/wsBridge'
 import { InstallButton } from './install'
-import { HealthPill, Notice, PhoneFacingSwitch } from './parts'
+import { HealthPill, Notice, PhoneCameraSettings, PhoneFacingSwitch } from './parts'
 import { useApp, useElapsed } from './useApp'
 import { isOverlay } from '../../shared/state'
 
@@ -89,6 +89,7 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
                   <div key={l.id} className="remote-phone">
                     <span>{l.name}</span>
                     <PhoneFacingSwitch state={state} run={run} device={l.device} big />
+                    <PhoneCameraSettings state={state} run={run} device={l.device} big />
                   </div>
                 ))}
             </>
