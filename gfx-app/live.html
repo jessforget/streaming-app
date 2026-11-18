@@ -497,10 +497,12 @@
     if (view !== 'out' || !window.streamerCue) return
     const c = state?.cue
     // Only a cue nobody has picked up yet (not one that already played, after a reload).
-    if (c && c.take !== passedCue && (c.status === 'waiting' || c.status === 'sent')) {
+    // (A break on air that got longer is passed too: the streaming app adds to it as it plays.)
+    const longer = c?.status === 'onair' && c.pending
+    if (c && c.take !== passedCue && (c.status === 'waiting' || c.status === 'sent' || longer)) {
       passedCue = c.take
       const items = c.items.map((x) => ({ name: x.name, url: new URL(`/media/${x.id}`, location.href).href }))
-      window.streamerCue({ take: c.take, items }).catch(() => {})
+      window.streamerCue({ take: c.take, items, onAir: longer }).catch(() => {})
     } else if (!c && passedCue) {
       window.streamerCue({ take: passedCue, clear: true }).catch(() => {})
       passedCue = 0

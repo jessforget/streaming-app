@@ -150,8 +150,13 @@ export class Studio {
         return
       }
       const back = live?.layers.some((l) => l.kind === 'media' && l.url === url && l.visible && l.loop === false && l.returnAfter)
-      if (!st || !back || !this.liveBefore || this.liveBefore === st.programSceneId || !st.scenes.some((s) => s.id === this.liveBefore)) return
-      void this.bridge.command('scene.program', { sceneId: this.liveBefore }).catch(() => {})
+      if (!st || !live || !back) return
+      // The end of a commercial break: go to what the operator has in Preview (a camera, or any other scene).
+      // Other play-once videos go back to the scene that was live before.
+      const preview = st.previewSceneId
+      const to = live.commercial && preview && preview !== live.id && st.scenes.some((s) => s.id === preview) ? preview : this.liveBefore
+      if (!to || to === st.programSceneId || !st.scenes.some((s) => s.id === to)) return
+      void this.bridge.command('scene.program', { sceneId: to }).catch(() => {})
     }
     this.mixer.graphicsVideo = (l) => (this.state ? this.compositor.graphics.videoFor(l, this.state) : null)
     this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)

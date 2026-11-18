@@ -16,6 +16,8 @@ interface CueMsg {
   /** The break's videos, in play order. */
   items?: { name: string; url: string }[]
   clear?: boolean
+  /** The break is on air and got longer: add to it as it plays. */
+  onAir?: boolean
 }
 interface LinkDesktop {
   onCue(fn: (c: CueMsg) => void): () => void
@@ -51,6 +53,8 @@ export class GfxLink {
   private pictureTimer: ReturnType<typeof setInterval> | null = null
   private statusTimer: ReturnType<typeof setInterval> | null = null
   private small = document.createElement('canvas')
+  /** A break on air is getting longer (followCue waits until that is done). */
+  private extending = false
   /** The cue being handled: where it came from, and the file it was copied to. */
   private cue: { origin: string; take: number; paths: string[]; status: string } | null = null
   private seen = new Set<string>()
@@ -104,6 +108,7 @@ export class GfxLink {
     // A newer take from the same gfx app (the break changed while copying) wins over this one.
     this.latest.set(c.origin, c.take)
     const stale = () => (this.latest.get(c.origin) ?? 0) > c.take
+    if (c.onAir) return this.extendBreak(c, stale)
     const n = c.items.length
     const name = n === 1 ? `“${c.items[0].name || 'Commercial'}”` : `a break of ${n} commercials`
     this.tell(c.origin, c.take, 'copying')
@@ -124,11 +129,36 @@ export class GfxLink {
     }
   }
 
+  /** The gfx operator added to (or changed what's still to come in) the break on air: take the new list in. */
+  private async extendBreak(c: CueMsg, stale: () => boolean) {
+    const cue = this.cue
+    if (!cue || cue.origin !== c.origin || cue.status !== 'onair' || !c.items || !this.desk) {
+      // Too late: the break has ended (or it isn't this app's).
+      this.tell(c.origin, c.take, 'failed', { error: 'the break had ended' })
+      return
+    }
+    try {
+      const items: { name: string; path: string }[] = []
+      for (const it of c.items) items.push({ name: it.name || 'Commercial', path: await this.desk.copyCue(it.url) })
+      if (stale() || this.cue !== cue || cue.status !== 'onair') return
+      this.extending = true
+      const r = await this.bridge.command('cue.commercial', { items, extend: true })
+      if (!r.ok) throw new Error(r.error ?? 'Could not add to the break')
+      this.cue = { origin: c.origin, take: c.take, paths: items.map((x) => x.path), status: 'onair' }
+      this.notice(`The gfx app changed the break on air: ${items.length} commercials now.`)
+    } catch (e) {
+      if (stale()) return
+      this.tell(c.origin, c.take, 'failed', { error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      this.extending = false
+    }
+  }
+
   /** While the cued commercial is in Preview, on air, and after: tell the gfx app. */
   private followCue() {
     const cue = this.cue
     const st = this.getState()
-    if (!cue || !st) return
+    if (!cue || !st || this.extending) return
     const scene = st.scenes.find((s) => s.commercial)
     const media = scene?.layers.filter((l) => l.kind === 'media') ?? []
     const ours = media.length === cue.paths.length && media.every((l, i) => l.url === cue.paths[i])

@@ -94,7 +94,10 @@ rule letting PCs on the same network in (Windows asks to confirm).
 **Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
 Cue more videos to make a **break**: the button becomes **Add to break (n)**, and
 the list under it can be reordered or trimmed until it airs. One Transition in the
-streaming app plays them in order, then goes back to the scene before. The
+streaming app plays them in order, then goes to whatever is in the streaming
+app's Preview (a camera or any other scene; the scene before if Preview is
+empty). While the break is on air, more videos can be dragged from the rundown
+into its list (or added with the button), and the ones still to come reordered. The
 streaming app's Gfx commercial card shows "2 of 3 · time left", and a big red
 "Ends in N" in the last 10 seconds of the last video (the producer's cue).
 For a full-screen video, while the streaming app is connected, Cue to stream is

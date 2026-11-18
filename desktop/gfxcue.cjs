@@ -45,7 +45,7 @@ function setupCue(ipcMain, fromMain, send, origins, originOf) {
       items.push({ name: String(x?.name || 'Commercial').slice(0, 80), url: url.href })
     }
     if (!items.length) return false
-    send('gfx:cue', { origin, take: c.take, items })
+    send('gfx:cue', { origin, take: c.take, items, onAir: c.onAir === true })
     return true
   })
 

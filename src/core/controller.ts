@@ -320,7 +320,23 @@ export class Controller extends Emitter<Events> {
           this.s.scenes.push(scene)
         }
         if (scene.name === 'Commercial') scene.name = 'Gfx commercial' // made by an earlier version
-        if (scene.id === this.s.programSceneId) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
+        if (scene.id === this.s.programSceneId) {
+          // The break on air got longer (or what's still to come changed): keep what has played and
+          // what plays now, and put the new list after it.
+          if (P.extend !== true) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
+          const media = scene.layers.filter((l) => l.kind === 'media')
+          const now = media.findIndex((l) => l.visible)
+          if (now < 0 || items.length <= now || media.slice(0, now + 1).some((l, i) => l.url !== items[i].path)) {
+            throw new CommandError('The break on air has moved on: only the videos still to come can change')
+          }
+          scene.layers = media.slice(0, now + 1)
+          for (const it of items.slice(now + 1)) {
+            scene.layers.push({ id: this.newId('layer'), name: it.name, kind: 'media', visible: false, url: it.path, placement: 'full', loop: false, returnAfter: false, sound: true, volume: 1 })
+          }
+          scene.layers.forEach((l, i) => (l.returnAfter = i === scene!.layers.length - 1))
+          await this.engine.setScene(scene)
+          return this.changed()
+        }
         delete scene.stored
         // In play order: the first shows; each one that ends shows the next (cue.next); the last goes back.
         // (Ids one by one: each new layer must count as taken before the next is named.)

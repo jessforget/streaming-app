@@ -110,6 +110,8 @@
   .cue-list li.dragging { opacity: 0.4; }
   .cue-list li.drop-before { box-shadow: 0 -3px 0 var(--accent); }
   .cue-list li.drop-after { box-shadow: 0 3px 0 var(--accent); }
+  .cue-list li.drop-end { justify-content: center; border: 1px dashed var(--line-2); color: var(--muted); font-size: 12px; padding: 6px; }
+  .cue-list li.drop-end.drop-on { border-color: var(--accent); color: inherit; background: rgba(76, 141, 255, 0.12); }
   .cue-list li .n { width: 18px; text-align: right; font-variant-numeric: tabular-nums; }
   .cue-list li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cue-list li.now { color: inherit; background: rgba(255, 90, 90, 0.12); font-weight: 600; }
@@ -337,6 +339,20 @@
       tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1)
       tool('✕', 'Remove', () => confirmRemove(i))
       li.append(thumb, txt, tools)
+      // A video can be dragged into the commercial break's list.
+      if (i.kind === 'video') {
+        li.draggable = true
+        li.addEventListener('dragstart', (e) => {
+          dragItem = i.id
+          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.setData('text/plain', i.name)
+        })
+        li.addEventListener('dragend', () => {
+          dragItem = ''
+          clearDrops()
+          renderMain()
+        })
+      }
       li.onclick = () => act({ action: 'preview', id: i.id })
       li.ondblclick = () => takeItem(i.id)
       li.onkeydown = (e) => {
@@ -482,63 +498,72 @@
 
   // ---------- Cue to stream: a video as a commercial, in the streaming app's Preview ----------
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-  /** The break video being dragged (its index), or -1. */
+  /** The break video being dragged (its index), or -1; a rundown video being dragged in (its id), or ''. */
   let dragFrom = -1
+  let dragItem = ''
   function renderCue(p) {
     const c = S.cue
     // (An older gfx app server sends one video, not a list.)
     const items = c?.items ?? (c?.id ? [{ id: c.id, name: c.name }] : [])
-    const open = !!c && !['onair', 'done', 'failed'].includes(c.status)
+    const onAir = c?.status === 'onair'
+    // A break can change until it has played: before it airs all of it, on air the ones still to come.
+    const open = !!c && !['done', 'failed'].includes(c.status)
+    const at = c?.at ?? 0
+    const free = onAir ? at + 1 : 0
     const inBreak = open && items.some((x) => x.id === p?.id)
+    const addText = `Add to break (${items.length + 1})`
     $('cue').hidden = !p || p.kind !== 'video'
-    $('cue').disabled = (!!c && c.status === 'onair') || inBreak
-    $('cue').textContent = c?.status === 'onair' ? 'Break on air…' : inBreak ? 'In the break' : open ? `Add to break (${items.length + 1})` : 'Cue to stream'
-    $('askCue').textContent = open ? `Add to break (${items.length + 1})` : 'Cue to stream'
+    $('cue').disabled = inBreak
+    $('cue').textContent = inBreak ? 'In the break' : open ? addText : 'Cue to stream'
+    $('askCue').textContent = open ? addText : 'Cue to stream'
     $('cueBar').hidden = !c
     if (!c) return
     const n = items.length
-    const at = c.at ?? 0
     const last = at === n - 1
     const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
-    const ending = c.status === 'onair' && last && c.dur && leftHere <= 10
+    const ending = onAir && last && !c.pending && c.dur && leftHere <= 10
     const what = n === 1 ? items[0].name : `Break of ${n}`
     const words = {
       waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
       sent: ['Sent', 'to the streaming app…'],
       copying: ['Copying', 'to the streaming PC…'],
-      cued: ['Cued', n > 1 ? 'in the streaming app’s Preview · one Transition plays them all, then back to the camera' : 'in the streaming app’s Preview · waiting for Transition'],
+      cued: ['Cued', n > 1 ? 'in the streaming app’s Preview · one Transition plays them all, then the stream goes to its Preview' : 'in the streaming app’s Preview · waiting for Transition'],
       onair: [
         'On air',
-        ending
-          ? `Ends in ${Math.ceil(leftHere)}`
-          : n > 1
-            ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
-            : c.dur
-              ? `${clock(c.pos)} of ${clock(c.dur)}`
-              : clock(c.pos)
+        c.pending
+          ? 'adding to the break…'
+          : ending
+            ? `Ends in ${Math.ceil(leftHere)}`
+            : n > 1
+              ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
+              : c.dur
+                ? `${clock(c.pos)} of ${clock(c.dur)}`
+                : clock(c.pos)
       ],
-      done: ['Done', 'played on the stream; back to the scene before'],
+      done: ['Done', 'played on the stream; the streaming app went to its Preview'],
       failed: ['Couldn’t cue', c.error || 'the streaming app could not copy it']
     }[c.status] ?? [c.status, '']
     $('cueBar').className = `cue-bar ${c.status} ${ending ? 'ending' : ''}`
     $('cueState').textContent = `${what}: ${words[0]}`
-    $('cueText').textContent = words[1]
-    $('cueProg').hidden = c.status !== 'onair' || !c.dur
+    $('cueText').textContent = onAir && c.error && !c.pending ? `${words[1]} · couldn’t add: ${c.error}` : words[1]
+    $('cueProg').hidden = !onAir || !c.dur
     $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
-    $('uncue').hidden = c.status === 'onair'
+    $('uncue').hidden = onAir
     $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : n > 1 ? 'Uncue all' : 'Uncue'
-    // The break's videos, in play order: reorder or take one out before it airs.
+    // The break's videos, in play order. Not rebuilt while dragging (it would change under the mouse).
     const list = $('cueList')
-    // Not while a video is being dragged (the list would be rebuilt under the mouse).
-    if (dragFrom >= 0) return
+    if (dragFrom >= 0 || dragItem) return
     list.textContent = ''
     $('cueListHead').hidden = !open
-    $('cueListHead').textContent = n < 2 ? 'In the break' : 'In the break, in play order · drag to change the order'
-    if (!open && c.status !== 'onair') return
+    $('cueListHead').textContent = onAir
+      ? 'In the break, in play order · drag more videos in from the rundown'
+      : 'In the break, in play order · drag to change the order, or drag more in from the rundown'
+    if (!open) return
     items.forEach((x, i) => {
       const li = document.createElement('li')
-      if (c.status === 'onair') li.className = i === at ? 'now' : i < at ? 'played' : ''
-      if (open && n > 1) {
+      if (onAir) li.className = i === at ? 'now' : i < at ? 'played' : ''
+      const canChange = i >= free
+      if (canChange && n - free > 1) {
         li.classList.add('can-drag')
         li.draggable = true
         li.title = 'Drag to change the order'
@@ -549,14 +574,15 @@
         li.append(grip)
         dragRow(li, i)
       }
+      dropTarget(li, () => i, free)
       const num = document.createElement('span')
       num.className = 'n'
       num.textContent = `${i + 1}.`
       const nm = document.createElement('span')
       nm.className = 'nm'
-      nm.textContent = x.name
+      nm.textContent = onAir && i === at ? `${x.name} · playing` : x.name
       li.append(num, nm)
-      if (open) {
+      if (canChange) {
         const btn = (label, title, fn, off) => {
           const b = document.createElement('button')
           b.textContent = label
@@ -566,22 +592,57 @@
           b.onclick = fn
           li.append(b)
         }
-        btn('↑', 'Play earlier', () => act({ action: 'cue-move', index: i, up: true }), i === 0)
+        btn('↑', 'Play earlier', () => act({ action: 'cue-move', index: i, up: true }), i <= free)
         btn('↓', 'Play later', () => act({ action: 'cue-move', index: i }), i === n - 1)
         btn('✕', 'Take out of the break', () => act({ action: 'uncue', index: i }))
       }
       list.append(li)
     })
+    // The end of the list: a place to drop more videos.
+    const end = document.createElement('li')
+    end.className = 'drop-end'
+    end.textContent = '+ Drag a video here from the rundown'
+    dropTarget(end, () => n, free, true)
+    list.append(end)
+  }
+  const clearDrops = () => {
+    for (const x of $('cueList').children) x.classList.remove('drop-before', 'drop-after', 'drop-on')
+  }
+  /** A row a break video (reorder) or a rundown video (add) can be dropped on: before or after it. */
+  function dropTarget(li, index, free, isEnd) {
+    const after = (e) => !isEnd && e.clientY > li.getBoundingClientRect().top + li.getBoundingClientRect().height / 2
+    const place = (e) => Math.max(free, index() + (after(e) ? 1 : 0))
+    li.addEventListener('dragover', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = dragItem ? 'copy' : 'move'
+      clearDrops()
+      li.classList.add(isEnd ? 'drop-on' : after(e) ? 'drop-after' : 'drop-before')
+    })
+    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after', 'drop-on'))
+    li.addEventListener('drop', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      clearDrops()
+      const to = place(e)
+      if (dragItem) {
+        const id = dragItem
+        dragItem = ''
+        act({ action: 'cue', id, index: to })
+        return
+      }
+      const from = dragFrom
+      dragFrom = -1
+      // Where it lands once taken out of its old place.
+      const lands = from < to ? to - 1 : to
+      if (lands !== from) act({ action: 'cue-move', index: from, to: lands })
+      else renderMain()
+    })
   }
   /** Drag a video of the break to another place in the list. */
   function dragRow(li, i) {
-    const clear = () => {
-      for (const x of $('cueList').children) x.classList.remove('drop-before', 'drop-after')
-    }
-    const after = (e) => {
-      const r = li.getBoundingClientRect()
-      return e.clientY > r.top + r.height / 2
-    }
     li.addEventListener('dragstart', (e) => {
       dragFrom = i
       li.classList.add('dragging')
@@ -591,25 +652,8 @@
     li.addEventListener('dragend', () => {
       dragFrom = -1
       li.classList.remove('dragging')
-      clear()
-    })
-    li.addEventListener('dragover', (e) => {
-      if (dragFrom < 0) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      clear()
-      li.classList.add(after(e) ? 'drop-after' : 'drop-before')
-    })
-    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'))
-    li.addEventListener('drop', (e) => {
-      e.preventDefault()
-      const from = dragFrom
-      clear()
-      if (from < 0) return
-      // Where it lands once taken out of its old place.
-      let to = i + (after(e) ? 1 : 0)
-      if (from < to) to--
-      if (to !== from) act({ action: 'cue-move', index: from, to })
+      clearDrops()
+      renderMain()
     })
   }
   $('cue').onclick = () => {

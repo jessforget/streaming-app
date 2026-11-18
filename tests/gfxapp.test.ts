@@ -103,13 +103,21 @@ describe('gfx app server', () => {
     s = (await state()) as typeof s
     expect(s.cue).toMatchObject({ status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
     expect((await doit({ action: 'uncue' })).error).toMatch(/on air/)
-    expect((await doit({ action: 'cue', id: v2.result })).error).toMatch(/on air/)
     await tell({ take: 99, status: 'done' }) // an old cue: ignored
     expect(((await state()) as typeof s).cue.status).toBe('onair')
-    await tell({ take: 6, status: 'done' })
+    // On air, a video joins the end of the break: a new take, still on air, pending until the streaming app has it.
+    await doit({ action: 'cue', id: v2.result, index: 0 }) // (not before the one playing)
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ take: 7, status: 'onair', pending: true, liveTake: 6, items: [{ id: v.result }, { id: v2.result }] })
+    expect((await doit({ action: 'uncue', index: 0 })).error).toMatch(/playing/)
+    await tell({ take: 6, status: 'onair', at: 0, pos: 4, dur: 30 }) // the take on air still reports
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 7, pending: true, pos: 4 })
+    await tell({ take: 7, status: 'onair', at: 0, pos: 5, dur: 30 }) // the streaming app has the longer break
+    expect(((await state()) as typeof s).cue).toMatchObject({ pending: false, liveTake: 7 })
+    await tell({ take: 7, status: 'done' })
     // After a break has played, cueing starts a new one.
     await doit({ action: 'cue', id: v2.result })
-    expect(((await state()) as typeof s).cue).toMatchObject({ take: 7, items: [{ id: v2.result }] })
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 8, items: [{ id: v2.result }] })
     await doit({ action: 'uncue' })
     expect(((await state()) as typeof s).cue).toBeNull()
   })

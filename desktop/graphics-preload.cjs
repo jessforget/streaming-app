@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld('streamerCue', (c) =>
           name: c.name,
           url: c.url,
           items: Array.isArray(c.items) ? c.items.slice(0, 20).map((x) => ({ name: String(x?.name ?? ''), url: String(x?.url ?? '') })) : undefined,
-          clear: c.clear === true
+          clear: c.clear === true,
+          onAir: c.onAir === true
         }
       : null
   )

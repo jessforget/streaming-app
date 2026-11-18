@@ -76,7 +76,7 @@ export interface CommandMap {
    * A gfx app cued a commercial break (video files on this PC, played in order): fill the Gfx commercial
    * scene with them and put it in Preview. One video can be given as name and path.
    */
-  'cue.commercial': { name?: string; path?: string; items?: { name: string; path: string }[] }
+  'cue.commercial': { name?: string; path?: string; items?: { name: string; path: string }[]; extend?: boolean }
   /** The break's video (layerId) ended: show the next one in the Gfx commercial scene. */
   'cue.next': { layerId: string }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
