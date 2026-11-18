@@ -259,13 +259,15 @@ export const PHONE_PAGE = `<!doctype html>
       if (!outStream) {
         outStream = $('out').captureStream(30);
         var ov = outStream.getVideoTracks()[0];
-        if (ov && 'contentHint' in ov) ov.contentHint = 'motion';
+        // A camera picture: keep it sharp (the frame rate may dip a little on busy Wi-Fi instead).
+        if (ov && 'contentHint' in ov) ov.contentHint = 'detail';
       }
       // What goes to the app: the turned picture, plus the microphone.
       stream = new MediaStream(outStream.getVideoTracks().concat(cam.getAudioTracks()));
       stream.camera = cam;
       $('video').srcObject = cam;
       setupCamera();
+      syncSendTrack();
       var started = $('video').play().catch(function () {});
       drawing = true;
       drawLoop();
@@ -508,6 +510,7 @@ export const PHONE_PAGE = `<!doctype html>
       $('video').srcObject = next;
       facingNow = facing;
       setupCamera();
+      syncSendTrack();
       $('video').play().catch(function () {});
       drawLoop();
     }).catch(function (e) {
@@ -521,6 +524,7 @@ export const PHONE_PAGE = `<!doctype html>
         $('video').srcObject = back;
         facingNow = was;
         setupCamera();
+        syncSendTrack();
         $('video').play().catch(function () {});
         drawLoop();
       }).catch(function () {});
@@ -552,6 +556,34 @@ export const PHONE_PAGE = `<!doctype html>
     try { if (h264.length) tr.setCodecPreferences(h264.concat(rest)); } catch (e) {}
   }
 
+  // ---- What goes to the app: the camera itself when it's already the right way up, else the turned picture ----
+  // Redrawing every frame costs the phone time (more delay, a warm phone), so it's only done when needed:
+  // the phone held so the camera gives a tall picture, Turn it over, or the mirrored front camera.
+  function wantedVideoTrack() {
+    var cam = camTrack();
+    if (cam && cam.readyState === 'live') {
+      var s = cam.getSettings ? cam.getSettings() : {};
+      if (s.width && s.height && s.width >= s.height && !$('flip').checked && !($('mirror').checked && facingNow === 'user')) {
+        if ('contentHint' in cam) cam.contentHint = 'detail';
+        return cam;
+      }
+    }
+    return outStream ? outStream.getVideoTracks()[0] : null;
+  }
+  function syncSendTrack() {
+    if (!pc) return;
+    var t = wantedVideoTrack();
+    if (!t) return;
+    pc.getTransceivers().forEach(function (tr) {
+      var s = tr.sender;
+      if (!s || tr.receiver.track.kind !== 'video' || s.track === t) return;
+      s.replaceTrack(t).catch(function () {});
+    });
+  }
+  setInterval(syncSendTrack, 1000);
+  $('flip').addEventListener('change', syncSendTrack);
+  $('mirror').addEventListener('change', syncSendTrack);
+
   function setBitrate() {
     if (!pc) return;
     var kbps = $('quality').value === '1080' ? 8000 : 4000;
@@ -561,7 +593,7 @@ export const PHONE_PAGE = `<!doctype html>
       if (!p.encodings || !p.encodings.length) p.encodings = [{}];
       p.encodings[0].maxBitrate = kbps * 1000;
       p.encodings[0].maxFramerate = 30;
-      p.degradationPreference = 'maintain-framerate';
+      p.degradationPreference = 'maintain-resolution';
       s.setParameters(p).catch(function () {});
     });
   }
@@ -583,6 +615,7 @@ export const PHONE_PAGE = `<!doctype html>
     var peer = new RTCPeerConnection({ iceServers: [] });
     pc = peer;
     stream.getTracks().forEach(function (t) {
+      if (t.kind === 'video') t = wantedVideoTrack() || t;
       var tr = peer.addTransceiver(t, { direction: 'sendonly', streams: [stream] });
       if (t.kind === 'video') preferH264(tr);
     });

@@ -643,3 +643,28 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .phone-cam.big .phone-cam-box input[type='range'] { height: 40px; }
 .remote-phone { flex-wrap: wrap; }
 .remote-phone .phone-cam { flex-basis: 100%; }
+/* Phone Camera panel (PhoneCameraPanel.tsx): the same floating window as the Z CAM's Camera panel. */
+.modal.camera-modal.phone-panel { width: min(1180px, calc(100% - 16px)); overflow: auto; }
+.modal.camera-modal.floating { position: fixed; z-index: 30; max-height: calc(100vh - 16px); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); }
+.modal.camera-modal.centered { left: 50%; top: 24px; transform: translateX(-50%); }
+.modal.camera-modal .modal-head { gap: 12px; }
+.modal.camera-modal .modal-head h2 { margin: 0 4px; font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--fg); flex: 1; }
+.camera-drag { cursor: move; user-select: none; touch-action: none; }
+.camera-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 18px; padding: 16px; align-items: start; }
+@media (max-width: 900px) { .camera-body { grid-template-columns: 1fr; } }
+.camera-picture-col, .camera-controls { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.camera-picture { position: relative; aspect-ratio: 16 / 9; background: var(--picture); border-radius: 10px; overflow: hidden; border: 4px solid var(--line); }
+.camera-picture video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.camera-nopic { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; }
+.camera-info { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 8px 14px; background: #000000a8; color: #fff; font-weight: 700; font-size: 15px; pointer-events: none; }
+.camera-info span { display: block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #c4ccd2; font-weight: 600; }
+.camera-tag { position: absolute; bottom: 10px; padding: 4px 10px; border-radius: 6px; background: #000000b8; color: #fff; font-size: 12px; font-weight: 700; }
+.camera-tag.left { left: 10px; }
+.camera-tag.rec { color: #ff6b6f; }
+.camera-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.camera-head > div { display: grid; gap: 2px; }
+.camera-head strong { font-size: 17px; }
+.pill.ok { background: var(--good-bg); color: var(--good); padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.phone-panel .phone-facing.big { align-self: flex-start; }
+.phone-panel .phone-cam-box { padding: 12px; }
+.phone-panel .pc-row { font-size: 14px; }

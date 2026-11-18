@@ -22,6 +22,22 @@ interface Phone {
   facing?: PhoneFacing
   /** The camera settings the phone allows, as it describes them (checked again by the app's server). */
   camera?: unknown[]
+  /** The last connection sample, to turn totals into rates. */
+  lastStats?: { at: number; bytes: number; lost: number; received: number }
+}
+
+/** How a phone's picture is arriving: what to look at when it's blocky or behind. */
+export interface PhoneLinkStats {
+  width: number
+  height: number
+  fps: number
+  /** Megabits a second arriving now. */
+  mbps: number
+  /** Packets lost in the last moment, in percent. */
+  lossPct: number
+  /** How far behind the picture plays (the playback buffer), in ms. */
+  delayMs: number
+  codec: string
 }
 
 export class PhoneCams {
@@ -50,6 +66,14 @@ export class PhoneCams {
     this.phones.set(offer.id, phone)
     pc.ontrack = (e) => {
       if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track)
+      // A short playback buffer: less delay (it still grows by itself when the Wi-Fi gets rough).
+      const r = e.receiver as unknown as { jitterBufferTarget?: number | null; playoutDelayHint?: number }
+      try {
+        if ('jitterBufferTarget' in r) r.jitterBufferTarget = 120
+        else r.playoutDelayHint = 0.12
+      } catch {
+        // not in this browser
+      }
       if (e.track.kind === 'audio') {
         sink.srcObject = stream
         void sink.play().catch(() => {})
@@ -94,7 +118,7 @@ export class PhoneCams {
     await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
     await pc.setLocalDescription(await pc.createAnswer())
     await iceGathered(pc)
-    return pc.localDescription!.sdp
+    return startSharp(pc.localDescription!.sdp)
   }
 
   /** Connected phones, as devices for the device list. */
@@ -114,6 +138,47 @@ export class PhoneCams {
   stream(deviceId: string): MediaStream | null {
     const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
     return p?.connected ? p.stream : null
+  }
+
+  /** How this phone's picture is arriving now (resolution, frame rate, bitrate, loss, delay). */
+  async linkStats(deviceId: string): Promise<PhoneLinkStats | null> {
+    const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
+    if (!p?.connected) return null
+    const report = await p.pc.getStats()
+    let inbound: Record<string, number | string | undefined> | null = null
+    const codecs = new Map<string, string>()
+    report.forEach((s: Record<string, unknown> & { type: string; id: string }) => {
+      if (s.type === 'inbound-rtp' && s.kind === 'video') inbound = s as Record<string, number | string | undefined>
+      if (s.type === 'codec' && typeof s.mimeType === 'string') codecs.set(s.id, s.mimeType.replace(/^video\//, ''))
+    })
+    if (!inbound) return null
+    const r = inbound as Record<string, number | string | undefined>
+    const num = (k: string) => (typeof r[k] === 'number' ? (r[k] as number) : 0)
+    const now = performance.now()
+    const bytes = num('bytesReceived')
+    const lost = num('packetsLost')
+    const received = num('packetsReceived')
+    const last = p.lastStats
+    p.lastStats = { at: now, bytes, lost, received }
+    const dt = last ? (now - last.at) / 1000 : 0
+    const dLost = last ? lost - last.lost : 0
+    const dGot = last ? received - last.received : 0
+    const emitted = num('jitterBufferEmittedCount')
+    return {
+      width: num('frameWidth'),
+      height: num('frameHeight'),
+      fps: Math.round(num('framesPerSecond')),
+      mbps: dt > 0 ? Math.round(((bytes - last!.bytes) * 8) / dt / 1e4) / 100 : 0,
+      lossPct: dLost + dGot > 0 ? Math.round((1000 * Math.max(0, dLost)) / (dLost + dGot)) / 10 : 0,
+      delayMs: emitted ? Math.round((1000 * num('jitterBufferDelay')) / emitted) : 0,
+      codec: codecs.get(String(r.codecId ?? '')) ?? ''
+    }
+  }
+
+  /** The phone's name and camera, for the Camera panel. */
+  info(deviceId: string): { name: string; facing?: PhoneFacing } | null {
+    const p = this.phones.get(deviceId.slice(PHONE_PREFIX.length))
+    return p?.connected ? { name: p.name, facing: p.facing } : null
   }
 
   /** Ask a phone to switch to its front or back camera. False when it can't be told (an older phone page). */
@@ -167,4 +232,33 @@ function iceGathered(pc: RTCPeerConnection): Promise<void> {
     pc.addEventListener('icegatheringstatechange', done)
     setTimeout(resolve, 3000)
   })
+}
+
+/**
+ * Ask the phone to start at a good bitrate and not go below a floor (Chrome on the phone reads
+ * these from our answer). Without it a phone starts near 0.3 Mbps and climbs slowly: blocky.
+ */
+export function startSharp(sdp: string, startKbps = 3500, minKbps = 2500, maxKbps = 8000): string {
+  const extra = `x-google-start-bitrate=${startKbps};x-google-min-bitrate=${minKbps};x-google-max-bitrate=${maxKbps}`
+  const lines = sdp.split('\r\n')
+  let video = false
+  const pts = new Set<string>()
+  for (const l of lines) {
+    if (l.startsWith('m=')) video = l.startsWith('m=video')
+    const m = video && /^a=rtpmap:(\d+) (H264|VP8|VP9|AV1)\//i.exec(l)
+    if (m) pts.add(m[1])
+  }
+  const out: string[] = []
+  const hasFmtp = new Set(lines.map((l) => /^a=fmtp:(\d+) /.exec(l)?.[1]).filter((x): x is string => !!x))
+  for (const l of lines) {
+    const f = /^a=fmtp:(\d+) (.*)$/.exec(l)
+    if (f && pts.has(f[1]) && !f[2].includes('x-google-')) {
+      out.push(`${l};${extra}`)
+      continue
+    }
+    out.push(l)
+    const r = /^a=rtpmap:(\d+) /.exec(l)
+    if (r && pts.has(r[1]) && !hasFmtp.has(r[1])) out.push(`a=fmtp:${r[1]} ${extra}`)
+  }
+  return out.join('\r\n')
 }

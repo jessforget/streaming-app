@@ -4,7 +4,8 @@ import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
 import { InstallButton } from './install'
-import { HealthPill, Notice, ScenePicture } from './parts'
+import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
+import { PhoneCameraPanel } from './PhoneCameraPanel'
 import { Settings, type SettingsTab } from './Settings'
 import type { Studio } from './studio/studio'
 import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
@@ -24,6 +25,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   const { bridge, studio = null, studioElsewhere = false } = props
   const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
   const [settings, setSettings] = useState<SettingsTab | null>(null)
+  /** The Camera panel of a phone camera (from Sources, or the camera button on a scene card). */
+  const [phonePanel, setPhonePanel] = useState<string | null>(null)
   useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
   useSpaceToTransition(state, run, settings === null)
   if (!state) return <div className="loading">Starting…</div>
@@ -32,6 +35,7 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
       <TopBar state={state} stats={stats} run={run} openSettings={setSettings} />
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
+      <PhonePanelContext.Provider value={setPhonePanel}>
       <div className="workspace">
         <main className="stage">
           <Monitors state={state} run={run} studio={studio} />
@@ -59,6 +63,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           </section>
         </aside>
       </div>
+      </PhonePanelContext.Provider>
+      {phonePanel && <PhoneCameraPanel state={state} run={run} studio={studio} device={phonePanel} onClose={() => setPhonePanel(null)} />}
       {settings && (
         <Settings
           state={state}

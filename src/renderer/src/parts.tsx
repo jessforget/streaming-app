@@ -1,5 +1,5 @@
 /** Pieces shared by the main window and the tablet remote. */
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { AppState, HealthStats, PhoneCamControl, PhoneCamValue, Scene } from '../../shared/state'
 import { renderTemplate } from '../../shared/template'
 import type { Run } from './useApp'
@@ -113,11 +113,24 @@ const rangeOf = (d: PhoneCamControl) => (d.scale === 'log' ? { min: 0, max: 1000
  * A phone camera's settings (manual exposure, white balance, focus, zoom, torch), as far as that
  * phone allows. Changes go to the phone over the network; it stays on the stream.
  */
+/** On the streaming PC's main window: opens the phone's Camera panel (like the Z CAM's). */
+export const PhonePanelContext = createContext<((device: string) => void) | null>(null)
+
 export function PhoneCameraSettings({ state, run, device, big }: { state: AppState; run: Run; device: string | undefined; big?: boolean }) {
   const [open, setOpen] = useState(false)
+  const openPanel = useContext(PhonePanelContext)
   if (!device?.startsWith('phone:')) return null
   const d = state.inputs.video.find((x) => x.id === device)
   if (!d) return null
+  if (openPanel) {
+    return (
+      <div className={`phone-cam ${big ? 'big' : ''}`}>
+        <button type="button" className="ghost small" onClick={() => openPanel(device)} title="Picture, connection, front / back, exposure, white balance, focus">
+          Camera panel…
+        </button>
+      </div>
+    )
+  }
   return (
     <div className={`phone-cam ${big ? 'big' : ''}`}>
       <button type="button" className="ghost small" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!d.facing}>
@@ -128,7 +141,7 @@ export function PhoneCameraSettings({ state, run, device, big }: { state: AppSta
   )
 }
 
-function PhoneCameraBox({ run, device, controls }: { run: Run; device: string; controls: PhoneCamControl[] }) {
+export function PhoneCameraBox({ run, device, controls }: { run: Run; device: string; controls: PhoneCamControl[] }) {
   // While a slider moves: its own value here, and the phone told a few times a second.
   const [moving, setMoving] = useState<Record<string, number>>({})
   const pending = useRef<Record<string, PhoneCamValue>>({})
