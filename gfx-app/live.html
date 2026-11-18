@@ -485,6 +485,7 @@
       state = msg
       render()
       passCue()
+      passLoop()
     }
   }
 
@@ -492,6 +493,18 @@
    * A commercial break (one or more videos): the streaming app (it gives this page window.streamerCue)
    * copies them and puts its Gfx commercial scene in Preview. Passed once per take; un-cueing too.
    */
+  /** The break's Loop as passed to the streaming app (set from the first state, not passed then). */
+  let passedLoop
+  function passLoop() {
+    if (view !== 'out' || !window.streamerCue) return
+    const l = state?.breakLoop
+    if (!l) return
+    if (passedLoop === undefined) passedLoop = l.on
+    else if (l.on !== passedLoop) {
+      passedLoop = l.on
+      window.streamerCue({ take: l.seq, loop: l.on }).catch(() => {})
+    }
+  }
   let passedCue = 0
   function passCue() {
     if (view !== 'out' || !window.streamerCue) return

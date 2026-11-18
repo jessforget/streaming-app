@@ -192,6 +192,10 @@ function startServer(opts = {}) {
    */
   let cue = null
   let cueTake = 0
+  /** Loop the break (also switched in the streaming app); seq counts the switches made here. */
+  let breakLoop = false
+  let loopSeq = Math.floor(Date.now() / 1000) // never the same as before a restart
+  let loopSetAt = 0
   /** The first place in the break that can still change: on air, the ones after the video playing. */
   const firstFree = () => (cue?.status === 'onair' ? (cue.at ?? 0) + 1 : 0)
   /**
@@ -243,6 +247,7 @@ function startServer(opts = {}) {
     previewId: show.previewId,
     onAir: show.onAir,
     cue,
+    breakLoop: { on: breakLoop, seq: loopSeq },
     stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, picture: hasPicture() }
   })
   const send = (res, msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`)
@@ -347,6 +352,13 @@ function startServer(opts = {}) {
         if (items.length) changeBreak(items)
         else cue = null
         return
+      }
+      case 'break-loop': {
+        // Play the break again from its first video until this is turned off (then it ends after this round).
+        breakLoop = body.on === true
+        loopSeq++
+        loopSetAt = Date.now()
+        return breakLoop
       }
       case 'cue-move': {
         // Play one video of the break earlier or later (on air: only among those still to come).
@@ -583,6 +595,11 @@ function startServer(opts = {}) {
       if (req.method === 'POST' && path === '/api/cue') {
         const body = await readBody(req)
         const STATUSES = ['copying', 'cued', 'onair', 'done', 'failed', 'cleared']
+        // Loop switched in the streaming app (not just an older report, right after it was switched here).
+        if (typeof body.loop === 'boolean' && body.loop !== breakLoop && Date.now() - loopSetAt > 2000) {
+          breakLoop = body.loop
+          broadcast()
+        }
         // From the take asked for, or (while a longer break is on its way) the take on air now.
         if (cue && (body.take === cue.take || body.take === cue.liveTake) && STATUSES.includes(body.status)) {
           const at = Math.max(0, Math.min(cue.items.length - 1, Math.floor(Number(body.at) || 0)))

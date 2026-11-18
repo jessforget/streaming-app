@@ -81,6 +81,8 @@ export interface CommandMap {
   'cue.next': { layerId: string }
   /** The commercial break's sound: its level, mute, and what the mics do during a break. */
   'cue.sound': { volume?: number; muted?: boolean; mics?: 'off' | 'duck' | 'on' }
+  /** Loop the commercial break (on), or let it end after this round (off). */
+  'cue.loop': { on: boolean }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -205,6 +207,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'cue.clear': 'admin',
   'cue.next': 'admin',
   'cue.sound': 'operate',
+  'cue.loop': 'operate',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

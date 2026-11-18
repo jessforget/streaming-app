@@ -123,6 +123,9 @@
   .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
   .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loop-switch { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .loop-switch input { width: 16px; height: 16px; accent-color: #4c8dff; }
+  .cue-head .loop-switch + button { margin-left: 0; }
   .cue-sound { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; }
   .cue-sound[hidden] { display: none; }
   .cue-meter { flex: 1; height: 8px; border-radius: 2px; background: var(--line); overflow: hidden; }
@@ -212,6 +215,7 @@
         <div class="cue-head">
           <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
           <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
+          <label class="loop-switch" title="Play the break again from its first video until this is turned off; turned off, it ends after this round with the countdown"><input type="checkbox" id="breakLoop"> Loop the break</label>
           <button id="uncue" class="small">Uncue</button>
         </div>
         <div class="cue-sound" id="cueSound" hidden><span>Sound on the stream</span><span class="cue-meter" role="meter" aria-label="Sound on the stream" aria-valuemin="0" aria-valuemax="100" id="cueMeter"><span id="cueLevel"></span></span><span id="cueSoundNote"></span></div>
@@ -526,7 +530,10 @@
     const n = items.length
     const last = at === n - 1
     const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
-    const ending = onAir && last && !c.pending && c.dur && leftHere <= 10
+    const looping = !!S.breakLoop?.on
+    $('breakLoop').checked = looping
+    // A looping break doesn't end: no countdown until Loop is turned off.
+    const ending = onAir && last && !c.pending && c.dur && leftHere <= 10 && !looping
     const what = n === 1 ? items[0].name : `Break of ${n}`
     const words = {
       waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
@@ -539,6 +546,8 @@
           ? 'adding to the break…'
           : ending
             ? `Ends in ${Math.ceil(leftHere)}`
+            : looping
+              ? `Looping · ${n > 1 ? `${at + 1} of ${n}` : clock(c.pos)} · turn Loop off to end it after this round`
             : n > 1
               ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
               : c.dur
@@ -672,6 +681,7 @@
     act({ action: 'cue', id: S.previewId })
   }
   $('uncue').onclick = () => act({ action: 'uncue' })
+  $('breakLoop').onchange = (e) => act({ action: 'break-loop', on: e.target.checked })
 
   // ---------- Settings for the item in Preview ----------
   let builtFor = ''

@@ -18,6 +18,8 @@ interface CueMsg {
   clear?: boolean
   /** The break is on air and got longer: add to it as it plays. */
   onAir?: boolean
+  /** The gfx operator turned the break's Loop on or off (take = the gfx app's count of those changes). */
+  loop?: boolean
 }
 interface LinkDesktop {
   onCue(fn: (c: CueMsg) => void): () => void
@@ -55,6 +57,8 @@ export class GfxLink {
   private small = document.createElement('canvas')
   /** A break on air is getting longer (followCue waits until that is done). */
   private extending = false
+  /** The break's Loop as last told to the gfx app. */
+  private toldLoop = false
   /** The cue being handled: where it came from, and the file it was copied to. */
   private cue: { origin: string; take: number; paths: string[]; status: string } | null = null
   private seen = new Set<string>()
@@ -96,6 +100,14 @@ export class GfxLink {
   }
 
   private async onCue(c: CueMsg) {
+    if (typeof c.loop === 'boolean') {
+      const k = `${c.origin}|${c.take}|loop`
+      if (this.seen.has(k)) return
+      this.seen.add(k)
+      const scene = this.getState()?.scenes.find((s) => s.commercial)
+      if (scene && !!scene.breakLoop !== c.loop) await this.bridge.command('cue.loop', { on: c.loop }).catch(() => {})
+      return
+    }
     const key = `${c.origin}|${c.take}|${c.clear ? 'clear' : 'cue'}`
     if (this.seen.has(key)) return
     this.seen.add(key)
@@ -173,6 +185,10 @@ export class GfxLink {
       return
     }
     const live = st.programSceneId === scene.id
+    const loop = !!scene.breakLoop
+    // Loop changed here (on the card): tell the gfx app, so its switch shows it too.
+    if (!live && loop !== this.toldLoop && cue.status === 'cued') this.tell(cue.origin, cue.take, 'cued', { loop })
+    this.toldLoop = loop
     if (live) {
       cue.status = 'onair'
       // Which video of the break plays, its time, and the time left in the whole break.
@@ -184,7 +200,7 @@ export class GfxLink {
       const el = this.mediaElement(cue.paths[at])
       const pos = el?.currentTime ?? 0
       const left = Math.max(0, dur(cue.paths[at]) - pos) + cue.paths.slice(at + 1).reduce((t, p) => t + dur(p), 0)
-      this.tell(cue.origin, cue.take, 'onair', { at, pos, dur: dur(cue.paths[at]), left, level: Math.round(this.breakLevel() * 1000) / 1000 })
+      this.tell(cue.origin, cue.take, 'onair', { at, pos, dur: dur(cue.paths[at]), left, level: Math.round(this.breakLevel() * 1000) / 1000, loop })
     } else if (cue.status === 'onair') {
       this.tell(cue.origin, cue.take, 'done')
       this.cue = null

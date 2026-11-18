@@ -17,6 +17,8 @@ import { useApp, useElapsed, type Run } from './useApp'
  */
 /** The studio, for the live pictures on the scene cards (none in the mockup or on a tablet). */
 const StudioContext = createContext<Studio | null>(null)
+/** Commands, for controls on scene cards (the Gfx commercial's Loop). */
+const RunContext = createContext<Run | null>(null)
 
 export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; studioElsewhere?: boolean }) {
   const { bridge, studio = null, studioElsewhere = false } = props
@@ -423,7 +425,41 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
       <SceneSounds scene={scene} state={state} studio={studio} />
       {studio && <MediaClock scene={scene} studio={studio} live={live} />}
       {scene.commercial && !scene.layers.some((l) => l.kind === 'media') && <span className="media-clock empty">Nothing cued · cue videos from the gfx app</span>}
+      {scene.commercial && scene.layers.some((l) => l.kind === 'media') && <LoopToggle scene={scene} />}
     </>
+  )
+}
+
+/** Loop the break: play it again from the first video until this is turned off (then it ends after this round). */
+function LoopToggle({ scene }: { scene: Scene }) {
+  const run = useContext(RunContext)
+  if (!run) return null
+  const on = !!scene.breakLoop
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  return (
+    // Inside the scene card (itself a button): a span that acts as a button.
+    <span
+      role="button"
+      tabIndex={0}
+      className={`loop-toggle ${on ? 'on' : ''}`}
+      aria-pressed={on}
+      title={on ? 'Looping: turn off to end the break after this round (with the countdown)' : 'Play the break again from the first video until this is turned off'}
+      onPointerDown={stop}
+      onDoubleClick={stop}
+      onClick={(e) => {
+        stop(e)
+        run('cue.loop', { on: !on })
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          stop(e)
+          run('cue.loop', { on: !on })
+        }
+      }}
+    >
+      ↻ {on ? 'Looping' : 'Loop'}
+    </span>
   )
 }
 
@@ -461,11 +497,13 @@ function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; liv
   if (!list.length || !t || !t.durs[at]) return null
   const n = list.length
   const total = t.durs.reduce((a, b) => a + b, 0)
-  if (!live) return <span className="media-clock">{n > 1 ? `${n} commercials · ${clockText(total)}` : `Length ${clockText(t.durs[0])}`}</span>
+  const looping = !!scene.commercial && !!scene.breakLoop
+  if (!live) return <span className="media-clock">{n > 1 ? `${n} commercials · ${clockText(total)}` : `Length ${clockText(t.durs[0])}`}{looping ? ' · loops' : ''}</span>
   const leftHere = Math.max(0, t.durs[at] - t.pos)
   const leftAll = leftHere + t.durs.slice(at + 1).reduce((a, b) => a + b, 0)
   const last = at === n - 1
-  const ending = last && leftHere <= 10
+  // A looping break doesn't end: no countdown until Loop is turned off.
+  const ending = last && leftHere <= 10 && !looping
   const done = t.durs.slice(0, at).reduce((a, b) => a + b, 0) + t.pos
   return (
     <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(leftAll)} seconds left`}>
@@ -474,6 +512,8 @@ function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; liv
           <>
             Ends in <b>{Math.ceil(leftHere)}</b>
           </>
+        ) : looping ? (
+          <>{n > 1 ? `Looping · ${at + 1} of ${n}` : `Looping · ${clockText(Math.ceil(leftHere))}`}</>
         ) : n > 1 ? (
           <>
             {at + 1} of {n} · {clockText(Math.ceil(leftAll))} left
@@ -529,7 +569,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
     next: s.id === state.previewSceneId && s.id !== state.programSceneId
   })
   return (
-    <>
+    <RunContext.Provider value={run}>
       <section className="scenes" aria-label="In this show">
         <div className="section-head">
           <h2>In this show</h2>
@@ -583,7 +623,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
         dropping={!!dragged && !!drag?.toLibrary}
         dropBlocked={!!dragged && dragged.id === state.programSceneId}
       />
-    </>
+    </RunContext.Provider>
   )
 }
 

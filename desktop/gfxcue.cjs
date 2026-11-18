@@ -31,6 +31,8 @@ function setupCue(ipcMain, fromMain, send, origins, originOf) {
     const origin = originOf(e.sender)
     if (!origin || !c || !Number.isInteger(c.take)) return false
     if (c.clear) return send('gfx:cue', { origin, take: c.take, clear: true }), true
+    // The gfx operator turned the break's Loop on or off.
+    if (typeof c.loop === 'boolean' && !c.items && !c.url) return send('gfx:cue', { origin, take: c.take, loop: c.loop }), true
     // One video ({ name, url }) or a break of several ({ items: [{ name, url }] }), all from that gfx app.
     const list = Array.isArray(c.items) ? c.items.slice(0, 20) : [{ name: c.name, url: c.url }]
     const items = []

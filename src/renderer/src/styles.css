@@ -606,3 +606,6 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .stream-meter-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 6px; align-items: center; }
 .stream-meter .hmeter { position: relative; height: 6px; border-radius: 3px; background: #262c37; overflow: hidden; }
 .stream-meter .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--good); transition: none; }
+
+.loop-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin: 0 10px 10px; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.loop-toggle.on { background: var(--accent); color: #0b1a33; border-color: transparent; }

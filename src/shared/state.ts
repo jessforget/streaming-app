@@ -112,6 +112,8 @@ export interface Scene {
   commercial?: boolean
   /** The commercial scene's sound: one channel for every video in the break, and what the mics do meanwhile. */
   breakSound?: BreakSound
+  /** Play the break again from its first video, until someone turns this off or takes another scene. */
+  breakLoop?: boolean
 }
 
 /** Mics during a commercial break: off, 15 dB lower, or left as they are. */

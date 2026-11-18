@@ -368,8 +368,11 @@ export class Controller extends Emitter<Events> {
         const media = scene.layers.filter((l) => l.kind === 'media')
         const at = media.findIndex((l) => l.id === P.layerId)
         // Only the one showing moves on (an old 'ended' for an earlier video changes nothing).
-        if (at < 0 || !media[at].visible || at === media.length - 1) return null
-        for (const l of media) l.visible = l === media[at + 1]
+        if (at < 0 || !media[at].visible) return null
+        // The last one: a looping break starts again from its first video; otherwise it ends (the studio moves on).
+        const next = at < media.length - 1 ? media[at + 1] : scene.breakLoop && media.length > 1 ? media[0] : null
+        if (!next) return null
+        for (const l of media) l.visible = l === next
         await this.engine.setScene(scene)
         return this.changed()
       }
@@ -387,6 +390,13 @@ export class Controller extends Emitter<Events> {
           bs.mics = P.mics as BreakSound['mics']
         }
         scene.breakSound = bs
+        return this.changed()
+      }
+      case 'cue.loop': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) throw new CommandError('No commercial break yet: cue one from the gfx app first')
+        if (bool(P, 'on')) scene.breakLoop = true
+        else delete scene.breakLoop
         return this.changed()
       }
       case 'cue.clear': {

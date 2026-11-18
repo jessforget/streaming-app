@@ -149,6 +149,22 @@ export class Studio {
         void this.bridge.command('cue.next', { layerId: ended.id }).catch(() => {})
         return
       }
+      // A looping break: after its last video, play it again from the first (until Loop is turned off).
+      if (live?.commercial && live.breakLoop) {
+        const media = live.layers.filter((l) => l.kind === 'media')
+        const last = media[media.length - 1]
+        if (last?.visible && last.url === url) {
+          if (media.length > 1) void this.bridge.command('cue.next', { layerId: last.id }).catch(() => {})
+          else {
+            const el = this.compositor.mediaElement(url)
+            if (el) {
+              el.currentTime = 0
+              void el.play().catch(() => {})
+            }
+          }
+          return
+        }
+      }
       const back = live?.layers.some((l) => l.kind === 'media' && l.url === url && l.visible && l.loop === false && l.returnAfter)
       if (!st || !live || !back) return
       // The end of a commercial break: go to what the operator has in Preview (a camera, or any other scene).
