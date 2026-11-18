@@ -309,7 +309,8 @@ export class Compositor {
       const vctx = this.preview.getContext('2d')!
       vctx.fillStyle = '#000'
       vctx.fillRect(0, 0, this.preview.width, this.preview.height)
-      if (preview) this.drawWithOverlay(vctx, preview, s, this.preview.width, this.preview.height)
+      // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
+      if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
     }
   }
 
@@ -333,7 +334,6 @@ export class Compositor {
     return true
   }
 
-  /** A scene, and the Overlay on top of it when it is on and the scene doesn't hide it. */
   /** A small copy of Live, with the Overlay (drawn on the 2D canvas, so it works with either compositor). */
   drawLive(canvas: HTMLCanvasElement): boolean {
     const s = this.state
@@ -351,6 +351,7 @@ export class Compositor {
     return true
   }
 
+  /** A scene in Live, and the Overlay sources that show over it on top. */
   private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
     this.drawScene(ctx, scene, s, w, h)
     const overlay = overlayOver(s, scene.id)

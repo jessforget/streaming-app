@@ -10,7 +10,7 @@
  * desktop version.
  */
 import { presetFor } from '../../../shared/presets'
-import { GRAPHICS_SIZES, scenesOnAir, type AppState, type Layer } from '../../../shared/state'
+import { GRAPHICS_SIZES, isOverlay, layerOnAir, linkedNames, scenesOnAir, type AppState, type Layer } from '../../../shared/state'
 
 export type GraphicsStatus = 'loading' | 'connected' | 'unreachable' | 'needs-desktop'
 
@@ -56,7 +56,7 @@ export function videoBox(v: GraphicsVideo, pageW: number, pageH: number): Rect {
 }
 
 interface DesktopGraphics {
-  sync(list: { id: string; url: string; width: number; height: number; fps: number; live?: boolean }[]): void
+  sync(list: { id: string; url: string; width: number; height: number; fps: number; live?: boolean; only?: string }[]): void
   reload(id: string): void
   onFrame(fn: (f: GraphicsFrame) => void): () => void
   onStatus(fn: (s: { id: string; status: GraphicsStatus }) => void): () => void
@@ -190,7 +190,7 @@ export class GraphicsFeeds {
   private started = false
   /** Pages opened by the "Add source" form to check an address before adding it. */
   private checks = new Map<string, { url: string; width: number; height: number; fps: number }>()
-  private wanted: { id: string; url: string; width: number; height: number; fps: number; live?: boolean }[] = []
+  private wanted: { id: string; url: string; width: number; height: number; fps: number; live?: boolean; only?: string }[] = []
   private lastSent = ''
 
   constructor(private readonly desktop: DesktopGraphics | null = desktopGraphics()) {}
@@ -299,14 +299,17 @@ export class GraphicsFeeds {
     this.lastState = state
     const specs = new Map<string, NonNullable<ReturnType<typeof feedSpec>>>()
     // Pages on the stream now (a shown source in a scene on air, or in the Overlay over it): the page is told, so it can play its animation then.
+    // A graphics source linked to scenes waits while another scene is in Live; the gfx app is told which scenes.
     const onAir = scenesOnAir(state)
     const live = new Set<string>()
+    const only = new Map<string, string>()
     for (const scene of state.scenes) {
       for (const l of scene.layers) {
         const spec = feedSpec(l, state)
         if (!spec) continue
         specs.set(spec.key, spec)
-        if (l.visible && onAir.has(scene.id)) live.add(spec.key)
+        if (layerOnAir(state, scene, l, onAir)) live.add(spec.key)
+        if (isOverlay(scene) && l.visible && l.onlyIn?.length) only.set(spec.key, linkedNames(state, l))
       }
     }
     for (const [key, c] of this.checks) specs.set(key, { key, ...c })
@@ -326,7 +329,7 @@ export class GraphicsFeeds {
       this.feeds.delete(key)
       changed = true
     }
-    this.wanted = [...specs.values()].map((s) => ({ id: s.key, url: s.url, width: s.width, height: s.height, fps: s.fps, live: live.has(s.key) }))
+    this.wanted = [...specs.values()].map((s) => ({ id: s.key, url: s.url, width: s.width, height: s.height, fps: s.fps, live: live.has(s.key), only: only.get(s.key) ?? '' }))
     this.send()
     if (changed) this.changed()
   }

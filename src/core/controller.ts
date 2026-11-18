@@ -297,6 +297,12 @@ export class Controller extends Emitter<Events> {
           if (!a.scenes.length) delete a.scenes
         }
         for (const other of this.s.scenes) other.layers = other.layers.filter((l) => !(l.kind === 'scene' && l.sceneId === scene.id))
+        // Graphics linked to it go back to every scene... unless they were linked to others too.
+        for (const l of this.s.scenes.find(isOverlay)?.layers ?? []) {
+          if (!l.onlyIn) continue
+          l.onlyIn = l.onlyIn.filter((id) => id !== scene.id)
+          if (!l.onlyIn.length) delete l.onlyIn
+        }
         await this.engine.removeScene(scene.id)
         return this.changed()
       }
@@ -329,6 +335,18 @@ export class Controller extends Emitter<Events> {
         const scene = this.showScene(str(P, 'sceneId'))
         if (bool(P, 'hide')) scene.hideOverlay = true
         else delete scene.hideOverlay
+        return this.changed()
+      }
+      case 'overlay.link': {
+        const overlay = this.s.scenes.find(isOverlay)
+        const layer = overlay?.layers.find((l) => l.id === str(P, 'layerId'))
+        if (!layer) throw new CommandError('No such graphics source')
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (scene.commercial) throw new CommandError('The Gfx commercial never shows graphics.')
+        const now = (layer.onlyIn ?? []).filter((id) => id !== scene.id)
+        if (bool(P, 'on')) now.push(scene.id)
+        if (now.length) layer.onlyIn = now
+        else delete layer.onlyIn
         return this.changed()
       }
       case 'cue.commercial': {

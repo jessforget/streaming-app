@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, linkedNames, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Layer, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
-import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
+import { AddAudioForm, AudioEditor, KIND_LABEL, SceneTools, SourceList } from './Editors'
 import { InstallButton } from './install'
 import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
@@ -422,6 +422,7 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
   const studio = useContext(StudioContext)
   return (
     <>
+      <LinkedTabs scene={scene} state={state} />
       {studio ? <SceneThumb studio={studio} sceneId={scene.id} /> : <ScenePicture scene={scene} state={state} />}
       <span className="scene-name">
         <span>{scene.name}</span>
@@ -432,6 +433,190 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
       {studio && <MediaClock scene={scene} studio={studio} live={live} />}
       {scene.commercial && !scene.layers.some((l) => l.kind === 'media') && <span className="media-clock empty">Nothing cued · cue videos from the gfx app</span>}
       {scene.commercial && scene.layers.some((l) => l.kind === 'media') && <LoopToggle scene={scene} />}
+    </>
+  )
+}
+
+/** The graphics linked to this scene, as tabs on top of its card (they move with it). ✕ unlinks one. */
+function LinkedTabs({ scene, state }: { scene: Scene; state: AppState }) {
+  const run = useContext(RunContext)
+  const linked = (state.scenes.find(isOverlay)?.layers ?? []).filter((l) => l.onlyIn?.includes(scene.id))
+  if (!linked.length) return null
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  return (
+    <span className="gfx-tabs">
+      {linked.map((l) => (
+        <span key={l.id} className={`gfx-tab ${l.visible ? '' : 'off'}`} title={`${l.name} shows only while ${scene.name} is in Live`}>
+          <span aria-hidden="true">🔗</span>
+          <span className="gfx-tab-name">{l.name}</span>
+          {run && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="gfx-tab-x"
+              aria-label={`Unlink ${l.name} from ${scene.name}`}
+              title={`Unlink: ${l.name} goes back to the Overlays row`}
+              onDoubleClick={stop}
+              onClick={(e) => {
+                stop(e)
+                run('overlay.link', { layerId: l.id, sceneId: scene.id, on: false })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  stop(e)
+                  run('overlay.link', { layerId: l.id, sceneId: scene.id, on: false })
+                }
+              }}
+            >
+              ✕
+            </span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * Overlays: the Overlay's sources (graphics, images, windows, text, anything) as cards. Drag one onto a scene card to link it:
+ * then it shows only while that scene is in Live. Not linked = over every scene.
+ */
+function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: RefObject<HTMLElement | null> }) {
+  const overlay = state.scenes.find(isOverlay)
+  const layers = overlay?.layers ?? []
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number; dx: number; dy: number; w: number; h: number; target: string | null } | null>(null)
+  const start = useRef<{ id: string; x: number; y: number; pointer: number; rect: DOMRect } | null>(null)
+  const moved = useRef(false)
+  const latest = useRef(drag)
+  latest.current = drag
+  // The scene card under the pointer (in "In this show"), if graphics can go there.
+  const targetAt = (x: number, y: number): string | null => {
+    for (const el of document.elementsFromPoint(x, y)) {
+      const card = (el as HTMLElement).closest<HTMLElement>('[data-scene-id]')
+      if (card && grid.current?.contains(card)) return card.dataset.commercial ? null : card.dataset.sceneId ?? null
+    }
+    return null
+  }
+  const follow = (e: PointerEvent | ReactPointerEvent) => {
+    const s = start.current
+    if (!s || s.pointer !== e.pointerId) return
+    if (!moved.current) {
+      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 8) return
+      moved.current = true
+    }
+    setDrag({ id: s.id, x: e.clientX, y: e.clientY, dx: s.x - s.rect.left, dy: s.y - s.rect.top, w: s.rect.width, h: s.rect.height, target: targetAt(e.clientX, e.clientY) })
+  }
+  const finish = () => {
+    const s = start.current
+    start.current = null
+    const d = latest.current
+    setDrag(null)
+    if (!s || !moved.current || !d?.target) return
+    const layer = layers.find((l) => l.id === s.id)
+    if (layer && !layer.onlyIn?.includes(d.target)) void run('overlay.link', { layerId: s.id, sceneId: d.target, on: true })
+  }
+  useEffect(() => {
+    const up = () => finish()
+    const move = (e: PointerEvent) => follow(e)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointermove', move)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointermove', move)
+    }
+  })
+  // Light up the scene card it would be linked to.
+  useEffect(() => {
+    const g = grid.current
+    if (!g) return
+    const dragged = drag ? layers.find((l) => l.id === drag.id) : undefined
+    for (const card of g.querySelectorAll<HTMLElement>('[data-scene-id]')) {
+      const on = !!dragged && card.dataset.sceneId === drag?.target
+      card.classList.toggle('gfx-drop', on)
+      if (on) {
+        const name = state.scenes.find((x) => x.id === card.dataset.sceneId)?.name ?? ''
+        card.dataset.dropLabel = dragged?.onlyIn?.includes(card.dataset.sceneId ?? '') ? `Already on ${name}` : `Drop: only over ${name}`
+      }
+    }
+    g.classList.toggle('gfx-dragging', !!dragged)
+  })
+  const addGraphics = () => {
+    const panel = document.querySelector<HTMLElement>('.overlay-panel')
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    panel?.querySelector<HTMLButtonElement>('.panel-head button')?.click()
+  }
+  const dragged = drag ? layers.find((l) => l.id === drag.id) : undefined
+  return (
+    <section className="gfx-row" aria-label="Overlays">
+      <div className="section-head">
+        <h2>Overlays</h2>
+        <span className="muted small">Anything on top: graphics, images, windows, text. Drag one onto a scene to show it only there; not linked = every scene. Overlays show in Live only, never in Preview.</span>
+      </div>
+      <div className="gfx-cards">
+        {layers.map((l) => (
+          <GfxCard
+            key={l.id}
+            layer={l}
+            state={state}
+            className={dragged?.id === l.id ? 'dragging' : ''}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              start.current = { id: l.id, x: e.clientX, y: e.clientY, pointer: e.pointerId, rect: e.currentTarget.getBoundingClientRect() }
+              moved.current = false
+            }}
+            onClickCapture={(e) => {
+              if (moved.current) {
+                e.stopPropagation()
+                e.preventDefault()
+                moved.current = false
+              }
+            }}
+          />
+        ))}
+        <button className="gfx-add" onClick={addGraphics} title="Add an overlay: graphics, an image, a window, text… (opens the Overlay panel)">
+          + Add overlay
+        </button>
+      </div>
+      {dragged && drag && (
+        <div className="gfx-card floating" style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w }} aria-hidden="true">
+          <GfxCardBody layer={dragged} state={state} />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function GfxCard(props: {
+  layer: Layer
+  state: AppState
+  className: string
+  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void
+  onClickCapture: (e: ReactMouseEvent) => void
+}) {
+  const { layer, state, className, onPointerDown, onClickCapture } = props
+  return (
+    <div
+      className={`gfx-card ${layer.onlyIn?.length ? 'linked' : ''} ${layer.visible ? '' : 'off'} ${className}`}
+      data-layer-id={layer.id}
+      title="Drag onto a scene card to show it only while that scene is in Live"
+      onPointerDown={onPointerDown}
+      onClickCapture={onClickCapture}
+    >
+      <GfxCardBody layer={layer} state={state} />
+    </div>
+  )
+}
+
+function GfxCardBody({ layer, state }: { layer: Layer; state: AppState }) {
+  const names = linkedNames(state, layer)
+  return (
+    <>
+      <span className="gfx-card-name">{layer.name}</span>
+      <span className="gfx-card-kind muted small">{KIND_LABEL[layer.kind]}</span>
+      <span className={`gfx-card-where small ${names ? 'linked' : ''}`}>
+        {!layer.visible ? 'Hidden (switched off in the Overlay panel)' : names ? `🔗 Only on ${names}` : 'Every scene'}
+      </span>
     </>
   )
 }
@@ -576,6 +761,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
   })
   return (
     <RunContext.Provider value={run}>
+      <GraphicsRow state={state} run={run} grid={grid} />
       <section className="scenes" aria-label="In this show">
         <div className="section-head">
           <h2>In this show</h2>
@@ -591,7 +777,8 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
                 key={s.id}
                 data-scene-index={i}
                 data-scene-id={s.id}
-                className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
+                data-commercial={s.commercial ? '1' : undefined}
+                className={`scene-card ${s.id && (state.scenes.find(isOverlay)?.layers ?? []).some((l) => l.onlyIn?.includes(s.id)) ? 'has-gfx' : ''} ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
                 aria-pressed={next}
                 title="Drag to change the order"
                 {...props(s.id)}

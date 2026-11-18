@@ -94,6 +94,11 @@ export interface Layer {
    */
   size?: GraphicsSize
   fps?: number
+  /**
+   * Overlay (Graphics) sources only: show only while one of these scenes is in Live
+   * (linked by dropping its graphics card on the scene card). Absent = over every scene.
+   */
+  onlyIn?: string[]
 }
 
 export interface Scene {
@@ -130,7 +135,7 @@ export const COMMERCIALS_CHANNEL = 'commercials'
 export const DUCK_GAIN = 0.178
 
 /**
- * The Overlay: sources drawn on top of every scene, in Preview and Live, like a
+ * The Overlay: sources drawn on top of the scene in Live (never in Preview), like a
  * downstream keyer on a vision mixer. Kept as a scene with this id (so its
  * sources open, play and edit like any other), but never shown as a scene card.
  */
@@ -152,13 +157,44 @@ export function ensureOverlay<T extends Pick<AppState, 'scenes' | 'overlayOn'>>(
   return state
 }
 
-/** Is the Overlay drawn over this scene? On, and the scene doesn't hide it. */
+/**
+ * Does this Overlay source show over this scene? Linked ones only over their scenes
+ * (even one that hides the Overlay); the rest over every scene that doesn't hide it.
+ */
+export function overlayLayerOver(l: Pick<Layer, 'onlyIn'>, scene: Pick<Scene, 'id' | 'hideOverlay' | 'commercial'>): boolean {
+  if (scene.commercial) return false
+  if (l.onlyIn?.length) return l.onlyIn.includes(scene.id)
+  return !scene.hideOverlay
+}
+
+/**
+ * The Overlay as drawn over this scene in Live: on, with only the sources that show
+ * over it. (Preview never shows the Overlay: graphics are only on the stream.)
+ */
 export function overlayOver(state: Pick<AppState, 'scenes' | 'overlayOn'>, sceneId: string): Scene | null {
   if (!state.overlayOn || isOverlay(sceneId)) return null
   const scene = state.scenes.find((x) => x.id === sceneId)
   const overlay = state.scenes.find(isOverlay)
-  if (!scene || scene.hideOverlay || !overlay || !overlay.layers.some((l) => l.visible)) return null
-  return overlay
+  if (!scene || !overlay) return null
+  const layers = overlay.layers.filter((l) => overlayLayerOver(l, scene))
+  if (!layers.some((l) => l.visible)) return null
+  return layers.length === overlay.layers.length ? overlay : { ...overlay, layers }
+}
+
+/**
+ * Is this source on the stream now? Shown, in a scene on air (`onAir` from scenesOnAir);
+ * an Overlay source also only over the scene in Live it shows over.
+ */
+export function layerOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, scene: Pick<Scene, 'id'>, l: Pick<Layer, 'visible' | 'onlyIn'>, onAir: Set<string>): boolean {
+  if (!l.visible || !onAir.has(scene.id)) return false
+  if (!isOverlay(scene)) return true
+  const live = state.scenes.find((x) => x.id === state.programSceneId)
+  return !!live && overlayLayerOver(l, live)
+}
+
+/** The names of the scenes an Overlay source is linked to ("Main show, Z CAM"), or '' for every scene. */
+export function linkedNames(state: Pick<AppState, 'scenes'>, l: Pick<Layer, 'onlyIn'>): string {
+  return (l.onlyIn ?? []).map((id) => state.scenes.find((x) => x.id === id)?.name).filter(Boolean).join(', ')
 }
 
 /**

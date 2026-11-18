@@ -668,3 +668,55 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .phone-panel .phone-facing.big { align-self: flex-start; }
 .phone-panel .phone-cam-box { padding: 12px; }
 .phone-panel .pc-row { font-size: 14px; }
+
+/* ---------- Overlays row: any overlay as a card; drag one onto a scene to show it only there ---------- */
+.gfx-row .section-head { margin-bottom: 8px; }
+.gfx-cards { display: flex; flex-wrap: wrap; gap: 10px; }
+.gfx-card {
+  width: 180px; box-sizing: border-box; padding: 8px 10px; display: grid; gap: 2px; align-content: start;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.gfx-card.linked { border-color: #b48cff; }
+.gfx-card.off { opacity: .6; }
+.gfx-card.dragging { border: 2px dashed #b48cff; background: transparent; }
+.gfx-card.dragging > * { visibility: hidden; }
+.gfx-card.floating {
+  position: fixed; z-index: 50; pointer-events: none; margin: 0; cursor: grabbing;
+  border: 2px solid #b48cff; background: #1d1830; transform: rotate(-2deg) scale(1.04);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+}
+@media (prefers-reduced-motion: reduce) { .gfx-card.floating { transform: none; } }
+.gfx-card-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfx-card-where { color: var(--muted); }
+.gfx-card-where.linked { color: #cbb6ff; }
+.gfx-add { width: 140px; min-height: 64px; border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 10px; }
+.gfx-add:hover { color: var(--fg); border-color: var(--muted); }
+/* The overlays linked to a scene ride on top of its card. */
+.gfx-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 6px 6px; background: rgba(180, 140, 255, .1); border-bottom: 1px solid rgba(180, 140, 255, .35); }
+.gfx-tab {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 26px; box-sizing: border-box;
+  padding: 0 2px 0 6px; border-radius: 6px; border: 1px solid #b48cff; background: #2a2142; color: #e3d7ff; font-size: 12px; font-weight: 600;
+}
+.gfx-tab.off { opacity: .55; }
+.gfx-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfx-tab-x { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 4px; cursor: pointer; color: #c4b3f0; }
+.gfx-tab-x:hover, .gfx-tab-x:focus-visible { background: rgba(255, 255, 255, .12); color: #fff; }
+.scene-card.has-gfx { border-color: #b48cff; }
+.scene-card.gfx-drop { position: relative; outline: 3px dashed #b48cff; outline-offset: 2px; }
+.scene-card.gfx-drop::after {
+  content: attr(data-drop-label); position: absolute; left: 0; right: 0; top: 0; padding: 6px 4px;
+  background: rgba(180, 140, 255, .92); color: #140d24; font-size: 12px; font-weight: 700; text-align: center;
+}
+
+/* ---------- Scene library folded: the window fits the screen, the scene rows sit at the bottom ---------- */
+@media (min-width: 1101px) and (min-height: 620px) {
+  .app:has(.scene-library:not(.open)) { height: 100vh; overflow: hidden; }
+  .app:has(.scene-library:not(.open)) .workspace { flex-wrap: nowrap; align-items: stretch; min-height: 0; overflow: hidden; }
+  /* The side panels scroll on their own, so they no longer make the page long. */
+  .app:has(.scene-library:not(.open)) .side { min-height: 0; max-height: 100%; overflow-y: auto; }
+  .app:has(.scene-library:not(.open)) .stage { min-height: 0; overflow-y: auto; }
+  .app:has(.scene-library:not(.open)) .stage > * { flex-shrink: 0; }
+  /* Preview and Live get the room above the rows; the rows and the folded library sit at the bottom. */
+  .app:has(.scene-library:not(.open)) .monitors-wrap { flex-grow: 1; justify-content: center; }
+}

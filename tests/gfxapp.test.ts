@@ -71,10 +71,13 @@ describe('gfx app server', () => {
     const ctl = new AbortController()
     await fetch(`${base}/events?role=stream`, { signal: ctl.signal })
     await fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live: true }) })
-    expect((await state()).stream).toEqual({ connected: true, live: true, picture: false })
+    expect((await state()).stream).toEqual({ connected: true, live: true, only: '', picture: false })
+    // Linked to one scene: the gfx app shows which.
+    await fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live: false, only: 'Main show' }) })
+    expect((await state()).stream).toEqual({ connected: true, live: false, only: 'Main show', picture: false })
     ctl.abort()
     await new Promise((r) => setTimeout(r, 100))
-    expect((await state()).stream).toEqual({ connected: false, live: false, picture: false })
+    expect((await state()).stream).toEqual({ connected: false, live: false, only: '', picture: false })
   })
 
   it('cues a video to the stream and follows how it goes', async () => {

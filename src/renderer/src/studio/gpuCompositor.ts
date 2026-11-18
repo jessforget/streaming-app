@@ -163,8 +163,8 @@ export class GpuCompositor extends Compositor {
       const pops: Op[] = []
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
       if (preview) {
+        // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
         this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
-        this.collectOverlay(pops, preview, s, pw, ph, 1)
       }
       this.render(enc, this.ctx.preview, pw, ph, pops)
     }
@@ -213,7 +213,7 @@ export class GpuCompositor extends Compositor {
     return out
   }
 
-  /** The Overlay's draws, on top of this scene, when it is on and the scene doesn't hide it. */
+  /** The draws of the Overlay sources that show over this scene in Live, on top of it. */
   private collectOverlay(ops: Op[], scene: Scene, s: AppState, w: number, h: number, alpha: number) {
     const overlay = overlayOver(s, scene.id)
     if (overlay) this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)

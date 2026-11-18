@@ -521,19 +521,19 @@
       passedCue = 0
     }
   }
-  function streamerSays(live) {
+  function streamerSays(live, only) {
     const first = !inStreamer
     inStreamer = true
     if (live && !streamerLive) liveCount++
     streamerLive = live
-    // Tell the gfx app, so its operator sees "live on the stream".
-    post('/api/stream', { live })
+    // Tell the gfx app, so its operator sees "live on the stream" (and on which scenes, when linked to some).
+    post('/api/stream', { live, only: typeof only === 'string' ? only : '' })
     if (first) listen()
     render()
   }
-  if (view === 'out') window.addEventListener('streamer:live', (e) => streamerSays(!!e.detail?.live))
+  if (view === 'out') window.addEventListener('streamer:live', (e) => streamerSays(!!e.detail?.live, e.detail?.only))
   listen()
-  if (view === 'out' && typeof window.streamerLive === 'boolean') streamerSays(window.streamerLive)
+  if (view === 'out' && typeof window.streamerLive === 'boolean') streamerSays(window.streamerLive, window.streamerOnly)
 </script>
 </body>
 </html>

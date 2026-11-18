@@ -176,6 +176,8 @@ function startServer(opts = {}) {
   /** The streaming app's graphics pages that are connected, and whether the stream has them live. */
   const streamPages = new Set()
   let streamLive = false
+  /** '' = the stream shows the graphics over every scene; else the scenes they are linked to ("Main show"). */
+  let streamOnly = ''
   /** Pages listening for changes, and operator pages (they answer window-capture requests). */
   const listeners = new Set()
   const operators = new Set()
@@ -248,7 +250,7 @@ function startServer(opts = {}) {
     onAir: show.onAir,
     cue,
     breakLoop: { on: breakLoop, seq: loopSeq },
-    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, picture: hasPicture() }
+    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, only: streamPages.size > 0 ? streamOnly : '', picture: hasPicture() }
   })
   const send = (res, msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`)
   const broadcast = () => {
@@ -571,6 +573,7 @@ function startServer(opts = {}) {
       if (req.method === 'POST' && path === '/api/stream') {
         const body = await readBody(req)
         streamLive = body.live === true
+        streamOnly = typeof body.only === 'string' ? body.only.slice(0, 300) : ''
         broadcast()
         return json(res, 200, { ok: true })
       }

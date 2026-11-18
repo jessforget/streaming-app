@@ -152,7 +152,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
       {scene.layers.length === 0 && !adding && (
         <p className="muted">
           {overlay
-            ? 'Sources here sit on top of every scene, in Preview and Live: add your Graphics (network) source here.'
+            ? 'Anything here sits on top of the scene in Live (never in Preview): graphics, an image, a window, text. Then drag its card in the Overlays row onto a scene to show it only there.'
             : 'No sources yet. Add the ATEM or HyperDeck as a video input.'}
         </p>
       )}
@@ -217,7 +217,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         ))}
       </ul>
       {overlay ? (
-        scene.layers.length > 0 && <p className="hint">On top of every scene, in Preview and Live. Switching scenes doesn’t touch it. To keep it off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
+        scene.layers.length > 0 && <p className="hint">On top of the scene in Live, never in Preview. Not linked = every scene; drag a card in the Overlays row onto a scene card to show it only there. To keep the every-scene ones off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
       ) : (
         <>
           <label className="check-row">

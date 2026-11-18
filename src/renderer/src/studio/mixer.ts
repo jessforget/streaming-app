@@ -7,7 +7,7 @@
  * mic. The program mix goes into the stream and the recording.
  */
 import { TONE_GAIN, TONE_HZ } from '../../../shared/bars'
-import { BREAK_SOUND, COMMERCIALS_CHANNEL, audible, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, audible, layerOnAir, scenesOnAir, type AppState, type AudioSource, type InputDevice, type Layer } from '../../../shared/state'
 import { fileUrl } from './compositor'
 import { PHONE_PREFIX } from './phones'
 
@@ -323,7 +323,7 @@ export class Mixer {
         if (l.kind !== 'media' || !l.sound || !l.url) continue
         out.push({
           a: { id: LAYER_PREFIX + l.id, name: l.name, kind: 'file', url: l.url, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
-          on: l.visible && onAir.has(scene.id)
+          on: layerOnAir(state, scene, l, onAir)
         })
       }
     }
@@ -338,7 +338,7 @@ export class Mixer {
         if (l.kind !== 'bars' || !l.sound) continue
         out.push({
           a: { id: TONE_PREFIX + l.id, name: `${l.name} (tone)`, kind: 'device', device: `${TONE_DEVICE}${TONE_HZ}`, syncOffsetMs: 0, volume: (l.volume ?? 1) * TONE_GAIN, muted: false, level: 0 },
-          on: l.visible && onAir.has(scene.id)
+          on: layerOnAir(state, scene, l, onAir)
         })
       }
     }
@@ -364,7 +364,7 @@ export class Mixer {
         seen.add(l.id)
         out.push({
           a: { id: GFX_SOUND_PREFIX + l.id, name: `${l.name} (sound)`, kind: 'device', device, syncOffsetMs: 0, volume: l.volume ?? 1, muted: false, level: 0 },
-          on: l.visible && onAir.has(scene.id)
+          on: layerOnAir(state, scene, l, onAir)
         })
       }
     }

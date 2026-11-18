@@ -485,10 +485,13 @@
     $('hide').disabled = !o
     const pill = $('streamPill')
     pill.className = `pill ${S.stream.live ? 'live' : S.stream.connected ? 'ok' : ''}`
+    const onlyOn = S.stream.only ? ` · on ${S.stream.only} only` : ''
     $('streamText').textContent = S.stream.live
-      ? 'Streaming app connected · graphics live on the stream'
+      ? `Streaming app connected · graphics live on the stream${onlyOn}`
       : S.stream.connected
-        ? 'Streaming app connected · graphics not on the stream now'
+        ? S.stream.only
+          ? `Streaming app connected · graphics wait for ${S.stream.only} to be live`
+          : 'Streaming app connected · graphics not on the stream now'
         : 'Streaming app not connected'
     renderCue(p)
     // The On air screen shows the stream's real Live picture when the streaming app sends it.
@@ -501,7 +504,9 @@
     const waits = o && o.playOnLive !== false && S.stream.connected && !S.stream.live
     $('liveHint').className = `hint ${waits ? 'waiting' : ''}`
     $('liveHint').textContent = waits
-      ? `${o.name} is ready: it starts when the streaming app puts the graphics live (Overlay on, or a scene with them).`
+      ? S.stream.only
+        ? `${o.name} is ready: it comes in when ${S.stream.only} goes live on the stream.`
+        : `${o.name} is ready: it starts when the streaming app puts the graphics live.`
       : 'Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.'
   }
 

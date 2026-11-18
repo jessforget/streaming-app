@@ -76,6 +76,8 @@ export interface CommandMap {
   'scene.store': { sceneId: string; stored: boolean }
   /** Leave the Overlay off while this scene is on air. */
   'scene.setHideOverlay': { sceneId: string; hide: boolean }
+  /** Link a Graphics (Overlay) source to a scene: it then shows only while that scene is in Live. on: false unlinks it. */
+  'overlay.link': { layerId: string; sceneId: string; on: boolean }
   /**
    * A gfx app cued a commercial break (video files on this PC, played in order): fill the Gfx commercial
    * scene with them and put it in Preview. One video can be given as name and path.
@@ -214,6 +216,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.move': 'admin',
   'scene.store': 'admin',
   'scene.setHideOverlay': 'admin',
+  'overlay.link': 'admin',
   'cue.commercial': 'admin',
   'cue.clear': 'admin',
   'cue.next': 'admin',
