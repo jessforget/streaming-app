@@ -1244,8 +1244,17 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
         </button>
       </div>
       <span className={`small ${unplugged ? 'warn-text' : 'muted'}`}>{[from, chs].filter(Boolean).join(' · ')}</span>
-      <span className="small muted" title="Change in ✎">
+      <span className="small muted strip-where" title="Change in ✎">
         Plays in: {where || 'no scene'}
+        {!a.scenes && inScene && !inScene.commercial && (
+          <button
+            className="ghost small"
+            title={`Play ${a.name} only in ${inScene.name}, so it stays off in every other scene`}
+            onClick={() => run('audio.update', { sourceId: a.id, scenes: [inScene.id] })}
+          >
+            Only in {inScene.name}
+          </button>
+        )}
       </span>
       <div className="strip-level">
         <div className="hmeter">{studio ? <LiveMeter studio={studio} id={a.id} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
