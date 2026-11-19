@@ -597,7 +597,7 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .listen { position: relative; display: inline-flex; gap: 2px; }
 .listen button svg { vertical-align: -2px; }
 .listen .listen-on { background: var(--good); color: #0b1a12; border-color: transparent; }
-.listen-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 280px; display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 30px #0008; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.listen-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 30px #0008; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .listen-pop label { display: grid; gap: 4px; }
 .listen-pop input[type='range'] { width: 100%; accent-color: var(--accent); }
 

@@ -1391,8 +1391,28 @@ function ListenButton({ studio }: { studio: Studio }) {
     }
   }
   const name = outs.find((o) => o.deviceId === m.device)?.label || 'Windows default output'
+  // The box opens on top of everything, kept inside the window (the side panel is narrow and scrolls, so it would be cut off).
+  const anchor = useRef<HTMLSpanElement>(null)
+  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const r = anchor.current?.getBoundingClientRect()
+      if (!r) return
+      const w = Math.min(300, window.innerWidth - 16)
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8))
+      setAt({ left, top: r.bottom + 6, maxHeight: Math.max(160, window.innerHeight - r.bottom - 14) })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open])
   return (
-    <span className="listen">
+    <span className="listen" ref={anchor}>
       <button
         className={`small ${m.on ? 'listen-on' : 'ghost'}`}
         aria-pressed={m.on}
@@ -1409,7 +1429,7 @@ function ListenButton({ studio }: { studio: Studio }) {
         ▾
       </button>
       {open && (
-        <div className="listen-pop" role="group" aria-label="Listen to the stream">
+        <div className="listen-pop" role="group" aria-label="Listen to the stream" style={at ? { position: 'fixed', left: at.left, top: at.top, right: 'auto', maxHeight: at.maxHeight, overflowY: 'auto' } : undefined}>
           <strong>Listen to the stream</strong>
           <span className="small muted">Everything that goes out, a little behind the room. Use headphones near a live mic, or it echoes.</span>
           <label className="small">
