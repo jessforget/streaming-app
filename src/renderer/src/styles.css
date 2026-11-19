@@ -473,6 +473,17 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 }
 .studio-bar.warn { background: var(--warn-bg); border-bottom-color: var(--warn); }
 .studio-ask { display: inline-flex; align-items: center; gap: 8px; }
+/* Messages about cameras and sound: a button in the bottom-left corner, the list pops up above it. */
+.messages-tray { position: fixed; left: 12px; bottom: 12px; z-index: 55; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.messages-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 12px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line-2, var(--line)); color: var(--muted); box-shadow: 0 4px 16px rgba(0, 0, 0, .35); font-size: 13px; }
+.messages-btn.new { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.messages-pop { width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 520px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+.messages-pop header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.messages-list { overflow: auto; padding: 4px 14px 8px; }
+.messages-list h3 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.messages-list ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.messages-list li { color: var(--warn); line-height: 1.35; }
+.messages-pop > p { margin: 0; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
 .offline-bar { padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); }
 
 /* Sound that follows the scene: dimmed while its scene is not on air. */
