@@ -177,7 +177,7 @@ button.end-live { background: var(--live); border-color: var(--live); color: var
 
 .monitors-wrap { display: flex; flex-direction: column; gap: 12px; }
 /* Preview and Live side by side, the same size (like OBS's Studio Mode). */
-.monitors { display: grid; grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr); gap: 14px; align-items: center; }
+.monitors { display: grid; grid-template-columns: minmax(0, 1fr) 176px minmax(0, 1fr); gap: 14px; align-items: center; }
 .monitor { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-self: start; }
 /* Cut / Fade and Transition sit between Preview and Live, like the T-bar on a vision mixer. */
 .transition-col { display: flex; flex-direction: column; gap: 10px; align-items: stretch; padding-top: 34px; }
@@ -200,6 +200,8 @@ button.take {
   font-family: var(--display); font-size: 20px; font-weight: 700;
 }
 button.take:disabled { background: var(--panel-2); color: var(--muted); opacity: 1; }
+.check-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer; }
+.check-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .segmented.wide { display: flex; }
 .segmented.wide button { flex: 1; min-height: 44px; }
@@ -471,6 +473,17 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 }
 .studio-bar.warn { background: var(--warn-bg); border-bottom-color: var(--warn); }
 .studio-ask { display: inline-flex; align-items: center; gap: 8px; }
+/* Messages about cameras and sound: a button in the bottom-left corner, the list pops up above it. */
+.messages-tray { position: fixed; left: 12px; bottom: 12px; z-index: 55; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.messages-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 4px 12px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line-2, var(--line)); color: var(--muted); box-shadow: 0 4px 16px rgba(0, 0, 0, .35); font-size: 13px; }
+.messages-btn.new { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.messages-pop { width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 520px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+.messages-pop header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.messages-list { overflow: auto; padding: 4px 14px 8px; }
+.messages-list h3 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.messages-list ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.messages-list li { color: var(--warn); line-height: 1.35; }
+.messages-pop > p { margin: 0; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
 .offline-bar { padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); }
 
 /* Sound that follows the scene: dimmed while its scene is not on air. */
@@ -513,4 +526,245 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .scene-sound.muted .meter { opacity: 0.2; }
 .scene-sound.missing .sound-label, .scene-sound.missing .sound-label small, .scene-sound.missing .sound-icon { color: var(--warn); }
 .scene-sound-every { font-size: 11px; color: var(--muted); }
+.media-clock { display: grid; gap: 4px; margin: 0 10px 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.media-clock.on { color: var(--fg); font-size: 14px; font-weight: 600; }
+.media-clock-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.media-clock-bar span { display: block; height: 100%; background: var(--live, #e5484d); }
+.media-clock.ending { padding: 6px 8px; border-radius: 6px; background: var(--live, #e5484d); color: #fff; }
+.media-clock.ending .media-clock-text { font-size: 15px; }
+.media-clock.ending b { font-size: 22px; margin-left: 4px; }
+.media-clock.ending .media-clock-bar { background: rgba(255, 255, 255, 0.35); }
+.media-clock.ending .media-clock-bar span { background: #fff; }
+@media (prefers-reduced-motion: no-preference) { .media-clock.ending { animation: clock-pulse 1s ease-in-out infinite; } }
+@keyframes clock-pulse { 50% { filter: brightness(1.2); } }
 .library-item .scene-sounds { padding: 0 8px 6px; }
+
+/* ---------- Graphics (network) sources ---------- */
+.two-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.gfx-status {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 12px; font-weight: 600; border-radius: 999px; padding: 1px 9px;
+  color: var(--muted); background: var(--panel-2);
+}
+.gfx-status .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.gfx-status.connected { color: var(--good); background: var(--good-bg); }
+.gfx-status.unreachable { color: var(--live); background: var(--live-bg); }
+.gfx-status.needs-desktop { color: var(--warn); background: var(--warn-bg); }
+.gfx-line { display: flex; align-items: center; gap: 8px; }
+.gfx-line > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfx-check { display: grid; gap: 6px; }
+.gfx-check-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.gfx-preview {
+  position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line);
+  background-color: #23262d;
+  background-image: linear-gradient(45deg, #2e323a 25%, transparent 25%), linear-gradient(-45deg, #2e323a 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2e323a 75%), linear-gradient(-45deg, transparent 75%, #2e323a 75%);
+  background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+.gfx-preview canvas { display: block; width: 100%; height: auto; }
+.gfx-preview-tag { position: absolute; top: 8px; right: 8px; font-size: 11px; color: #e8eaee; background: rgba(14, 16, 20, 0.8); border-radius: 4px; padding: 2px 6px; }
+.gfx-preview-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; font-size: 13px; color: #e8eaee; text-shadow: 0 1px 2px #000; }
+.gfx-note { margin: 0; }
+
+/* Graphics (network): address, Test, Find gfx apps */
+.gfx-address { display: grid; gap: 8px; }
+.gfx-address-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.gfx-find-btn { justify-self: start; }
+.gfx-find-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gfx-scan { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 12px; }
+.gfx-scan-head { display: flex; align-items: center; gap: 10px; }
+.gfx-scan-head .muted { margin-left: auto; }
+.gfx-scan .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: gfx-spin 0.8s linear infinite; }
+@keyframes gfx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gfx-scan .spinner { animation: none; } }
+.gfx-scan-bar { height: 4px; border-radius: 2px; background: var(--line); }
+.gfx-scan-bar > div { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.2s; }
+.gfx-found { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.gfx-found li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.gfx-found li > div { display: grid; gap: 2px; min-width: 0; }
+.gfx-scan-foot { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.gfx-scan p { margin: 0; }
+.gfx-test { display: grid; gap: 6px; border-radius: var(--radius); padding: 10px 12px; border: 1px solid var(--line); }
+.gfx-test ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.gfx-test.connected, .gfx-test.page { background: var(--good-bg); border-color: var(--good); }
+.gfx-test.connected strong, .gfx-test.page strong { color: var(--good); }
+.gfx-test.unreachable { background: var(--live-bg); border-color: var(--live); }
+.gfx-test.unreachable strong { color: var(--live); }
+.gfx-test.other { background: var(--warn-bg); border-color: var(--warn); }
+.gfx-test.other strong { color: var(--warn); }
+.layers .gfx-test li { display: list-item; background: none; padding: 0; border-radius: 0; }
+.layers .gfx-found li { background: none; }
+
+/* A commercial break's sound: a meter on the Gfx commercial card, and its channel in Sound. */
+.media-clock-sound { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.media-clock-sound .hmeter { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.media-clock-sound .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; height: 100%; width: 0; background: var(--good); transition: none; }
+.media-clock.empty { color: var(--muted); font-size: 12px; }
+.break-strip { border: 1px solid var(--line); }
+.break-mics { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.break-mics select { max-width: 60%; }
+
+/* Listen: hear the stream's sound on this PC. */
+.listen { position: relative; display: inline-flex; gap: 2px; }
+.listen button svg { vertical-align: -2px; }
+.listen .listen-on { background: var(--good); color: #0b1a12; border-color: transparent; }
+.listen-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; width: min(300px, calc(100vw - 16px)); box-sizing: border-box; display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 30px #0008; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.listen-pop label { display: grid; gap: 4px; }
+.listen-pop input[type='range'] { width: 100%; accent-color: var(--accent); }
+
+.solo.on { color: var(--good); background: var(--good-bg); }
+.stream-meter { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; margin-bottom: 8px; border-radius: 8px; background: var(--row); }
+.stream-meter-bars { display: grid; gap: 3px; }
+.stream-meter-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 6px; align-items: center; }
+.stream-meter .hmeter { position: relative; height: 6px; border-radius: 3px; background: #262c37; overflow: hidden; }
+.stream-meter .hmeter .meter { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--good); transition: none; }
+
+.loop-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 4px; margin: 0 10px 10px; min-height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.loop-toggle.on { background: var(--accent); color: #0b1a33; border-color: transparent; }
+
+/* Sound follows the scene: the scene in Preview and its sound. */
+.scene-sound-pick { display: grid; gap: 8px; padding: 10px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-bg, #182238); }
+.scene-sound-pick label { display: grid; gap: 4px; }
+.scene-sound-pick select { width: 100%; }
+.sound-all { margin-top: 8px; }
+
+/* "Plays in: Every scene" with its "Only in <scene>" button */
+.strip-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.strip-where button { min-height: 28px; padding: 0 8px; }
+
+/* A phone camera's Front / Back switch (Sources list and tablet remote) */
+.phone-facing { display: inline-flex; gap: 0; flex: none; }
+.phone-facing button { min-height: 28px; padding: 0 10px; border-radius: 0; }
+.phone-facing button:first-child { border-radius: 6px 0 0 6px; }
+.phone-facing button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.phone-facing button.on { background: var(--accent, #4c8dff); color: #0b1a33; border-color: transparent; opacity: 1; }
+.phone-facing.big button { min-height: 48px; padding: 0 22px; font-size: 16px; }
+.remote-phone { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.layer-row .phone-facing { grid-column: 2 / -1; grid-row: 3; justify-self: start; margin-top: 4px; }
+
+/* A phone camera's settings (exposure, white balance, focus...) */
+.phone-cam { grid-column: 2 / -1; grid-row: 4; display: flex; flex-direction: column; gap: 8px; margin-top: 4px; min-width: 0; }
+.phone-cam > button { align-self: flex-start; }
+.phone-cam-box { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1px solid var(--line, #2c323d); border-radius: 8px; background: rgba(0, 0, 0, 0.2); }
+.pc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.pc-range { flex-direction: column; align-items: stretch; gap: 4px; }
+.pc-range input { width: 100%; }
+.pc-label { font-weight: 600; }
+.pc-label .muted { font-weight: 400; font-variant-numeric: tabular-nums; }
+.phone-cam.big .pc-row { font-size: 16px; }
+.phone-cam.big .phone-cam-box input[type='range'] { height: 40px; }
+.remote-phone { flex-wrap: wrap; }
+.remote-phone .phone-cam { flex-basis: 100%; }
+/* Phone Camera panel (PhoneCameraPanel.tsx): the same floating window as the Z CAM's Camera panel. */
+.modal.camera-modal.phone-panel { width: min(1180px, calc(100% - 16px)); overflow: auto; }
+.modal.camera-modal.floating { position: fixed; z-index: 30; max-height: calc(100vh - 16px); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); }
+.modal.camera-modal.centered { left: 50%; top: 24px; transform: translateX(-50%); }
+.modal.camera-modal .modal-head { gap: 12px; }
+.modal.camera-modal .modal-head h2 { margin: 0 4px; font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--fg); flex: 1; }
+.camera-drag { cursor: move; user-select: none; touch-action: none; }
+.camera-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 18px; padding: 16px; align-items: start; }
+@media (max-width: 900px) { .camera-body { grid-template-columns: 1fr; } }
+.camera-picture-col, .camera-controls { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.camera-picture { position: relative; aspect-ratio: 16 / 9; background: var(--picture); border-radius: 10px; overflow: hidden; border: 4px solid var(--line); }
+.camera-picture video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.camera-nopic { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; }
+.camera-info { position: absolute; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 8px 14px; background: #000000a8; color: #fff; font-weight: 700; font-size: 15px; pointer-events: none; }
+.camera-info span { display: block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #c4ccd2; font-weight: 600; }
+.camera-tag { position: absolute; bottom: 10px; padding: 4px 10px; border-radius: 6px; background: #000000b8; color: #fff; font-size: 12px; font-weight: 700; }
+.camera-tag.left { left: 10px; }
+.camera-tag.rec { color: #ff6b6f; }
+.camera-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.camera-head > div { display: grid; gap: 2px; }
+.camera-head strong { font-size: 17px; }
+.pill.ok { background: var(--good-bg); color: var(--good); padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.phone-panel .phone-facing.big { align-self: flex-start; }
+.phone-panel .phone-cam-box { padding: 12px; }
+.phone-panel .pc-row { font-size: 14px; }
+
+/* ---------- Overlays row: any overlay as a card; drag one onto a scene to show it only there ---------- */
+.gfx-row .section-head { margin-bottom: 8px; }
+.gfx-cards { display: flex; flex-wrap: wrap; gap: 10px; }
+.gfx-card {
+  width: 180px; box-sizing: border-box; padding: 8px 10px; display: grid; gap: 2px; align-content: start;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.gfx-card.linked { border-color: #b48cff; }
+.gfx-card.off { opacity: .6; }
+.gfx-card.dragging { border: 2px dashed #b48cff; background: transparent; }
+.gfx-card.dragging > * { visibility: hidden; }
+.gfx-card.floating {
+  position: fixed; z-index: 50; pointer-events: none; margin: 0; cursor: grabbing;
+  border: 2px solid #b48cff; background: #1d1830; transform: rotate(-2deg) scale(1.04);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+}
+@media (prefers-reduced-motion: reduce) { .gfx-card.floating { transform: none; } }
+.gfx-card-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfx-card-where { color: var(--muted); }
+.gfx-card-where.linked { color: #cbb6ff; }
+.gfx-add { width: 140px; min-height: 64px; border: 1px dashed var(--line); background: transparent; color: var(--muted); border-radius: 10px; }
+.gfx-add:hover { color: var(--fg); border-color: var(--muted); }
+/* The overlays linked to a scene ride on top of its card. */
+.gfx-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 6px 6px; background: rgba(180, 140, 255, .1); border-bottom: 1px solid rgba(180, 140, 255, .35); }
+.gfx-tab {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 26px; box-sizing: border-box;
+  padding: 0 2px 0 6px; border-radius: 6px; border: 1px solid #b48cff; background: #2a2142; color: #e3d7ff; font-size: 12px; font-weight: 600;
+}
+.gfx-tab.off { opacity: .55; }
+.gfx-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gfx-tab-x { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 4px; cursor: pointer; color: #c4b3f0; }
+.gfx-tab-x:hover, .gfx-tab-x:focus-visible { background: rgba(255, 255, 255, .12); color: #fff; }
+.scene-card.has-gfx { border-color: #b48cff; }
+.scene-card.gfx-drop { position: relative; outline: 3px dashed #b48cff; outline-offset: 2px; }
+.scene-card.gfx-drop::after {
+  content: attr(data-drop-label); position: absolute; left: 0; right: 0; top: 0; padding: 6px 4px;
+  background: rgba(180, 140, 255, .92); color: #140d24; font-size: 12px; font-weight: 700; text-align: center;
+}
+
+/* ---------- Scene library folded: the window fits the screen, the scene rows sit at the bottom ---------- */
+@media (min-width: 1101px) and (min-height: 620px) {
+  .app:has(.scene-library:not(.open)) { height: 100vh; overflow: hidden; }
+  .app:has(.scene-library:not(.open)) .workspace { flex-wrap: nowrap; align-items: stretch; min-height: 0; overflow: hidden; }
+  /* The side panels scroll on their own, so they no longer make the page long. */
+  .app:has(.scene-library:not(.open)) .side { min-height: 0; max-height: 100%; overflow-y: auto; }
+  .app:has(.scene-library:not(.open)) .stage { min-height: 0; overflow-y: auto; }
+  .app:has(.scene-library:not(.open)) .stage > * { flex-shrink: 0; }
+  /* Preview and Live get the room above the rows; the rows and the folded library sit at the bottom. */
+  .app:has(.scene-library:not(.open)) .monitors-wrap { flex-grow: 1; justify-content: center; }
+}
+.gfx-open { display: inline-flex; flex-direction: column; gap: 4px; }
+.gfx-open .gfx-add { min-height: 64px; }
+.gfx-open-note { max-width: 180px; }
+.gfx-open-switch { display: flex; flex-direction: column; gap: 6px; max-width: 320px; padding: 10px; border: 1px solid var(--warn, #d9a400); border-radius: 8px; background: rgba(217, 164, 0, 0.08); }
+.gfx-open-switch button { min-height: 40px; }
+.gfx-add-form { margin-top: 10px; max-width: 720px; }
+
+/* ---------- Fade time and the manual fader (T-bar) ---------- */
+.fade-times { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.fade-times button { padding: 0; min-height: 28px; font-size: 12px; font-weight: 600; }
+.fade-times button.on { background: var(--accent-bg); border-color: var(--accent); }
+.fade-custom { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.fade-custom input { width: 100%; min-width: 0; min-height: 28px; padding: 0 6px; }
+.tbar {
+  position: relative; align-self: center; width: 40px; height: 150px; margin: 12px 0 22px;
+  border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); touch-action: none; cursor: ns-resize;
+  user-select: none; -webkit-user-select: none;
+}
+.tbar::before { content: ''; position: absolute; left: 50%; top: 8px; bottom: 8px; width: 4px; margin-left: -2px; border-radius: 2px; background: #0b0c0f; }
+.tbar.disabled { opacity: .45; cursor: not-allowed; }
+.tbar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tbar-fill { position: absolute; left: 0; right: 0; border-radius: 8px; background: rgba(76, 141, 255, .25); pointer-events: none; }
+.tbar-handle {
+  position: absolute; left: -12px; right: -12px; height: 20px; transform: translateY(-50%); pointer-events: none;
+  border-radius: 5px; background: linear-gradient(#eef1f6, #b9c0cc); box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+}
+.tbar.mixing .tbar-handle { background: linear-gradient(#cfe0ff, #7fa8f5); }
+.tbar-pct { position: absolute; left: 50%; bottom: -20px; transform: translateX(-50%); font: 600 11px/1 var(--display); color: var(--muted); white-space: nowrap; }
+/* The T-bar stands to the right of the buttons, as tall as they are. */
+.transition-col { display: grid; grid-template-columns: minmax(0, 1fr) 30px; column-gap: 12px; row-gap: 8px; align-content: start; }
+.transition-col > .tbar { grid-column: 2; grid-row: 1 / span 6; align-self: stretch; width: 30px; height: auto; min-height: 160px; margin: 0; }
+.transition-col .take { min-height: 76px; }
+.tbar-handle { left: -7px; right: -7px; }
+.tbar-pct { bottom: auto; top: -18px; }
+@media (max-width: 760px) { .tbar { display: none; } .transition-col { display: flex; } }
+.transition-col > .key-hint { justify-self: center; }

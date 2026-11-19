@@ -9,11 +9,12 @@
  * - sends the result to the app's server while streaming or recording.
  */
 import { QUALITY_PRESETS, cameraRate, presetFor } from '../../../shared/presets'
-import type { AppState } from '../../../shared/state'
+import { COMMERCIALS_CHANNEL, type AppState } from '../../../shared/state'
 import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
 import { listDevices, onDeviceChange } from './devices'
 import { GpuCompositor } from './gpuCompositor'
+import { GfxLink } from './gfxlink'
 import { GpuOutput, gpuEncodeSupported } from './gpuOutput'
 import { Mixer } from './mixer'
 import { Output } from './output'
@@ -55,6 +56,9 @@ export class Studio {
   /** Network cameras, like a Z CAM E2 on the router. */
   readonly netcams = new NetCams()
   private state: AppState | null = null
+  /** The scene that was live before the one live now: where an auto-play video goes back to. */
+  private liveBefore = ''
+  private gfxLink: GfxLink | null = null
   private outputs: Partial<Record<'stream' | 'record', Output | GpuOutput>> = {}
   /** Which qualities the graphics card can encode (checked once at the start). */
   private gpuEncode = new Map<string, boolean>()
@@ -65,6 +69,7 @@ export class Studio {
   private lastMeasure = performance.now()
   private offDevices: (() => void) | null = null
   private offPhoneOffers: (() => void) | null = null
+  private offGraphics: (() => void) | null = null
   private reportTimer: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<() => void>()
   private media: MediaStream | null = null
@@ -133,8 +138,53 @@ export class Studio {
     // Phone cameras: answer each phone, and list it with the other devices once its video arrives.
     this.compositor.phoneStream = (id) => this.phones.stream(id) ?? this.netcams.stream(id)
     this.mixer.phoneStream = (id) => this.phones.stream(id)
+    this.netcams.onSound = (id, pcm) => this.mixer.pushNetSound(id, pcm)
     this.mixer.mediaElement = (url) => this.compositor.mediaElement(url)
+    // A commercial ended: go back to the scene before, if its source says so and its scene is still the one live.
+    this.compositor.onMediaEnded = (url) => {
+      const st = this.state
+      const live = st?.scenes.find((s) => s.id === st.programSceneId)
+      // A commercial break: the next video, if this was not the last.
+      const ended = live?.commercial ? live.layers.find((l) => l.kind === 'media' && l.url === url && l.visible && !l.returnAfter) : undefined
+      if (ended) {
+        void this.bridge.command('cue.next', { layerId: ended.id }).catch(() => {})
+        return
+      }
+      // A looping break: after its last video, play it again from the first (until Loop is turned off).
+      if (live?.commercial && live.breakLoop) {
+        const media = live.layers.filter((l) => l.kind === 'media')
+        const last = media[media.length - 1]
+        if (last?.visible && last.url === url) {
+          if (media.length > 1) void this.bridge.command('cue.next', { layerId: last.id }).catch(() => {})
+          else {
+            const el = this.compositor.mediaElement(url)
+            if (el) {
+              el.currentTime = 0
+              void el.play().catch(() => {})
+            }
+          }
+          return
+        }
+      }
+      const back = live?.layers.some((l) => l.kind === 'media' && l.url === url && l.visible && l.loop === false && l.returnAfter)
+      if (!st || !live || !back) return
+      // The end of a commercial break: go to what the operator has in Preview (a camera, or any other scene).
+      // Other play-once videos go back to the scene that was live before.
+      const preview = st.previewSceneId
+      const to = live.commercial && preview && preview !== live.id && st.scenes.some((s) => s.id === preview) ? preview : this.liveBefore
+      if (!to || to === st.programSceneId || !st.scenes.some((s) => s.id === to)) return
+      void this.bridge.command('scene.program', { sceneId: to }).catch(() => {})
+      // A break that has played is over: empty the Gfx commercial scene (once the Transition is done),
+      // so it can't air the same videos again by mistake.
+      if (live.commercial) {
+        const wait = (st.transition.kind === 'fade' ? st.transition.durationMs : 0) + 600
+        window.setTimeout(() => void this.bridge.command('cue.clear', {}).catch(() => {}), wait)
+      }
+    }
+    this.mixer.graphicsVideo = (l) => (this.state ? this.compositor.graphics.videoFor(l, this.state) : null)
+    this.mixer.graphicsStream = (l) => (this.state ? this.compositor.graphics.audioFor(l, this.state) : null)
     this.offPhoneOffers = this.bridge.onPhoneOffer?.((offer) => this.phones.answer(offer)) ?? null
+    this.phones.onFacing(() => void this.reportDevices())
     this.phones.subscribe(() => {
       this.compositor.refreshPhones()
       this.mixer.refreshPhones()
@@ -152,6 +202,17 @@ export class Studio {
       void this.reportDevices()
     })
     void this.netcams.load()
+    this.offGraphics = this.watchGraphics()
+    // Cue to stream, and the Live picture for the gfx operator's On air screen.
+    this.gfxLink = new GfxLink(
+      this.bridge,
+      () => this.state,
+      (c) => this.compositor.drawLive(c),
+      (url) => this.compositor.mediaElement(url),
+      (m) => this.notice(m),
+      () => this.mixer.levels()[COMMERCIALS_CHANNEL] ?? 0
+    )
+    this.gfxLink.start()
     await this.reportDevices()
     this.offDevices = onDeviceChange(() => void this.reportDevices())
     this.reportTimer = setInterval(() => {
@@ -178,7 +239,25 @@ export class Studio {
   }
 
   /** Called by the screen on every state change. */
+  /** Phone flips and camera settings already passed on (by device: the last ask's number). */
+  private flipsSent = new Map<string, number>()
+  private setsSent = new Map<string, number>()
+
   update(state: AppState) {
+    if (this.state && this.state.programSceneId !== state.programSceneId) this.liveBefore = this.state.programSceneId
+    // The app or the remote asked a phone to switch to its other camera: tell the phone.
+    for (const [device, f] of Object.entries(state.phoneFlips ?? {})) {
+      if (this.flipsSent.get(device) === f.seq) continue
+      this.flipsSent.set(device, f.seq)
+      if (!this.state) continue // asked before this window opened: already done (or out of date)
+      if (!this.phones.flip(device, f.facing)) this.notice('That phone can’t be flipped from here yet. Reload the camera page on the phone (it needs the new page), or flip it on the phone.')
+    }
+    for (const [device, f] of Object.entries(state.phoneSets ?? {})) {
+      if (this.setsSent.get(device) === f.seq) continue
+      this.setsSent.set(device, f.seq)
+      if (!this.state) continue
+      this.phones.setCamera(device, f.set)
+    }
     this.state = state
     const preset = presetFor(state.stream.quality, state.stream.family)
     if (!state.stream.live && !state.recording.active) this.compositor.setSize(preset.width, preset.height)
@@ -265,6 +344,45 @@ export class Studio {
     }
   }
 
+  /** Say once when a gfx laptop drops off, and again when its graphics are back. */
+  private watchGraphics() {
+    const feeds = this.compositor.graphics
+    const before = new Map<string, string>()
+    let sounds = ''
+    const offSound = feeds.subscribe(() => {
+      // A graphics page started or stopped sending its sound (a video in the gfx app).
+      const st = this.state
+      if (!st) return
+      const now = st.scenes
+        .flatMap((x) => x.layers)
+        .map((l) => (l.kind === 'graphics' ? `${feeds.audioFor(l, st)?.id ?? ''}/${feeds.videoFor(l, st)?.n ?? ''}` : ''))
+        .join(',')
+      if (now === sounds) return
+      sounds = now
+      this.mixer.refreshGraphics()
+      this.mixer.update(st)
+    })
+    const offStatus = feeds.subscribe(() => {
+      const st = this.state
+      if (!st) return
+      for (const l of st.scenes.flatMap((x) => x.layers)) {
+        const status = feeds.statusOf(l, st)
+        if (!status || (l.kind !== 'graphics' && l.kind !== 'browser')) continue
+        const key = l.url ?? ''
+        const was = before.get(key)
+        if (was === status) continue
+        before.set(key, status)
+        const host = (l.url ?? '').replace(/^https?:\/\//i, '').split('/')[0]
+        if (status === 'unreachable' && was === 'connected') this.notice(`Lost the graphics from ${host}. The stream keeps going; graphics come back by themselves when the gfx laptop is back.`)
+        if (status === 'connected' && was === 'unreachable') this.notice(`Graphics from ${host} are back.`)
+      }
+    })
+    return () => {
+      offSound()
+      offStatus()
+    }
+  }
+
   private async reportDevices() {
     try {
       const inputs = await listDevices()
@@ -340,6 +458,9 @@ export class Studio {
     this.clock?.stop()
     this.offDevices?.()
     this.offPhoneOffers?.()
+    this.offGraphics?.()
+    this.gfxLink?.stop()
+    this.compositor.graphics.close()
     this.phones.close()
     this.netcams.close()
     if (this.reportTimer) clearInterval(this.reportTimer)

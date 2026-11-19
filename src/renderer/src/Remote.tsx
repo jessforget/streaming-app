@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Bridge } from './bridge/bridge'
 import { WsBridge } from './bridge/wsBridge'
 import { InstallButton } from './install'
-import { HealthPill, Notice } from './parts'
+import { HealthPill, Notice, PhoneCameraSettings, PhoneFacingSwitch } from './parts'
 import { useApp, useElapsed } from './useApp'
+import { isOverlay } from '../../shared/state'
 
 export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onForget?: () => void; confirmStop?: () => boolean }) {
   const { bridge, deviceName, onForget, confirmStop = confirmStopDefault } = props
@@ -44,8 +45,8 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
             {state.scenes.map((s) => {
               const live = s.id === state.programSceneId
               const next = s.id === state.previewSceneId && !live
-              // Scenes put away in the Scene library stay off the remote.
-              if (s.stored && !live && !next) return null
+              // Scenes put away in the Scene library stay off the remote, and the Overlay isn't a scene.
+              if ((s.stored && !live && !next) || isOverlay(s)) return null
               return (
                 <button
                   key={s.id}
@@ -82,6 +83,15 @@ export function RemoteScreen(props: { bridge: Bridge; deviceName?: string; onFor
                   </button>
                 ))}
               </div>
+              {preview.layers
+                .filter((l) => l.kind === 'video' && l.device?.startsWith('phone:') && state.inputs.video.some((d) => d.id === l.device))
+                .map((l) => (
+                  <div key={l.id} className="remote-phone">
+                    <span>{l.name}</span>
+                    <PhoneFacingSwitch state={state} run={run} device={l.device} big />
+                    <PhoneCameraSettings state={state} run={run} device={l.device} big />
+                  </div>
+                ))}
             </>
           )}
         </section>

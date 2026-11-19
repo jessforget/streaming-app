@@ -87,7 +87,7 @@ describe('pairing', () => {
     again.send({ type: 'hello', token })
     const welcome = await again.next((m) => m.type === 'welcome')
     expect(welcome).toMatchObject({ v: 1, name: 'Test remote', role: 'remote' })
-    expect(welcome.state.scenes.length).toBe(5)
+    expect(welcome.state.scenes.length).toBe(6)
   })
 
   it('never sends the pairing code to devices', async () => {

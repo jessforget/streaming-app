@@ -17,7 +17,7 @@ import {
   type DataValue,
   type Role
 } from '../shared/protocol'
-import { LAYER_KINDS, PLACEMENTS, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene } from '../shared/state'
+import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene, PHONE_CAM_KEYS, type PhoneCamControl, type PhoneCamValue } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
@@ -55,7 +55,7 @@ export class Controller extends Emitter<Events> {
     this.keys = opts.keys
     this.devices = opts.devices
     this.now = opts.now ?? (() => Date.now())
-    this.s = structuredClone(opts.initial)
+    this.s = ensureOverlay(structuredClone(opts.initial))
     for (const d of this.s.stream.destinations) {
       d.hasKey = this.keys.has(d.id)
       d.keyEnd = keyEnd(this.keys.get(d.id))
@@ -131,18 +131,49 @@ export class Controller extends Emitter<Events> {
       case 'state.get':
         return this.s
 
+      case 'phone.facing': {
+        const device = str(P, 'device')
+        const facing = P.facing
+        if (facing !== 'user' && facing !== 'environment') throw new CommandError('facing must be "user" (front) or "environment" (back)')
+        if (!device.startsWith('phone:') || !this.s.inputs.video.some((d) => d.id === device)) throw new CommandError('That phone camera is not connected')
+        const flips = (this.s.phoneFlips ??= {})
+        flips[device] = { facing, seq: (flips[device]?.seq ?? 0) + 1 }
+        return this.changed()
+      }
+      case 'phone.camera': {
+        const device = str(P, 'device')
+        const dev = this.s.inputs.video.find((d) => d.id === device)
+        if (!device.startsWith('phone:') || !dev) throw new CommandError('That phone camera is not connected')
+        const raw = P.set
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CommandError('set must be the settings to change')
+        const set: Record<string, PhoneCamValue> = {}
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+          if (!(PHONE_CAM_KEYS as readonly string[]).includes(k)) throw new CommandError(`Not a phone camera setting: ${k}`)
+          if (v === 'auto' || v === 'manual' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))) set[k] = v
+          else throw new CommandError(`Bad value for ${k}`)
+        }
+        const sets = (this.s.phoneSets ??= {})
+        sets[device] = { set, seq: (sets[device]?.seq ?? 0) + 1 }
+        // Show it right away (the phone confirms a moment later).
+        if (dev.camera) dev.camera = dev.camera.map((c) => (c.key in set ? { ...c, value: set[c.key] } : c))
+        return this.changed()
+      }
       case 'scene.preview': {
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
+        // A half-done fader mix goes with the old Preview.
+        if (scene.id !== this.s.previewSceneId) delete this.s.mix
         this.s.previewSceneId = scene.id
         await this.engine.setPreviewScene(scene.id)
         return this.changed()
       }
       case 'scene.program': {
-        await this.takeLive(this.scene(str(P, 'sceneId')))
+        delete this.s.mix
+        await this.takeLive(this.showScene(str(P, 'sceneId')))
         return this.changed()
       }
       case 'scene.goLive': {
-        const next = this.scene(this.s.previewSceneId)
+        delete this.s.mix
+        const next = this.showScene(this.s.previewSceneId)
         const previous = this.s.programSceneId
         await this.takeLive(next)
         // Like a vision mixer: what was live goes back to preview.
@@ -155,6 +186,32 @@ export class Controller extends Emitter<Events> {
         if (kind !== 'cut' && kind !== 'fade') throw new CommandError('kind must be "cut" or "fade"')
         const durationMs = P.durationMs === undefined ? this.s.transition.durationMs : num(P, 'durationMs', 0, 5000)
         this.s.transition = { kind, durationMs }
+        return this.changed()
+      }
+      case 'transition.mix': {
+        const level = num(P, 'level', 0, 1)
+        if (this.s.previewSceneId === this.s.programSceneId) {
+          delete this.s.mix
+          return this.changed()
+        }
+        if (level < 0.999) {
+          if (level <= 0) delete this.s.mix
+          else this.s.mix = Math.round(level * 1000) / 1000
+          return this.changed()
+        }
+        // The fader reached the end: Preview is on air (already fully mixed in, so a cut), and what was live goes to Preview.
+        delete this.s.mix
+        const next = this.showScene(this.s.previewSceneId)
+        const previous = this.s.programSceneId
+        const kind = this.s.transition
+        this.s.transition = { ...kind, kind: 'cut' }
+        try {
+          await this.takeLive(next)
+        } finally {
+          this.s.transition = kind
+        }
+        this.s.previewSceneId = previous
+        await this.engine.setPreviewScene(previous)
         return this.changed()
       }
       case 'layer.setVisible': {
@@ -258,8 +315,8 @@ export class Controller extends Emitter<Events> {
         return { sceneId: scene.id }
       }
       case 'scene.remove': {
-        const scene = this.scene(str(P, 'sceneId'))
-        if (this.s.scenes.length === 1) throw new CommandError('Keep at least one scene')
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (showScenes(this.s.scenes).length === 1) throw new CommandError('Keep at least one scene')
         if (scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
         this.s.scenes = this.s.scenes.filter((x) => x !== scene)
         if (this.s.previewSceneId === scene.id) this.s.previewSceneId = this.s.programSceneId
@@ -270,12 +327,18 @@ export class Controller extends Emitter<Events> {
           if (!a.scenes.length) delete a.scenes
         }
         for (const other of this.s.scenes) other.layers = other.layers.filter((l) => !(l.kind === 'scene' && l.sceneId === scene.id))
+        // Graphics linked to it go back to every scene... unless they were linked to others too.
+        for (const l of this.s.scenes.find(isOverlay)?.layers ?? []) {
+          if (!l.onlyIn) continue
+          l.onlyIn = l.onlyIn.filter((id) => id !== scene.id)
+          if (!l.onlyIn.length) delete l.onlyIn
+        }
         await this.engine.removeScene(scene.id)
         return this.changed()
       }
       case 'scene.move': {
         // Change the order of the scene cards (dragged in the main window).
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
         const to = P.index
         if (typeof to !== 'number' || !Number.isInteger(to)) throw new CommandError('index must be a whole number')
         const list = this.s.scenes
@@ -287,7 +350,7 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
       case 'scene.store': {
-        const scene = this.scene(str(P, 'sceneId'))
+        const scene = this.showScene(str(P, 'sceneId'))
         if (typeof P.stored !== 'boolean') throw new CommandError('stored must be true or false')
         if (P.stored && scene.id === this.s.programSceneId) throw new CommandError('That scene is on air. Put another scene live first.')
         if (P.stored) scene.stored = true
@@ -295,7 +358,136 @@ export class Controller extends Emitter<Events> {
         return this.changed()
       }
       case 'scene.rename': {
-        this.scene(str(P, 'sceneId')).name = name(P, 'name')
+        this.showScene(str(P, 'sceneId')).name = name(P, 'name')
+        return this.changed()
+      }
+      case 'scene.setHideOverlay': {
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (bool(P, 'hide')) scene.hideOverlay = true
+        else delete scene.hideOverlay
+        return this.changed()
+      }
+      case 'overlay.link': {
+        const overlay = this.s.scenes.find(isOverlay)
+        const layer = overlay?.layers.find((l) => l.id === str(P, 'layerId'))
+        if (!layer) throw new CommandError('No such graphics source')
+        const scene = this.showScene(str(P, 'sceneId'))
+        if (scene.commercial) throw new CommandError('The Gfx commercial never shows graphics.')
+        const now = (layer.onlyIn ?? []).filter((id) => id !== scene.id)
+        if (bool(P, 'on')) now.push(scene.id)
+        if (now.length) layer.onlyIn = now
+        else delete layer.onlyIn
+        return this.changed()
+      }
+      case 'cue.commercial': {
+        const given = Array.isArray(P.items) ? (P.items as Record<string, unknown>[]) : [{ name: P.name, path: P.path }]
+        if (!given.length || given.length > 20) throw new CommandError('items must hold 1 to 20 videos')
+        const items = given.map((x) => {
+          const it = x && typeof x === 'object' ? x : {}
+          const path = str(it, 'path')
+          if (path.length > 2000) throw new CommandError('path is too long')
+          const label = typeof it.name === 'string' && it.name.trim() ? it.name.trim().slice(0, 60) : 'Commercial'
+          return { name: label, path }
+        })
+        let scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) {
+          scene = { id: this.newId('scene'), name: 'Gfx commercial', layers: [], commercial: true, hideOverlay: true }
+          this.s.scenes.push(scene)
+        }
+        if (scene.name === 'Commercial') scene.name = 'Gfx commercial' // made by an earlier version
+        if (scene.id === this.s.programSceneId) {
+          // The break on air got longer (or what's still to come changed): keep what has played and
+          // what plays now, and put the new list after it.
+          if (P.extend !== true) throw new CommandError('A commercial is on air now: cue the next one when it has ended')
+          const media = scene.layers.filter((l) => l.kind === 'media')
+          const now = media.findIndex((l) => l.visible)
+          if (now < 0 || items.length <= now || media.slice(0, now + 1).some((l, i) => l.url !== items[i].path)) {
+            throw new CommandError('The break on air has moved on: only the videos still to come can change')
+          }
+          scene.layers = media.slice(0, now + 1)
+          for (const it of items.slice(now + 1)) {
+            scene.layers.push({ id: this.newId('layer'), name: it.name, kind: 'media', visible: false, url: it.path, placement: 'full', loop: false, returnAfter: false, sound: true, volume: 1 })
+          }
+          scene.layers.forEach((l, i) => (l.returnAfter = i === scene!.layers.length - 1))
+          await this.engine.setScene(scene)
+          return this.changed()
+        }
+        delete scene.stored
+        // In play order: the first shows; each one that ends shows the next (cue.next); the last goes back.
+        // (Ids one by one: each new layer must count as taken before the next is named.)
+        scene.layers = []
+        items.forEach((it, i) =>
+          scene.layers.push({
+            id: this.newId('layer'),
+            name: it.name,
+            kind: 'media',
+            visible: i === 0,
+            url: it.path,
+            placement: 'full',
+            loop: false,
+            returnAfter: i === items.length - 1,
+            sound: true,
+            volume: 1
+          })
+        )
+        await this.engine.setScene(scene)
+        if (this.s.previewSceneId !== scene.id) this.cueBack = this.s.previewSceneId
+        this.s.previewSceneId = scene.id
+        await this.engine.setPreviewScene(scene.id)
+        this.changed()
+        return { sceneId: scene.id }
+      }
+      case 'cue.next': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) return null
+        const media = scene.layers.filter((l) => l.kind === 'media')
+        const at = media.findIndex((l) => l.id === P.layerId)
+        // Only the one showing moves on (an old 'ended' for an earlier video changes nothing).
+        if (at < 0 || !media[at].visible) return null
+        // The last one: a looping break starts again from its first video; otherwise it ends (the studio moves on).
+        const next = at < media.length - 1 ? media[at + 1] : scene.breakLoop && media.length > 1 ? media[0] : null
+        if (!next) return null
+        for (const l of media) l.visible = l === next
+        await this.engine.setScene(scene)
+        return this.changed()
+      }
+      case 'cue.sound': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) throw new CommandError('No commercial break yet: cue one from the gfx app first')
+        const bs = { ...BREAK_SOUND, ...scene.breakSound }
+        if (P.volume !== undefined) {
+          if (typeof P.volume !== 'number' || !Number.isFinite(P.volume)) throw new CommandError('volume must be a number')
+          bs.volume = Math.min(2, Math.max(0, P.volume))
+        }
+        if (P.muted !== undefined) bs.muted = bool(P, 'muted')
+        if (P.mics !== undefined) {
+          if (!['off', 'duck', 'on'].includes(P.mics as string)) throw new CommandError('mics must be off, duck or on')
+          bs.mics = P.mics as BreakSound['mics']
+        }
+        scene.breakSound = bs
+        return this.changed()
+      }
+      case 'cue.loop': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene) throw new CommandError('No commercial break yet: cue one from the gfx app first')
+        if (bool(P, 'on')) scene.breakLoop = true
+        else delete scene.breakLoop
+        return this.changed()
+      }
+      case 'cue.clear': {
+        const scene = this.s.scenes.find((s) => s.commercial)
+        if (!scene || scene.id === this.s.programSceneId) return null
+        scene.layers = []
+        await this.engine.setScene(scene)
+        const back = this.s.scenes.find((s) => s.id === this.cueBack && !s.stored && !isOverlay(s))
+        if (this.s.previewSceneId === scene.id && back) {
+          this.s.previewSceneId = back.id
+          await this.engine.setPreviewScene(back.id)
+        }
+        return this.changed()
+      }
+      case 'overlay.set': {
+        this.s.overlayOn = bool(P, 'on')
         return this.changed()
       }
       case 'layer.add': {
@@ -310,6 +502,10 @@ export class Controller extends Emitter<Events> {
         scene.layers.unshift(layer) // new sources go on top, like OBS
         await this.engine.setScene(scene)
         if (layer.kind === 'text') await this.pushText(scene, layer)
+        // A camera in a scene with no sound of its own yet: the scene's sound is the camera's (follow the picture).
+        if (layer.kind === 'video' && layer.device && !isOverlay(scene) && !scene.commercial && !this.s.audio.some((a) => a.scenes?.includes(scene.id))) {
+          await this.setSceneSound(scene, this.pictureSound(scene))
+        }
         this.changed()
         return { layerId: layer.id }
       }
@@ -399,6 +595,29 @@ export class Controller extends Emitter<Events> {
         await this.engine.setAudioSources(this.s.audio)
         return this.changed()
       }
+      case 'scene.setSound': {
+        // The one sound for this scene: 'picture' (the sound with its camera), a channel, or none.
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const want = P.sourceId === null ? null : P.sourceId === 'picture' ? this.pictureSound(scene) : this.audio(str(P, 'sourceId'))
+        await this.setSceneSound(scene, want)
+        return this.changed()
+      }
+      case 'scene.addSound': {
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const src = P.sourceId === 'picture' ? this.pictureSound(scene) : this.audio(str(P, 'sourceId'))
+        const set = new Set(src.scenes ?? this.soundSceneIds())
+        set.add(scene.id)
+        src.scenes = [...set]
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'scene.removeSound': {
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const src = this.audio(str(P, 'sourceId'))
+        src.scenes = (src.scenes ?? this.soundSceneIds()).filter((id) => id !== scene.id)
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
       case 'audio.remove': {
         const src = this.audio(str(P, 'sourceId'))
         this.s.audio = this.s.audio.filter((x) => x !== src)
@@ -418,6 +637,8 @@ export class Controller extends Emitter<Events> {
             if (typeof d.group === 'string') out.group = d.group.slice(0, 256)
             if (Number.isInteger(d.channels) && d.channels >= 1 && d.channels <= 64) out.channels = d.channels
             if (Array.isArray(d.channelNames)) out.channelNames = d.channelNames.slice(0, 64).map((n: unknown) => String(n).slice(0, 60))
+            if (d.facing === 'user' || d.facing === 'environment') out.facing = d.facing
+            if (Array.isArray(d.camera)) out.camera = phoneCamControls(d.camera)
             return out
           })
         }
@@ -538,6 +759,12 @@ export class Controller extends Emitter<Events> {
   private async takeLive(scene: Scene) {
     // A scene from the Scene library that goes on air joins this show.
     delete scene.stored
+    // A commercial break always starts from its first video.
+    const media = scene.commercial ? scene.layers.filter((l) => l.kind === 'media') : []
+    if (media.length > 1 && !media[0].visible) {
+      for (const l of media) l.visible = l === media[0]
+      await this.engine.setScene(scene)
+    }
     this.s.programSceneId = scene.id
     await this.engine.setProgramScene(scene.id, this.s.transition)
   }
@@ -759,11 +986,22 @@ export class Controller extends Emitter<Events> {
       if (typeof P.url !== 'string' || P.url.length > 2000) throw new CommandError('url must be text')
       layer.url = P.url.trim() || undefined
     }
+    if (layer.kind === 'graphics' && layer.url) layer.url = graphicsUrl(layer.url)
+    if (P.size !== undefined) {
+      if (P.size === null || P.size === '') layer.size = undefined
+      else if (!(P.size === '1080p' || P.size === '720p')) throw new CommandError('size must be 1080p or 720p')
+      else layer.size = P.size
+    }
+    if (P.fps !== undefined) {
+      // 0 or empty: the same as the stream.
+      layer.fps = P.fps === null || P.fps === '' || P.fps === 0 ? undefined : num(P, 'fps', 1, 60)
+    }
     if (P.placement !== undefined) {
       if (!PLACEMENTS.includes(P.placement as Placement)) throw new CommandError(`placement must be one of ${PLACEMENTS.join(', ')}`)
       layer.placement = P.placement as Placement
     }
     if (P.loop !== undefined) layer.loop = bool(P, 'loop')
+    if (P.returnAfter !== undefined) layer.returnAfter = bool(P, 'returnAfter')
     if (P.sound !== undefined) layer.sound = bool(P, 'sound')
     if (P.volume !== undefined) layer.volume = num(P, 'volume', 0, 1)
     if (P.color !== undefined) {
@@ -779,7 +1017,7 @@ export class Controller extends Emitter<Events> {
     if (P.seconds !== undefined) layer.seconds = num(P, 'seconds', 1, 3600)
     if (P.showScene !== undefined) {
       if (layer.kind !== 'scene') throw new CommandError('Only scene sources show another scene')
-      layer.sceneId = this.scene(str(P, 'showScene')).id
+      layer.sceneId = this.showScene(str(P, 'showScene')).id
     }
   }
 
@@ -787,7 +1025,7 @@ export class Controller extends Emitter<Events> {
   private checkNesting(scene: Scene, layer: Layer) {
     if (layer.kind !== 'scene') return
     if (!layer.sceneId) throw new CommandError('Pick which scene to show')
-    if (scenesOnAir(this.s, layer.sceneId).has(scene.id)) throw new CommandError('A scene can’t show itself, even through another scene')
+    if (scenesOnAir({ scenes: this.s.scenes, programSceneId: '' }, layer.sceneId).has(scene.id)) throw new CommandError('A scene can’t show itself, even through another scene')
   }
 
   /** Which scenes a sound plays in: absent or empty = every scene. */
@@ -817,7 +1055,9 @@ export class Controller extends Emitter<Events> {
       image: 'Image',
       text: 'Text',
       browser: 'Browser overlay',
+      graphics: 'Graphics',
       media: 'Media file',
+      bars: 'Color bars',
       color: 'Color',
       countdown: 'Countdown',
       slideshow: 'Slideshow',
@@ -851,6 +1091,49 @@ export class Controller extends Emitter<Events> {
     return [...value]
   }
 
+  /** A scene whose sound can be picked (not the Overlay, not the Gfx commercial: that plays its videos' sound only). */
+  private soundScene(id: string): Scene {
+    const scene = this.showScene(id)
+    if (scene.commercial) throw new CommandError('The Gfx commercial plays only its videos’ sound')
+    return scene
+  }
+
+  /** Every scene a sound can play in (what "every scene" means when one scene is taken out). */
+  private soundSceneIds(): string[] {
+    return this.s.scenes.filter((s) => !isOverlay(s) && !s.commercial).map((s) => s.id)
+  }
+
+  /** The sound that comes with the scene's camera: its channel, made the first time. */
+  private pictureSound(scene: Scene): AudioSource {
+    const cam = scene.layers.find((l) => l.kind === 'video' && l.device && l.visible) ?? scene.layers.find((l) => l.kind === 'video' && l.device)
+    if (!cam?.device) throw new CommandError('This scene has no camera or video input to take the sound from')
+    const have = this.s.audio.find((a) => a.kind === 'video' && a.device === cam.device)
+    if (have) return have
+    const dev = this.s.inputs.video.find((d) => d.id === cam.device)
+    // The same box's audio input already in the Sound panel (the ATEM Mini's USB audio with its picture).
+    const boxAudio = dev?.group ? this.s.inputs.audio.filter((d) => d.group === dev.group).map((d) => d.id) : []
+    const box = this.s.audio.find((a) => a.kind === 'device' && !!a.device && boxAudio.includes(a.device))
+    if (box) return box
+    const src: AudioSource = { id: this.newId('audio'), name: `${dev?.name ?? cam.name} sound`.slice(0, 60), kind: 'video', device: cam.device, syncOffsetMs: 0, scenes: [], volume: 0.8, muted: false, level: 0 }
+    this.s.audio.push(src)
+    return src
+  }
+
+  /** Make this the scene's only sound (null: no sound). Other scenes keep theirs. */
+  private async setSceneSound(scene: Scene, want: AudioSource | null) {
+    const all = this.soundSceneIds()
+    for (const a of this.s.audio) {
+      const set = new Set(a.scenes ?? all)
+      if (a === want) set.add(scene.id)
+      else set.delete(scene.id)
+      a.scenes = [...set]
+    }
+    await this.engine.setAudioSources(this.s.audio)
+  }
+
+  /** What was in Preview before a commercial was cued there. */
+  private cueBack = ''
+
   private newId(prefix: string): string {
     const taken = new Set([
       ...this.s.scenes.map((x) => x.id),
@@ -865,10 +1148,17 @@ export class Controller extends Emitter<Events> {
     return this.s
   }
 
+  /** A scene, or the Overlay (its sources are edited like a scene's). */
   private scene(id: string): Scene {
     const scene = this.s.scenes.find((x) => x.id === id)
     if (!scene) throw new CommandError(`No scene with id ${id}`)
     return scene
+  }
+
+  /** A scene that can be a card, go to Preview or Live: not the Overlay. */
+  private showScene(id: string): Scene {
+    if (isOverlay(id)) throw new CommandError('The Overlay isn’t a scene: it sits on top of every scene. Scenes can hide it with “Hide the Overlay in this scene”.')
+    return this.scene(id)
   }
 
   private layer(scene: Scene, id: string): Layer {
@@ -887,6 +1177,22 @@ export class Controller extends Emitter<Events> {
     if (!this.devices) throw new CommandError('Device pairing is not available')
     return this.devices
   }
+}
+
+/**
+ * A gfx app's address, as people type it: "192.168.101.50:8765/live" works
+ * too (http:// is added). Only web addresses can be graphics pages.
+ */
+export function graphicsUrl(raw: string): string {
+  const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    throw new CommandError('That address doesn’t look right. It should look like http://192.168.101.50:8765/live')
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new CommandError('The address must start with http:// or https://')
+  return url
 }
 
 function str(P: Record<string, unknown>, key: string): string {
@@ -926,4 +1232,30 @@ export function errorText(e: unknown): string {
 /** The last 4 characters of a stream key, so it can be matched against the platform's (the rest stays secret). */
 function keyEnd(key: string | undefined): string | undefined {
   return key && key.length > 8 ? key.slice(-4) : undefined
+}
+
+/** A phone's list of camera settings, checked (it comes from the phone page). */
+function phoneCamControls(v: unknown[]): PhoneCamControl[] {
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+  const out: PhoneCamControl[] = []
+  for (const c of v.slice(0, 12) as Record<string, unknown>[]) {
+    if (!c || typeof c.key !== 'string' || !(PHONE_CAM_KEYS as readonly string[]).includes(c.key)) continue
+    const type = c.type === 'mode' || c.type === 'bool' ? c.type : 'range'
+    const value = c.value === 'auto' || c.value === 'manual' || typeof c.value === 'boolean' ? c.value : num(c.value)
+    if (value === undefined) continue
+    const d: PhoneCamControl = { key: c.key, label: String(c.label ?? c.key).slice(0, 40), type, value }
+    if (type === 'mode') d.options = ['auto', 'manual']
+    if (type === 'range') {
+      const min = num(c.min)
+      const max = num(c.max)
+      if (min === undefined || max === undefined || !(max > min)) continue
+      Object.assign(d, { min, max, step: num(c.step) ?? 0 })
+      if (typeof c.unit === 'string') d.unit = c.unit.slice(0, 8)
+      if (c.scale === 'log' && min > 0) d.scale = 'log'
+      if (c.fmt === 'shutter') d.fmt = 'shutter'
+    }
+    if (Array.isArray(c.show) && typeof c.show[0] === 'string' && typeof c.show[1] === 'string') d.show = [c.show[0].slice(0, 20), c.show[1].slice(0, 20)]
+    out.push(d)
+  }
+  return out
 }

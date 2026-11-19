@@ -1,8 +1,10 @@
 /** OBS-style editing in the main window: scenes, sources and audio channels. */
 import { useState } from 'react'
 import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, Placement, Scene } from '../../shared/state'
-import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, scenesOnAir } from '../../shared/state'
-import { deviceName } from './parts'
+import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, isOverlay, scenesOnAir, showScenes } from '../../shared/state'
+import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
+import { GraphicsAddress, GraphicsCheck, GraphicsDetail } from './GraphicsParts'
+import { PhoneCameraSettings, PhoneFacingSwitch, deviceName } from './parts'
 import type { Run } from './useApp'
 
 export const KIND_LABEL: Record<LayerKind, string> = {
@@ -10,10 +12,12 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   image: 'Image',
   text: 'Text',
   browser: 'Browser',
+  graphics: 'Graphics (network)',
   media: 'Video file',
   screen: 'Screen',
   window: 'Window',
   color: 'Color',
+  bars: 'Color bars',
   countdown: 'Countdown',
   slideshow: 'Slideshow',
   scene: 'Scene'
@@ -24,10 +28,12 @@ const KIND_HELP: Record<LayerKind, string> = {
   image: 'A picture or logo from a file',
   text: 'Words on screen. {field} shows data from the companion app',
   browser: 'A web page, such as an alerts overlay (needs the desktop version: the web version can’t draw web pages into the video)',
+  graphics: 'Graphics from your gfx app on another computer. The gfx app controls what shows; this app only shows it',
   media: 'A video file, such as an intro or a promo. It can loop, and its sound can play while its scene is on air',
   screen: 'Everything on one of this PC’s screens',
   window: 'One app window on this PC',
   color: 'A solid color, as a background or a box behind text',
+  bars: 'Standard color bars, with a 1 kHz line-up tone if you like: before the show, to check the picture and sound levels on the stream',
   countdown: 'Counts down to a time (like 19:30) or for some minutes after the scene goes on air',
   slideshow: 'Every picture in a folder, one after another',
   scene: 'Another scene shown inside this one, such as a logo-and-title scene used on every slide'
@@ -129,12 +135,13 @@ export function SceneTools({ state, run, scene, only }: { state: AppState; run: 
 
 /** The source list for one scene, like OBS's Sources panel. */
 export function SourceList({ state, run, scene }: { state: AppState; run: Run; scene: Scene }) {
+  const overlay = isOverlay(scene)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   return (
     <div className="layers">
       <div className="panel-head">
-        <h2>Sources in {scene.name}</h2>
+        <h2>{overlay ? 'Overlay' : `Sources in ${scene.name}`}</h2>
         {!adding && (
           <button className="small" onClick={() => setAdding(true)}>
             + Add
@@ -142,7 +149,13 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         )}
       </div>
       {adding && <AddSourceForm state={state} run={run} scene={scene} onDone={() => setAdding(false)} />}
-      {scene.layers.length === 0 && !adding && <p className="muted">No sources yet. Add the ATEM or HyperDeck as a video input.</p>}
+      {scene.layers.length === 0 && !adding && (
+        <p className="muted">
+          {overlay
+            ? 'Anything here sits on top of the scene in Live (never in Preview): graphics, an image, a window, text. Then drag its card in the Overlays row onto a scene to show it only there.'
+            : 'No sources yet. Add the ATEM or HyperDeck as a video input.'}
+        </p>
+      )}
       <ul>
         {scene.layers.map((l, i) => (
           <li key={l.id} className={l.visible ? '' : 'hidden-layer'}>
@@ -158,6 +171,8 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
               </label>
               <span className="layer-name">{l.name}</span>
               <LayerDetail state={state} layer={l} />
+              {l.kind === 'video' && <PhoneFacingSwitch state={state} run={run} device={l.device} />}
+              {l.kind === 'video' && <PhoneCameraSettings state={state} run={run} device={l.device} />}
               <span className="layer-tools">
                 <button
                   className="ghost icon"
@@ -201,13 +216,28 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
           </li>
         ))}
       </ul>
-      <p className="hint">Top of the list shows in front. Text in braces, like {'{guest.name}'}, comes from the companion app.</p>
+      {overlay ? (
+        scene.layers.length > 0 && <p className="hint">On top of the scene in Live, never in Preview. Not linked = every scene; drag a card in the Overlays row onto a scene card to show it only there. To keep the every-scene ones off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
+      ) : (
+        <>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={!!scene.hideOverlay}
+              onChange={(e) => run('scene.setHideOverlay', { sceneId: scene.id, hide: e.target.checked })}
+            />
+            Hide the Overlay in this scene
+          </label>
+          <p className="hint">Top of the list shows in front. Text in braces, like {'{guest.name}'}, comes from the companion app.</p>
+        </>
+      )}
     </div>
   )
 }
 
 function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
   const kind = KIND_LABEL[layer.kind]
+  if (layer.kind === 'graphics' || layer.kind === 'browser') return <GraphicsDetail state={state} layer={layer} label={kind} />
   if (layer.kind === 'video') {
     const name = deviceName(state, layer.device)
     return <span className={`layer-text ${name ? '' : 'warn-text'}`}>{`${kind} · ${name ?? 'device not found'}`}</span>
@@ -223,6 +253,10 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
         : `${layer.minutes ?? 5} min`
       : layer.kind === 'color'
         ? layer.color
+        : layer.kind === 'bars'
+          ? layer.sound
+            ? `with tone · ${Math.round((layer.volume ?? 1) * 100)}%`
+            : 'no tone'
         : layer.kind === 'media'
           ? `${layer.url ?? ''}${layer.loop === false ? ' · plays once' : ' · loops'}${layer.sound ? ' · with sound' : ''}`
           : (layer.text ?? layer.url)
@@ -233,7 +267,7 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
 function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v: Fields; set: SetField }) {
   const { state, kind, scene, v, set } = props
   // A scene can show any other scene that doesn't already show this one.
-  const nestable = state.scenes.filter((x) => x.id !== scene.id && !scenesOnAir(state, x.id).has(scene.id))
+  const nestable = showScenes(state.scenes).filter((x) => x.id !== scene.id && !scenesOnAir({ scenes: state.scenes, programSceneId: '' }, x.id).has(scene.id))
   return (
     <>
       <label>
@@ -245,12 +279,21 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Device
           <select value={v.device} onChange={(e) => set('device', e.target.value)}>
             <option value="">Pick a device…</option>
-            {state.inputs.video.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
+            {videoGroups(state.inputs.video).map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {g.phoneLink ? `${d.name} · only with Phone Link’s camera on` : d.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+          {isPhoneLink(state.inputs.video.find((d) => d.id === v.device)) && (
+            <span className="warn-text small">
+              This is Windows’ Phone Link camera, not the QR phone page. It shows a phone icon until Phone Link is set to share the phone’s camera. For a phone through the QR code, pick it under “Phones (QR code)”.
+            </span>
+          )}
         </label>
       )}
       {kind === 'text' && (
@@ -258,6 +301,43 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Text
           <input value={v.text} maxLength={500} placeholder="e.g. {guest.name}" onChange={(e) => set('text', e.target.value)} />
         </label>
+      )}
+      {kind === 'graphics' && (
+        <>
+          <GraphicsAddress url={v.url} setUrl={(u) => set('url', u)} />
+          <div className="two-cols">
+            <label>
+              Size
+              <select value={v.size} onChange={(e) => set('size', e.target.value)}>
+                {Object.entries(GRAPHICS_SIZES).map(([k, d]) => (
+                  <option key={k} value={k}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Frame rate
+              <select value={v.fps} onChange={(e) => set('fps', e.target.value)}>
+                <option value="">Same as stream</option>
+                <option value="25">25</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+          </div>
+          <label className="check">
+            <input type="checkbox" checked={v.gfxSound} onChange={(e) => set('gfxSound', e.target.checked)} /> Play its sound (videos sent from the gfx app)
+          </label>
+          {v.gfxSound && (
+            <label>
+              Volume
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
+          <GraphicsCheck state={state} url={v.url} size={v.size} fps={v.fps} />
+        </>
       )}
       {(kind === 'image' || kind === 'media' || kind === 'browser' || kind === 'slideshow') && (
         <label>
@@ -272,9 +352,18 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
       )}
       {kind === 'media' && (
         <>
-          <label className="check">
-            <input type="checkbox" checked={v.loop} onChange={(e) => set('loop', e.target.checked)} /> Loop (otherwise it plays once, from the start, each time its scene goes on air)
+          <label>
+            When its scene goes live
+            <select value={v.loop ? 'loop' : 'once'} onChange={(e) => set('loop', e.target.value === 'loop')}>
+              <option value="once">Auto-play from the start (a commercial, an intro)</option>
+              <option value="loop">Keep looping all the time (a background)</option>
+            </select>
           </label>
+          {!v.loop && (
+            <label className="check">
+              <input type="checkbox" checked={v.returnAfter} onChange={(e) => set('returnAfter', e.target.checked)} /> When it ends, go back to the scene that was live before
+            </label>
+          )}
           <label className="check">
             <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play its sound while this scene is on air
           </label>
@@ -291,6 +380,19 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Seconds per picture
           <input type="number" min={1} max={3600} value={v.seconds} onChange={(e) => set('seconds', e.target.value)} />
         </label>
+      )}
+      {kind === 'bars' && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play a 1 kHz tone while this scene is on air
+          </label>
+          {v.sound && (
+            <label>
+              Tone level (100% = −20 dBFS, the usual line-up level)
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
+        </>
       )}
       {kind === 'color' && (
         <label>
@@ -359,6 +461,8 @@ interface Fields {
   url: string
   placement: Placement
   loop: boolean
+  /** Media that plays once: go back to the scene before when it ends. */
+  returnAfter: boolean
   sound: boolean
   /** 0 to 100 */
   volume: string
@@ -368,6 +472,12 @@ interface Fields {
   minutes: string
   seconds: string
   showScene: string
+  /** Graphics: '1080p' or '720p'. */
+  size: string
+  /** Graphics: frames a second, '' = the same as the stream. */
+  fps: string
+  /** Graphics: play the sound the page sends (default on). */
+  gfxSound: boolean
 }
 type SetField = <K extends keyof Fields>(k: K, value: Fields[K] | string | boolean) => void
 
@@ -379,6 +489,7 @@ function useFields(layer: Partial<Layer> & { placement: Placement }) {
     url: layer.url ?? '',
     placement: layer.placement,
     loop: layer.loop !== false,
+    returnAfter: layer.returnAfter === true,
     sound: layer.sound === true,
     volume: String(Math.round((layer.volume ?? 1) * 100)),
     color: layer.color ?? '#1e3a8a',
@@ -386,7 +497,10 @@ function useFields(layer: Partial<Layer> & { placement: Placement }) {
     until: layer.until ?? '19:30',
     minutes: String(layer.minutes ?? 5),
     seconds: String(layer.seconds ?? 5),
-    showScene: layer.sceneId ?? ''
+    showScene: layer.sceneId ?? '',
+    size: layer.size ?? '1080p',
+    fps: layer.fps ? String(layer.fps) : '',
+    gfxSound: layer.sound !== false
   })
   // "Copy as path" in File Explorer adds quotes.
   const set: SetField = (k, value) => setV((old) => ({ ...old, [k]: k === 'url' && typeof value === 'string' ? value.replace(/^\s*"|"\s*$/g, '') : value }))
@@ -404,11 +518,13 @@ function kindFields(kind: LayerKind, v: Fields) {
     case 'browser':
       return v.url ? { url: v.url } : {}
     case 'media':
-      return { ...(v.url && { url: v.url }), loop: v.loop, sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
+      return { ...(v.url && { url: v.url }), loop: v.loop, returnAfter: !v.loop && v.returnAfter, sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
     case 'slideshow':
       return { ...(v.url && { url: v.url }), seconds: Math.max(1, Number(v.seconds) || 5) }
     case 'color':
       return { color: v.color }
+    case 'bars':
+      return { sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
     case 'countdown':
       return {
         text: v.text || 'Starting in {time}',
@@ -416,19 +532,29 @@ function kindFields(kind: LayerKind, v: Fields) {
       }
     case 'scene':
       return v.showScene ? { showScene: v.showScene } : {}
+    case 'graphics':
+      return {
+        ...(v.url.trim() && { url: v.url.trim() }),
+        size: (v.size === '720p' ? '720p' : '1080p') as GraphicsSize,
+        fps: Number(v.fps) || 0,
+        sound: v.gfxSound,
+        volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0))
+      }
     default:
       return {}
   }
 }
 
-function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
+export function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
   const [kind, setKind] = useState<LayerKind>('video')
-  const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
+  const [v, set] = useFields({ device: videoGroups(state.inputs.video).find((g) => !g.phoneLink)?.devices[0]?.id ?? state.inputs.video[0]?.id, placement: 'full' })
   const pick = (k: LayerKind) => {
     setKind(k)
     set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
+    // Bars and tone: the tone is on at the usual line-up level.
+    if (k === 'bars') set('sound', true)
   }
-  const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene)
+  const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene) || (kind === 'graphics' && !v.url.trim())
   const add = async () => {
     const ok = await run('layer.add', {
       sceneId: scene.id,
@@ -829,4 +955,19 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
       </div>
     </form>
   )
+}
+
+/** Windows' Phone Link camera ("… (Windows Virtual Camera)"): a placeholder picture until Phone Link shares the phone's camera. */
+export const isPhoneLink = (d?: InputDevice) => !!d && /windows virtual camera/i.test(d.name)
+
+/** The video devices for a picker: phones from the QR code first, then cameras and capture cards, then Phone Link's camera. */
+export function videoGroups(list: InputDevice[]): { label: string; devices: InputDevice[]; phoneLink?: boolean }[] {
+  const phones = list.filter((d) => d.id.startsWith('phone:'))
+  const link = list.filter((d) => !d.id.startsWith('phone:') && isPhoneLink(d))
+  const rest = list.filter((d) => !phones.includes(d) && !link.includes(d))
+  return [
+    { label: 'Phones (QR code)', devices: phones },
+    { label: 'Cameras and capture cards', devices: rest },
+    { label: 'Needs Windows Phone Link', devices: link, phoneLink: true }
+  ].filter((g) => g.devices.length)
 }

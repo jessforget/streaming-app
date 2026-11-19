@@ -11,13 +11,22 @@ export type LayerKind =
   | 'image'
   | 'text'
   | 'browser'
+  | 'graphics'
   | 'media'
   | 'color'
+  | 'bars'
   | 'countdown'
   | 'slideshow'
   | 'scene'
 
-export const LAYER_KINDS: LayerKind[] = ['video', 'image', 'media', 'text', 'color', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'bars', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+
+/** The sizes a Graphics (network) page can be drawn at. */
+export type GraphicsSize = '1080p' | '720p'
+export const GRAPHICS_SIZES: Record<GraphicsSize, { width: number; height: number; label: string }> = {
+  '1080p': { width: 1920, height: 1080, label: '1920 x 1080' },
+  '720p': { width: 1280, height: 720, label: '1280 x 720' }
+}
 
 /** Where a source sits in the picture. Full = fills it; the rest are boxes and text spots. */
 export type Placement = 'full' | 'center' | 'lower-third' | 'top' | 'top-right' | 'bottom-right' | 'top-left'
@@ -54,13 +63,21 @@ export interface Layer {
   device?: string
   /** Text layers: shown text. `{field.name}` is replaced by that data field's value. */
   text?: string
-  /** Image, media and browser layers: file path or URL. Slideshow: a folder of pictures. */
+  /** Image, media and browser layers: file path or URL. Graphics: the gfx app's page. Slideshow: a folder of pictures. */
   url?: string
-  /** Media: play again from the start when it ends. Default on. */
+  /**
+   * Media: play again from the start when it ends, all the time. Default on.
+   * Off = auto-play: it waits on its first frame, plays from the start when its scene goes live, and stops when it leaves.
+   */
   loop?: boolean
-  /** Media: send the file's sound to the mix while its scene is on air. Default off. */
+  /** Media that plays once: when it ends, go back to the scene that was live before (like a commercial break). */
+  returnAfter?: boolean
+  /**
+   * Media: send the file's sound to the mix while its scene is on air. Default off.
+   * Graphics: play the sound the page sends (videos from the gfx app). Default on.
+   */
   sound?: boolean
-  /** Media with sound: its volume, 0 to 1. */
+  /** Media and graphics with sound: its volume, 0 to 1. */
   volume?: number
   /** Solid color: CSS hex, like #1e3a8a. */
   color?: string
@@ -71,6 +88,17 @@ export interface Layer {
   seconds?: number
   /** Scene inside a scene: which scene to show. */
   sceneId?: string
+  /**
+   * Graphics (network) and browser sources: the size the page is drawn at
+   * (default 1080p), and its frame rate (absent = the same as the stream).
+   */
+  size?: GraphicsSize
+  fps?: number
+  /**
+   * Overlay (Graphics) sources only: show only while one of these scenes is in Live
+   * (linked by dropping its graphics card on the scene card). Absent = over every scene.
+   */
+  onlyIn?: string[]
 }
 
 export interface Scene {
@@ -83,6 +111,90 @@ export interface Scene {
    * the "In this show" row and the tablet remote. Absent = in this show.
    */
   stored?: boolean
+  /** Leave the Overlay off while this scene is on air (for "Starting soon", "Ending"...). */
+  hideOverlay?: boolean
+  /** The scene a gfx app's "Cue to stream" fills with its commercial (made the first time, then reused). */
+  commercial?: boolean
+  /** The commercial scene's sound: one channel for every video in the break, and what the mics do meanwhile. */
+  breakSound?: BreakSound
+  /** Play the break again from its first video, until someone turns this off or takes another scene. */
+  breakLoop?: boolean
+}
+
+/** Mics during a commercial break: off, 15 dB lower, or left as they are. */
+export type BreakMics = 'off' | 'duck' | 'on'
+export interface BreakSound {
+  volume: number
+  muted: boolean
+  mics: BreakMics
+}
+export const BREAK_SOUND: BreakSound = { volume: 1, muted: false, mics: 'off' }
+/** The one sound channel of a commercial break (in the mixer and its meters). */
+export const COMMERCIALS_CHANNEL = 'commercials'
+/** -15 dB, for mics while a break plays when they are set to "lower". */
+export const DUCK_GAIN = 0.178
+
+/**
+ * The Overlay: sources drawn on top of the scene in Live (never in Preview), like a
+ * downstream keyer on a vision mixer. Kept as a scene with this id (so its
+ * sources open, play and edit like any other), but never shown as a scene card.
+ */
+export const OVERLAY_ID = 'overlay'
+
+export function isOverlay(scene: Pick<Scene, 'id'> | string): boolean {
+  return (typeof scene === 'string' ? scene : scene.id) === OVERLAY_ID
+}
+
+/** Every scene except the Overlay: the ones that can be cards, go to Preview and Live, or be shown inside another. */
+export function showScenes<S extends Pick<Scene, 'id'>>(scenes: S[]): S[] {
+  return scenes.filter((x) => !isOverlay(x))
+}
+
+/** Add the Overlay to a setup that doesn't have it yet (older saved setups). Changes `state`. */
+export function ensureOverlay<T extends Pick<AppState, 'scenes' | 'overlayOn'>>(state: T): T {
+  if (!state.scenes.some(isOverlay)) state.scenes.push({ id: OVERLAY_ID, name: 'Overlay', layers: [] })
+  if (typeof state.overlayOn !== 'boolean') state.overlayOn = true
+  return state
+}
+
+/**
+ * Does this Overlay source show over this scene? Linked ones only over their scenes
+ * (even one that hides the Overlay); the rest over every scene that doesn't hide it.
+ */
+export function overlayLayerOver(l: Pick<Layer, 'onlyIn'>, scene: Pick<Scene, 'id' | 'hideOverlay' | 'commercial'>): boolean {
+  if (scene.commercial) return false
+  if (l.onlyIn?.length) return l.onlyIn.includes(scene.id)
+  return !scene.hideOverlay
+}
+
+/**
+ * The Overlay as drawn over this scene in Live: on, with only the sources that show
+ * over it. (Preview never shows the Overlay: graphics are only on the stream.)
+ */
+export function overlayOver(state: Pick<AppState, 'scenes' | 'overlayOn'>, sceneId: string): Scene | null {
+  if (!state.overlayOn || isOverlay(sceneId)) return null
+  const scene = state.scenes.find((x) => x.id === sceneId)
+  const overlay = state.scenes.find(isOverlay)
+  if (!scene || !overlay) return null
+  const layers = overlay.layers.filter((l) => overlayLayerOver(l, scene))
+  if (!layers.some((l) => l.visible)) return null
+  return layers.length === overlay.layers.length ? overlay : { ...overlay, layers }
+}
+
+/**
+ * Is this source on the stream now? Shown, in a scene on air (`onAir` from scenesOnAir);
+ * an Overlay source also only over the scene in Live it shows over.
+ */
+export function layerOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, scene: Pick<Scene, 'id'>, l: Pick<Layer, 'visible' | 'onlyIn'>, onAir: Set<string>): boolean {
+  if (!l.visible || !onAir.has(scene.id)) return false
+  if (!isOverlay(scene)) return true
+  const live = state.scenes.find((x) => x.id === state.programSceneId)
+  return !!live && overlayLayerOver(l, live)
+}
+
+/** The names of the scenes an Overlay source is linked to ("Main show, Z CAM"), or '' for every scene. */
+export function linkedNames(state: Pick<AppState, 'scenes'>, l: Pick<Layer, 'onlyIn'>): string {
+  return (l.onlyIn ?? []).map((id) => state.scenes.find((x) => x.id === id)?.name).filter(Boolean).join(', ')
 }
 
 /**
@@ -134,6 +246,10 @@ export interface InputDevice {
   channels?: number
   /** Audio devices: each input channel's name from the driver ("Ch 1", "Analogue 3"), when it gives them. */
   channelNames?: string[]
+  /** Phone cameras: which camera the phone is sending now (front = 'user', back = 'environment'). */
+  facing?: PhoneFacing
+  /** Phone cameras: the settings the phone's camera lets us change (exposure, white balance, focus...), with their values now. */
+  camera?: PhoneCamControl[]
 }
 
 /**
@@ -156,7 +272,7 @@ export function channelName(d: InputDevice | undefined, ch: number): string {
  * The scenes on air right now: the one in Live, plus any scene shown inside
  * it (a "scene" source), so their sound plays too.
  */
-export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, sceneId = state.programSceneId): Set<string> {
+export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'> & Partial<Pick<AppState, 'overlayOn'>>, sceneId = state.programSceneId): Set<string> {
   const out = new Set<string>()
   const walk = (id: string) => {
     if (out.has(id) || out.size > 20) return
@@ -166,6 +282,8 @@ export function scenesOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, 
     for (const l of scene.layers) if (l.kind === 'scene' && l.visible && l.sceneId) walk(l.sceneId)
   }
   walk(sceneId)
+  // The Overlay is on air too while it is drawn over that scene.
+  if (state.overlayOn !== undefined && overlayOver(state as Pick<AppState, 'scenes' | 'overlayOn'>, sceneId)) walk(OVERLAY_ID)
   return out
 }
 
@@ -270,7 +388,14 @@ export interface AppState {
   scenes: Scene[]
   previewSceneId: string
   programSceneId: string
+  /** The Overlay's ON AIR button: its sources are drawn on top of every scene (except ones that hide it). */
+  overlayOn: boolean
   transition: { kind: 'cut' | 'fade'; durationMs: number }
+  /**
+   * The manual fader (T-bar): how far Live is mixed into the Preview scene, 0 to 1.
+   * Absent or 0 = Live shows its scene alone. Reaching 1 puts Preview on air. Not saved.
+   */
+  mix?: number
   audio: AudioSource[]
   stream: {
     live: boolean
@@ -290,4 +415,36 @@ export interface AppState {
   data: Record<string, DataField>
   devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[] }
   stats: HealthStats
+  /** Asked from the app or the remote: switch a phone to its front or back camera (by device id; seq tells a new ask). Not saved. */
+  phoneFlips?: Record<string, { facing: PhoneFacing; seq: number }>
+  /** Asked from the app or the remote: change a phone camera's settings (by device id). Not saved. */
+  phoneSets?: Record<string, { set: Record<string, PhoneCamValue>; seq: number }>
 }
+
+/** A phone's camera: front ('user', the selfie one) or back ('environment'). */
+export type PhoneFacing = 'user' | 'environment'
+
+export type PhoneCamValue = number | boolean | 'auto' | 'manual'
+
+/** One setting of a phone's camera, as the phone describes it (only the ones that phone allows). */
+export interface PhoneCamControl {
+  /** exposure, ev, shutter, iso, wb, kelvin, focus, focusDist, zoom, torch */
+  key: string
+  label: string
+  type: 'mode' | 'range' | 'bool'
+  value: PhoneCamValue
+  /** type 'mode': auto / manual */
+  options?: ('auto' | 'manual')[]
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  /** 'log': the slider moves in ratios (shutter, ISO). */
+  scale?: 'log'
+  /** 'shutter': shown as 1/x of a second (the value is in 100-microsecond steps). */
+  fmt?: 'shutter'
+  /** Shown only while another setting has this value, e.g. ['exposure', 'manual']. */
+  show?: [string, string]
+}
+
+export const PHONE_CAM_KEYS = ['exposure', 'ev', 'shutter', 'iso', 'wb', 'kelvin', 'focus', 'focusDist', 'zoom', 'torch'] as const

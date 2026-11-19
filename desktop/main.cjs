@@ -10,15 +10,18 @@
  *   with two), so drawing and encoding run there, like OBS,
  * - it never slows down when the window is in the background or covered,
  * - cameras and microphones work without "Allow" prompts,
- * - screen capture shares the main screen, with the PC's sound.
+ * - screen capture shares the main screen, with the PC's sound,
+ * - Graphics (network) sources work: web pages from a gfx app on another
+ *   computer, drawn see-through over the cameras (graphics.cjs).
  *
  * Tablets, phones, the companion app and the stream deck connect to the same
  * server as before; nothing changes for them.
  */
-const { app, BrowserWindow, dialog, session, desktopCapturer } = require('electron')
+const { app, BrowserWindow, dialog, session, desktopCapturer, ipcMain } = require('electron')
 const { spawn } = require('node:child_process')
 const { join } = require('node:path')
 const http = require('node:http')
+const { setupGraphics } = require('./graphics.cjs')
 
 // Before the window opens: the strong graphics card, and no slowing down in the background.
 app.commandLine.appendSwitch('force_high_performance_gpu')
@@ -26,6 +29,8 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// Graphics pages that receive a window from the gfx app (WebRTC): use real network addresses, not hidden ".local" names some networks can't find.
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns')
 
 const PORT = Number(process.env.STREAMING_CONTROL_PORT) || 7420
 const ROOT = join(__dirname, '..')
@@ -69,6 +74,7 @@ function waitForServer(ms = 30000) {
 
 let quitting = false
 let win = null
+const graphics = setupGraphics(ipcMain, () => (win && !win.isDestroyed() ? win.webContents : null))
 
 async function open() {
   const local = (url) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url)
@@ -89,8 +95,10 @@ async function open() {
     backgroundColor: '#0f1216',
     title: 'Streaming App',
     autoHideMenuBar: true,
-    webPreferences: { backgroundThrottling: false }
+    webPreferences: { backgroundThrottling: false, preload: join(__dirname, 'preload.cjs') }
   })
+  // The hidden graphics windows don't count: closing the main window closes the app.
+  win.on('closed', () => app.quit())
   // The page asks before closing while live or recording; show that question as a real dialog.
   win.webContents.on('will-prevent-unload', (e) => {
     const choice = dialog.showMessageBoxSync(win, {
@@ -128,5 +136,6 @@ app.on('second-instance', () => {
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => {
   quitting = true
+  graphics.closeAll()
   if (server) server.kill()
 })

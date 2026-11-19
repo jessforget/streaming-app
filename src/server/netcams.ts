@@ -15,6 +15,7 @@
  * can see the list or open a camera's video.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { WebSocket } from 'ws'
@@ -163,6 +164,7 @@ export class NetCamHub {
    *
    * Messages to the window: text {"type":"codec"} / {"type":"status"}, and binary
    * pictures: one byte (1 = key picture) followed by the H.264 picture (Annex B).
+   * The camera's sound, if it sends any: one byte 2, then 48 kHz stereo 16-bit samples.
    */
   attach(socket: WebSocket, id: string) {
     socket.on('error', () => socket.terminate())
@@ -178,10 +180,35 @@ export class NetCamHub {
     let tries = 0
     let codec = ''
     let retry: ReturnType<typeof setTimeout> | null = null
+    // The camera's sound comes from the same ffmpeg, over a local connection (works the same on Windows).
+    // A camera with no sound: ffmpeg refuses an output with nothing in it, so it runs again without.
+    let noSound = false
+    let soundServer: Server | null = null
     const status = (ok: boolean, message: string) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'status', ok, message }))
     }
-    const run = () => {
+    const listenSound = () =>
+      new Promise<number>((resolve) => {
+        soundServer?.close()
+        const srv = createServer((conn: Socket) => {
+          let rest: Buffer = Buffer.alloc(0)
+          conn.on('data', (c: Buffer) => {
+            const all = rest.length ? Buffer.concat([rest, c]) : c
+            const whole = all.length - (all.length % 4)
+            rest = all.subarray(whole)
+            if (whole && socket.readyState === socket.OPEN && socket.bufferedAmount < 2 * 1024 * 1024) {
+              socket.send(Buffer.concat([Buffer.from([2]), all.subarray(0, whole)]))
+            }
+          })
+          conn.on('error', () => {})
+        })
+        srv.on('error', () => resolve(0))
+        srv.listen(0, '127.0.0.1', () => resolve((srv.address() as AddressInfo).port))
+        soundServer = srv
+      })
+    const run = async () => {
+      if (closed) return
+      const port = noSound ? 0 : await listenSound()
       if (closed) return
       // UDP, not TCP: the Z CAM's RTSP server drops a TCP viewer about once a minute (seen on the E2).
       // No buffering: lowest delay.
@@ -189,7 +216,8 @@ export class NetCamHub {
         this.ffmpeg!,
         ['-hide_banner', '-loglevel', 'error', '-fflags', 'nobuffer', '-flags', 'low_delay', '-rtsp_transport', 'udp',
           '-buffer_size', '4194304', '-timeout', '5000000', '-i', rtspUrl(cam.address),
-          '-map', '0:v:0', '-an', '-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb', '-f', 'h264', 'pipe:1'],
+          '-map', '0:v:0', '-an', '-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb', '-f', 'h264', 'pipe:1',
+          ...(port ? ['-map', '0:a:0?', '-vn', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', '-f', 's16le', `tcp://127.0.0.1:${port}`] : [])],
         { windowsHide: true }
       )
       let got = false
@@ -216,19 +244,26 @@ export class NetCamHub {
         proc = null
         if (closed) return
         const why = err.trim().split('\n').pop() ?? ''
+        // No sound in the camera's stream: run again for the picture alone, at once.
+        if (!noSound && /does not contain any stream|Output file .* does not contain/i.test(err)) {
+          noSound = true
+          retry = setTimeout(() => void run(), 0)
+          return
+        }
         this.log(`network camera "${cam.name}" stopped${why ? `: ${why}` : ''}`)
         status(false, got ? 'Camera disconnected, trying again' : 'Cannot reach the camera, trying again')
         codec = ''
-        retry = setTimeout(run, RETRY_MS[Math.min(tries++, RETRY_MS.length - 1)])
+        retry = setTimeout(() => void run(), RETRY_MS[Math.min(tries++, RETRY_MS.length - 1)])
       })
       proc.on('error', () => {})
     }
     status(false, 'Connecting')
-    run()
+    void run()
     socket.on('close', () => {
       closed = true
       if (retry) clearTimeout(retry)
       proc?.kill()
+      soundServer?.close()
     })
   }
 

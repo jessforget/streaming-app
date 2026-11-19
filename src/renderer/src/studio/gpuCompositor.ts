@@ -8,8 +8,10 @@
  * change (not every frame) and uploaded as a picture.
  */
 import { renderTemplate } from '../../../shared/template'
-import { countdownText, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
 import { boxFor, Compositor } from './compositor'
+import { videoBox, type GraphicsFeed } from './graphics'
 
 type Rect = { x: number; y: number; w: number; h: number }
 /** Maps a scene's own w×h picture into the canvas being drawn (for a scene inside a scene). */
@@ -145,18 +147,31 @@ export class GpuCompositor extends Compositor {
       if (t >= 1) this.fadeFrom = null
       else {
         this.collect(ops, this.fadeFrom.scene, s, w, h, 0, identity, null, 1)
+        this.collectOverlay(ops, this.fadeFrom.scene, s, w, h, 1)
         fadeAlpha = t
       }
     }
     const program = s.scenes.find((x) => x.id === s.programSceneId)
-    if (program) this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
+    if (program) {
+      this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
+      this.collectOverlay(ops, program, s, w, h, fadeAlpha)
+    }
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, identity, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     this.render(enc, this.ctx.program, w, h, ops)
     if (withPreview) {
       const pw = this.preview.width
       const ph = this.preview.height
       const pops: Op[] = []
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
-      if (preview) this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
+      if (preview) {
+        // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
+        this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
+      }
       this.render(enc, this.ctx.preview, pw, ph, pops)
     }
     this.device.queue.submit([enc.finish()])
@@ -176,6 +191,12 @@ export class GpuCompositor extends Compositor {
     const texture = this.device.createTexture({ size: [w, h], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC })
     const ops: Op[] = []
     this.collect(ops, program, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, 1)
+    this.collectOverlay(ops, program, s, w, h, 1)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     const bpr = Math.ceil((w * 4) / 256) * 256
     const buf = this.device.createBuffer({ size: bpr * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
     const enc = this.device.createCommandEncoder()
@@ -203,6 +224,12 @@ export class GpuCompositor extends Compositor {
     return out
   }
 
+  /** The draws of the Overlay sources that show over this scene in Live, on top of it. */
+  private collectOverlay(ops: Op[], scene: Scene, s: AppState, w: number, h: number, alpha: number) {
+    const overlay = overlayOver(s, scene.id)
+    if (overlay) this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)
+  }
+
   /** The draws for one scene, back to front, in the canvas's pixels. */
   private collect(ops: Op[], scene: Scene, s: AppState, w: number, h: number, depth: number, T: Transform, clip: Rect | null, alpha: number) {
     const map = (r: Rect): Rect => ({ x: T.ox + r.x * T.sx, y: T.oy + r.y * T.sy, w: r.w * T.sx, h: r.h * T.sy })
@@ -217,15 +244,36 @@ export class GpuCompositor extends Compositor {
         if (texture) ops.push({ kind: 'tex', rect: map({ x: 0, y: 0, w, h }), clip, alpha, texture })
       } else if (l.kind === 'color') {
         ops.push({ kind: 'solid', rect: map(boxFor(placementOf(l), w, h)), clip, alpha, color: parseColor(l.color ?? '#1e3a8a') })
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) ops.push({ kind: 'solid', rect: map(r), clip, alpha, color: [r.rgb[0] / 255, r.rgb[1] / 255, r.rgb[2] / 255, 1] })
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue
         const b = boxFor(placementOf(l), w, h)
         const inT: Transform = { ox: T.ox + b.x * T.sx, oy: T.oy + b.y * T.sy, sx: (T.sx * b.w) / w, sy: (T.sy * b.h) / h }
         this.collect(ops, inner, s, w, h, depth + 1, inT, intersect(clip, map(b)), alpha)
+      } else if (l.kind === 'graphics' || l.kind === 'browser') {
+        const feed = this.graphics.feedFor(l, s)
+        const texture = feed ? this.feedTexture(feed) : null
+        if (!feed || !texture) continue
+        const page = fitInside(feed.canvas.width, feed.canvas.height, placementOf(l), w, h)
+        // A gfx app video handed over to play here: under the page's picture, where the page would show it.
+        const v = feed.video
+        if (v && this.ready(v.el)) {
+          const k = page.w / feed.canvas.width
+          const b = videoBox(v, feed.canvas.width, feed.canvas.height)
+          const r = { x: page.x + b.x * k, y: page.y + b.y * k, w: b.w * k, h: b.h * k }
+          ops.push({ kind: 'solid', rect: map(r), clip, alpha, color: [0, 0, 0, 1] })
+          const f = Math.min(r.w / v.el.videoWidth, r.h / v.el.videoHeight)
+          const dw = v.el.videoWidth * f
+          const dh = v.el.videoHeight * f
+          ops.push({ kind: 'ext', rect: map({ x: r.x + (r.w - dw) / 2, y: r.y + (r.h - dh) / 2, w: dw, h: dh }), clip, alpha, video: v.el })
+        }
+        ops.push({ kind: 'tex', rect: map(page), clip, alpha, texture })
       } else {
         const src = this.drawableFor(l)
-        if (!src) continue
+        if (!src || src instanceof HTMLCanvasElement) continue
         const isVideo = src instanceof HTMLVideoElement
         const sw = isVideo ? src.videoWidth : src.naturalWidth
         const sh = isVideo ? src.videoHeight : src.naturalHeight
@@ -347,6 +395,43 @@ export class GpuCompositor extends Compositor {
       this.gpuImages.set(img, 'failed')
       return null
     }
+  }
+
+  private feedTextures = new WeakMap<GraphicsFeed, { texture: GPUTexture; version: number }>()
+
+  /**
+   * A graphics page's picture on the graphics card. Only the part that changed
+   * since the last frame is copied, so a still lower third costs nothing.
+   */
+  private feedTexture(feed: GraphicsFeed): GPUTexture | null {
+    const { width: w, height: h } = feed.canvas
+    if (!w || !h) return null
+    let t = this.feedTextures.get(feed)
+    if (!t || t.texture.width !== w || t.texture.height !== h) {
+      t?.texture.destroy()
+      const texture = this.device.createTexture({
+        size: [w, h],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+      })
+      t = { texture, version: -1 }
+      this.feedTextures.set(feed, t)
+      feed.dirty = { x: 0, y: 0, w, h }
+    }
+    if (t.version !== feed.version && feed.dirty) {
+      const d = feed.dirty
+      const x = Math.max(0, Math.floor(d.x))
+      const y = Math.max(0, Math.floor(d.y))
+      const dw = Math.min(w - x, Math.ceil(d.w))
+      const dh = Math.min(h - y, Math.ceil(d.h))
+      if (dw > 0 && dh > 0) {
+        const data = feed.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, dw, dh).data
+        this.device.queue.writeTexture({ texture: t.texture, origin: [x, y] }, data, { bytesPerRow: dw * 4 }, [dw, dh])
+      }
+      feed.dirty = null
+      t.version = feed.version
+    }
+    return t.texture
   }
 
   /** Text, drawn with the same look as the canvas version, redrawn only when the words change. */

@@ -5,7 +5,9 @@
  */
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
-import { countdownText, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
+import { graphicsFeeds, videoBox } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
 
@@ -17,7 +19,7 @@ const stopTracks = (id: string, stream?: MediaStream) => {
   if (!linked(id)) stream?.getTracks().forEach((t) => t.stop())
 }
 
-type Drawable = HTMLVideoElement | HTMLImageElement
+type Drawable = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
 
 /** The address the browser loads a picture or video file from: through the app, for files on this PC. */
 export function fileUrl(path: string): string {
@@ -45,6 +47,8 @@ export class Compositor {
   /** When each scene last went on air (for countdowns in minutes). */
   protected liveAt = new Map<string, number>()
   private onAir = new Set<string>()
+  /** Graphics (network) pages: shared with the source list, which shows their status lights. */
+  readonly graphics = graphicsFeeds
 
   /**
    * A capture device on this PC that is open: the frame rate it runs at, and the most it can do
@@ -92,7 +96,9 @@ export class Compositor {
     this.state = state
     if (before && state.programSceneId !== this.shownProgram) {
       const old = before.scenes.find((s) => s.id === this.shownProgram)
-      if (old && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
+      // After the manual fader, the new scene was already mixed in: no fade on top.
+      const faded = (before.mix ?? 0) > 0
+      if (old && !faded && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
         this.fadeFrom = { scene: old, start: performance.now(), ms: state.transition.durationMs }
       }
     }
@@ -108,19 +114,51 @@ export class Compositor {
     }
     // Scenes that just went on air: start their countdowns, and play their one-shot videos from the top.
     const onAir = scenesOnAir(state)
-    for (const id of onAir) {
-      if (this.onAir.has(id)) continue
-      this.liveAt.set(id, Date.now())
-      for (const l of state.scenes.find((x) => x.id === id)?.layers ?? []) {
-        const el = l.kind === 'media' && l.url && l.loop === false ? this.videos.get(`media:${l.url}`)?.el : undefined
-        if (el) {
-          el.currentTime = 0
-          void el.play().catch(() => {})
-        }
+    for (const id of onAir) if (!this.onAir.has(id)) this.liveAt.set(id, Date.now())
+    // A one-shot video that just came on air (its scene went live, or it was shown in a live scene,
+    // like the next video of a commercial break): play it from the top.
+    const liveOnce = new Set<string>()
+    for (const sc of state.scenes) {
+      if (!onAir.has(sc.id)) continue
+      for (const l of sc.layers) if (l.kind === 'media' && l.url && l.loop === false && l.visible) liveOnce.add(l.url)
+    }
+    for (const url of liveOnce) {
+      if (this.liveOnce.has(url)) continue
+      const el = this.videos.get(`media:${url}`)?.el
+      if (el) {
+        clearTimeout(this.rewind.get(el))
+        this.rewind.delete(el)
+        el.currentTime = 0
+        void el.play().catch(() => {})
       }
     }
+    this.liveOnce = liveOnce
     this.onAir = onAir
+    // One-shot videos no longer on air: once the fade is over, stop and wait on the first frame for next time.
+    const fadeMs = state.transition.kind === 'fade' ? state.transition.durationMs : 0
+    for (const [key, v] of this.videos) {
+      if (!key.startsWith('media:') || v.el.loop) continue
+      const url = key.slice('media:'.length)
+      const live = state.scenes.some((s) => onAir.has(s.id) && s.layers.some((l) => l.kind === 'media' && l.url === url && l.visible))
+      if (live || v.el.paused || this.rewind.has(v.el)) continue
+      this.rewind.set(
+        v.el,
+        window.setTimeout(() => {
+          this.rewind.delete(v.el)
+          if (!this.state || this.state.scenes.some((s) => this.onAir.has(s.id) && s.layers.some((l) => l.kind === 'media' && l.url === url && l.visible))) return
+          v.el.pause()
+          v.el.currentTime = 0
+        }, fadeMs + 300)
+      )
+    }
   }
+
+  /** Waiting to stop a one-shot video that left the air (after the fade). */
+  private rewind = new Map<HTMLVideoElement, number>()
+  /** One-shot videos on air now (shown in a live scene), by file. */
+  private liveOnce = new Set<string>()
+  /** A one-shot video reached its end (set by the studio: it may go back to the scene before). */
+  onMediaEnded: (url: string) => void = () => {}
 
   /** Open every capture device used in any scene; close the rest. */
   private syncSources(state: AppState) {
@@ -135,6 +173,7 @@ export class Compositor {
         if ((l.kind === 'screen' || l.kind === 'window') && !this.displays.has(l.id)) this.waiting.add(l.id)
       }
     }
+    this.graphics.sync(state)
     for (const id of devices) if (!this.videos.has(id)) this.openDevice(id, state)
     for (const [id, v] of this.videos) {
       if (!id.startsWith('media:') && !devices.has(id)) {
@@ -152,8 +191,11 @@ export class Compositor {
       }
       if (kind === 'media' && !this.videos.has(`media:${url}`)) {
         const el = document.createElement('video')
-        Object.assign(el, { src: fileUrl(url), loop: true, muted: true, playsInline: true })
-        void el.play().catch(() => {})
+        // A one-shot (auto-play) video waits on its first frame until its scene goes live.
+        const once = state.scenes.every((s) => s.layers.every((l) => !(l.kind === 'media' && l.url === url) || l.loop === false))
+        Object.assign(el, { src: fileUrl(url), loop: !once, muted: true, playsInline: true, preload: 'auto' })
+        if (!once) void el.play().catch(() => {})
+        el.addEventListener('ended', () => this.onMediaEnded(url))
         this.videos.set(`media:${url}`, { el })
       }
     }
@@ -168,7 +210,10 @@ export class Compositor {
         this.videos.delete(key)
         continue
       }
-      v.el.loop = layers.some((l) => l.loop !== false)
+      const loop = layers.some((l) => l.loop !== false)
+      // Switched to looping: start it; the auto-play ones start when their scene goes live.
+      if (loop && !v.el.loop) void v.el.play().catch(() => {})
+      v.el.loop = loop
     }
   }
 
@@ -255,19 +300,34 @@ export class Compositor {
       const t = (performance.now() - this.fadeFrom.start) / this.fadeFrom.ms
       if (t >= 1) this.fadeFrom = null
       else {
-        this.drawScene(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height)
+        this.drawWithOverlay(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height)
         pctx.globalAlpha = t
       }
     }
-    if (program) this.drawScene(pctx, program, s, this.program.width, this.program.height)
+    if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height)
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      pctx.globalAlpha = mixing.level
+      this.drawWithOverlay(pctx, mixing.scene, s, this.program.width, this.program.height)
+    }
     pctx.globalAlpha = 1
     if (withPreview) {
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
       const vctx = this.preview.getContext('2d')!
       vctx.fillStyle = '#000'
       vctx.fillRect(0, 0, this.preview.width, this.preview.height)
+      // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
       if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
     }
+  }
+
+  /** The manual fader's mix: the Preview scene and how much of it is in Live, or null. */
+  protected mixing(s: AppState): { scene: Scene; level: number } | null {
+    const level = s.mix ?? 0
+    if (level <= 0 || s.previewSceneId === s.programSceneId) return null
+    const scene = s.scenes.find((x) => x.id === s.previewSceneId)
+    return scene ? { scene, level: Math.min(1, level) } : null
   }
 
   /**
@@ -290,6 +350,36 @@ export class Compositor {
     return true
   }
 
+  /** A small copy of Live, with the Overlay (drawn on the 2D canvas, so it works with either compositor). */
+  drawLive(canvas: HTMLCanvasElement): boolean {
+    const s = this.state
+    const scene = s?.scenes.find((x) => x.id === s.programSceneId)
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!s || !scene || !ctx) return false
+    const w = this.program.width || 1280
+    const h = this.program.height || 720
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.save()
+    ctx.scale(canvas.width / w, canvas.height / h)
+    this.drawWithOverlay(ctx, scene, s, w, h)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      ctx.globalAlpha = mixing.level
+      this.drawWithOverlay(ctx, mixing.scene, s, w, h)
+      ctx.globalAlpha = 1
+    }
+    ctx.restore()
+    return true
+  }
+
+  /** A scene in Live, and the Overlay sources that show over it on top. */
+  private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
+    this.drawScene(ctx, scene, s, w, h)
+    const overlay = overlayOver(s, scene.id)
+    if (overlay) this.drawScene(ctx, overlay, s, w, h, 1)
+  }
+
   private drawScene(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number, depth = 0) {
     const alpha = ctx.globalAlpha
     // Fill with black first so a fade reveals the new scene, not the old one through it. (Not for a scene inside a scene.)
@@ -307,6 +397,12 @@ export class Compositor {
         const b = boxFor(placementOf(l), w, h)
         ctx.fillStyle = l.color ?? '#1e3a8a'
         ctx.fillRect(b.x, b.y, b.w, b.h)
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) {
+          ctx.fillStyle = `rgb(${r.rgb.join(',')})`
+          ctx.fillRect(r.x, r.y, r.w, r.h)
+        }
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue
@@ -321,6 +417,21 @@ export class Compositor {
         ctx.restore()
       } else {
         const src = this.drawableFor(l)
+        // A gfx app video handed over to play here: under the page's picture, where the page would show it.
+        const feed = (l.kind === 'graphics' || l.kind === 'browser') && src ? this.graphics.feedFor(l, s) : null
+        const v = feed?.video
+        if (feed && v && this.ready(v.el) && src instanceof HTMLCanvasElement) {
+          const page = fitRect(src.width, src.height, placementOf(l), w, h)
+          const k = page.w / src.width
+          const b = videoBox(v, src.width, src.height)
+          const r = { x: page.x + b.x * k, y: page.y + b.y * k, w: b.w * k, h: b.h * k }
+          ctx.fillStyle = '#000'
+          ctx.fillRect(r.x, r.y, r.w, r.h)
+          const f = Math.min(r.w / v.el.videoWidth, r.h / v.el.videoHeight)
+          const dw = v.el.videoWidth * f
+          const dh = v.el.videoHeight * f
+          ctx.drawImage(v.el, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh)
+        }
         if (src) this.drawPicture(ctx, src, placementOf(l), w, h)
       }
     }
@@ -340,16 +451,17 @@ export class Compositor {
       if (!pics.length) return null
       return pics[Math.floor(Date.now() / 1000 / Math.max(1, l.seconds ?? 5)) % pics.length]
     }
-    return null // browser sources need the desktop version
+    if ((l.kind === 'graphics' || l.kind === 'browser') && this.state) return this.graphics.feedFor(l, this.state)?.canvas ?? null
+    return null
   }
 
-  private ready(el: HTMLVideoElement | undefined) {
+  protected ready(el: HTMLVideoElement | undefined) {
     return el && el.readyState >= 2 && el.videoWidth > 0 ? el : null
   }
 
   private drawPicture(ctx: CanvasRenderingContext2D, src: Drawable, place: Placement, w: number, h: number) {
-    const sw = src instanceof HTMLVideoElement ? src.videoWidth : src.naturalWidth
-    const sh = src instanceof HTMLVideoElement ? src.videoHeight : src.naturalHeight
+    const sw = src instanceof HTMLVideoElement ? src.videoWidth : src instanceof HTMLCanvasElement ? src.width : src.naturalWidth
+    const sh = src instanceof HTMLVideoElement ? src.videoHeight : src instanceof HTMLCanvasElement ? src.height : src.naturalHeight
     const box = boxFor(place, w, h)
     // Fit inside the box, keeping its shape.
     const k = Math.min(box.w / sw, box.h / sh)
@@ -428,6 +540,17 @@ export class Compositor {
 }
 
 /** The box a placement stands for, in a w×h picture. */
+/** Where a w×h picture lands in a placement's box, keeping its shape. */
+export function fitRect(sw: number, sh: number, place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
+  const box = boxFor(place, w, h)
+  const k = Math.min(box.w / sw, box.h / sh)
+  const dw = sw * k
+  const dh = sh * k
+  const x = box.x + (box.w - dw) / 2
+  const y = place === 'full' || place === 'center' ? box.y + (box.h - dh) / 2 : box.y
+  return { x, y, w: dw, h: dh }
+}
+
 export function boxFor(place: Placement, w: number, h: number): { x: number; y: number; w: number; h: number } {
   const m = Math.round(h * 0.03)
   return place === 'full'

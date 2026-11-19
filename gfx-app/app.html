@@ -1,0 +1,1434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gfx app</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e1014; --panel: #14171d; --panel-2: #171a21; --card: #1b1f27; --line: #262b34; --line-2: #2c323d;
+    --text: #e8eaee; --muted: #9ba4b4; --accent: #4c8dff; --accent-strong: #2f6fe0; --live: #c93636; --go: #3fb37f;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line-2); background: var(--card); border-radius: 8px; padding: 0 12px; min-height: 32px; }
+  button:hover { border-color: #3a4250; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input, select { background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 6px; padding: 7px 9px; min-width: 0; width: 100%; }
+  input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  input[type='range'] { padding: 0; border: 0; background: transparent; accent-color: var(--accent); height: 24px; }
+  input[type='color'] { height: 34px; padding: 2px; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+
+  /* Menu bar (File) and project dialogs */
+  .menubar { display: flex; align-items: center; gap: 2px; padding: 2px 10px; border-bottom: 1px solid var(--line); position: relative; z-index: 20; }
+  .menubar-slot { position: relative; }
+  .menubar-item { min-height: 28px; padding: 2px 12px; background: transparent; border-color: transparent; }
+  .menubar-item:hover, .menubar-item.open { background: var(--panel-2); }
+  .menubar .menu { left: 0; right: auto; top: calc(100% + 2px); min-width: 280px; }
+  .menubar .menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 16px; min-height: 36px; padding: 4px 12px; }
+  .menubar .menu button:disabled { opacity: .45; cursor: default; }
+  .menubar .menu small { grid-column: 1; color: var(--muted); font-size: 11px; }
+  .menubar .menu kbd { grid-row: 1; grid-column: 2; color: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .menubar .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
+  .menubar .menu-label { padding: 8px 12px 2px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .menubar .menu button.recent { padding-left: 22px; }
+  .project-name { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .project-name strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+  .project-name .st { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .project-name .st.unsaved { color: #f0c46b; }
+  .project-name .st.unsaved::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #f0c46b; }
+  dialog.proj { width: min(560px, calc(100% - 32px)); background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 0; }
+  dialog.proj::backdrop { background: rgba(0, 0, 0, .55); }
+  .proj-head, .proj-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px; }
+  .proj-head { border-bottom: 1px solid var(--line); } .proj-foot { border-top: 1px solid var(--line); }
+  .proj-head h2 { margin: 0; font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); }
+  .proj-body { padding: 14px 18px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
+  .proj-body label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .proj-body input { font-size: 14px; color: var(--text); }
+  .proj-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .proj-list button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; text-align: left; padding: 8px 12px; min-height: 52px; }
+  .proj-list button.on { border-color: var(--accent); background: #16233a; }
+  .proj-list .meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+  .proj-list .now { grid-row: 1 / 3; grid-column: 2; align-self: center; }
+  .proj-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid #6b5520; border-radius: 8px; background: rgba(240, 196, 107, .08); }
+  .proj-confirm span { flex: 1 1 200px; }
+  .proj .warn-text { color: #f0c46b; margin: 0; font-size: 12px; }
+  .proj .muted { color: var(--muted); margin: 0; font-size: 12px; }
+  .proj button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .proj button.danger { border-color: #7a2e2e; color: #ff9b9b; }
+  .proj-foot .row { display: flex; gap: 8px; }
+
+  /* Top bar */
+  .top { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .top h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--card); color: var(--muted); white-space: nowrap; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #5d6574; }
+  .pill.ok { background: #13261d; color: #8fe0b6; } .pill.ok .dot { background: var(--go); }
+  .pill.live { background: #2a1618; color: #ff9b9b; } .pill.live .dot { background: #ff5a5a; }
+  .pill.bad { background: #2a1618; color: #ff9b9b; } .pill.bad .dot { background: #ff5a5a; }
+  .fw { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+  .fw button { min-height: 32px; padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600; color: #0b1a33; background: var(--accent, #4c8dff); border: 0; border-radius: 8px; cursor: pointer; }
+  .fw-note { font-size: 12px; color: var(--muted); }
+  .addr { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .addr b { color: var(--text); font-weight: 600; user-select: all; }
+
+  .cols { display: grid; grid-template-columns: 340px minmax(0, 1fr) 320px; min-height: 0; }
+  aside, main { min-height: 0; overflow: auto; }
+  h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+  /* Rundown */
+  .rundown { border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .items .group-head { list-style: none; margin: 10px 2px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .items .group-head:first-child { margin-top: 0; }
+  .rundown.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
+  .menu { position: absolute; right: 0; top: 36px; z-index: 5; display: grid; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px; min-width: 190px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .menu button { border: 0; background: transparent; text-align: left; min-height: 34px; border-radius: 6px; }
+  .menu button:hover { background: var(--card); }
+  ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .item { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
+  .item.preview { background: #16223a; border-color: var(--accent-strong); }
+  .item.onair { background: #2a1618; border-color: var(--live); }
+  .thumb { height: 54px; border-radius: 4px; background-color: #0b0c0f; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
+  .thumb.lowerthird { background: #20242c; place-items: end start; }
+  .thumb .lt { margin: 0 0 7px 5px; max-width: 86px; display: grid; text-align: left; line-height: 1.15; }
+  .thumb .lt b { padding: 1px 4px; font-size: 8px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb .lt i { padding: 1px 4px; font-size: 6.5px; font-style: normal; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb video, .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb .badge { position: absolute; right: 3px; bottom: 3px; padding: 0 4px; border-radius: 3px; background: rgba(0,0,0,.65); font-size: 9px; }
+  .thumb.video { background: linear-gradient(135deg, #3d5a80, #98c1d9); }
+  .thumb.photos { background: linear-gradient(135deg, #7a5f52, #e0b48a); }
+  .thumb.window { background: #4b5563; }
+  .thumb.bars { background: linear-gradient(90deg, #bfbfbf 0 14%, #bfbf00 0 28%, #00bfbf 0 42%, #00bf00 0 57%, #bf00bf 0 71%, #bf0000 0 85%, #0000bf 0); }
+  .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item.preview .sub { color: #9fc1ff; } .item.onair .sub { color: #ff9b9b; }
+  .tools { display: flex; gap: 2px; opacity: 0; }
+  .item:hover .tools, .item:focus-within .tools { opacity: 1; }
+  .tools button { min-height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--muted); }
+  .tools button:hover { color: var(--text); background: var(--card); }
+  .hint { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 0; }
+
+  /* Monitors */
+  main { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .monitors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .mon { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .mon-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .mon-head strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-weight: 700; font-size: 11px; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; color: #fff; }
+  .badge.next { background: var(--accent-strong); } .badge.live { background: var(--live); }
+  .screen { position: relative; aspect-ratio: 16 / 9; border: 2px solid var(--accent-strong); border-radius: 6px; overflow: hidden;
+    background-color: #20242c; background-image: linear-gradient(45deg, #2a2f38 25%, transparent 25%, transparent 75%, #2a2f38 75%), linear-gradient(45deg, #2a2f38 25%, transparent 25%, transparent 75%, #2a2f38 75%);
+    background-size: 16px 16px; background-position: 0 0, 8px 8px; }
+  .screen.live { border-color: var(--live); }
+  .screen iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; background: transparent; }
+  .actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+  .actions button { min-height: 52px; font-size: 15px; font-weight: 600; }
+  .actions .take { background: var(--go); border-color: var(--go); color: #08170f; font-size: 16px; font-weight: 700; }
+  .waiting { color: #f0c36b; }
+  .actions:has(.cue-btn:not([hidden])) { grid-template-columns: 2fr 1fr 1fr 1.5fr; }
+  .actions .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; font-weight: 700; }
+  /* A full-screen video while the streaming app is connected: Cue to stream is the main action; Take is the careful one. */
+  .actions.covers { grid-template-columns: 2fr 1fr 1fr 1.2fr; }
+  .actions.covers .cue-btn { order: -1; font-size: 16px; }
+  .actions.covers .take { background: var(--card); border-color: var(--line); color: inherit; font-size: 15px; font-weight: 600; order: 3; }
+  .ask-bar { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #f0c36b; border-radius: 8px; background: rgba(240, 195, 107, 0.08); font-size: 13px; }
+  .ask-bar[hidden] { display: none; }
+  .ask-bar b { color: #f0c36b; font-size: 14px; }
+  .ask-bar .ask-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
+  .ask-bar .ask-row button { min-height: 34px; padding: 0 14px; font-weight: 600; }
+  .ask-bar .ask-row .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; }
+  .cue-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cue-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; max-height: 190px; overflow: auto; }
+  .cue-list:empty { display: none; }
+  .cue-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; color: var(--muted); }
+  .cue-list-head { margin: 8px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .cue-list li.can-drag { cursor: grab; border: 1px solid var(--line); background: var(--bg, #14171d); color: inherit; }
+  .cue-list li.can-drag:hover { border-color: var(--accent); }
+  .cue-list li .grip { color: var(--muted); font-size: 14px; line-height: 1; letter-spacing: -2px; user-select: none; }
+  .cue-list li.dragging { opacity: 0.4; }
+  .cue-list li.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+  .cue-list li.drop-after { box-shadow: 0 3px 0 var(--accent); }
+  .cue-list li.drop-end { justify-content: center; border: 1px dashed var(--line-2); color: var(--muted); font-size: 12px; padding: 6px; }
+  .cue-list li.drop-end.drop-on { border-color: var(--accent); color: inherit; background: rgba(76, 141, 255, 0.12); }
+  .cue-list li .n { width: 18px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cue-list li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cue-list li.now { color: inherit; background: rgba(255, 90, 90, 0.12); font-weight: 600; }
+  .cue-list li.played { opacity: 0.5; }
+  .cue-list li button { min-height: 24px; padding: 0 7px; font-size: 12px; margin: 0; }
+  .cue-bar.ending { border-color: #ff5a5a; background: rgba(255, 90, 90, 0.15); }
+  .cue-bar.ending #cueText { color: #ff8a8a; font-weight: 700; font-size: 15px; }
+  .cue-bar { display: block; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
+  .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
+  .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loop-switch { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .loop-switch input { width: 16px; height: 16px; accent-color: #4c8dff; }
+  .cue-head .loop-switch + button { margin-left: 0; }
+  .cue-sound { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .cue-sound[hidden] { display: none; }
+  .cue-meter { flex: 1; height: 8px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .cue-meter span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3fb37f 0%, #3fb37f 70%, #e2b93b 100%); transition: width 0.18s linear; }
+  .cue-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--line); min-width: 60px; } .cue-prog span { display: block; height: 100%; border-radius: 2px; background: #ff5a5a; }
+  .cue-head button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
+  .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .screen-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 600; background: rgba(14, 16, 20, 0.8); color: #e8eaee; padding: 2px 6px; border-radius: 4px; }
+
+  /* Settings */
+  .settings { border-left: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .row { display: flex; justify-content: space-between; } .row .v { color: var(--text); }
+  .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .sep { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .file { display: flex; gap: 8px; align-items: center; } .file span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+  .styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .styles button { min-height: 0; padding: 6px 4px; font-size: 11px; display: grid; gap: 4px; }
+  .styles button[aria-checked='true'] { background: #1d2a44; border-color: var(--accent); }
+  .st { height: 26px; border-radius: 4px; position: relative; overflow: hidden; } .st span { position: absolute; }
+  .warn { color: #f0c36b; font-size: 12px; }
+  .empty { color: var(--muted); }
+
+  /* A laptop screen (1366 x 768 and up). Narrower: the settings move under. */
+  @media (max-width: 1180px) {
+    .cols { grid-template-columns: 250px minmax(0, 1fr); }
+    .settings { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+    body { overflow: auto; } .app { height: auto; min-height: 100vh; } aside, main { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="menubar" id="menubar" role="menubar">
+    <div class="menubar-slot">
+      <button class="menubar-item" id="fileBtn" aria-haspopup="menu" aria-expanded="false">File</button>
+      <div class="menu" id="fileMenu" role="menu" aria-label="File" hidden>
+        <button role="menuitem" data-file="new">New rundown…</button>
+        <button role="menuitem" data-file="open">Open project…<kbd>Ctrl+O</kbd></button>
+        <div id="recentList"></div>
+        <hr>
+        <button role="menuitem" data-file="save">Save project<kbd>Ctrl+S</kbd></button>
+        <button role="menuitem" data-file="saveAs">Save project as…<kbd>Ctrl+Shift+S</kbd></button>
+        <hr>
+        <button role="menuitem" data-file="import">Import project file…<small>From another PC or a USB stick</small></button>
+        <button role="menuitem" data-file="export">Export project file…<small>To take it to another PC</small></button>
+      </div>
+    </div>
+    <input type="file" id="importInput" accept=".json,application/json" hidden>
+  </nav>
+  <header class="top">
+    <h1>Gfx app</h1>
+    <span class="project-name"><strong id="projName"></strong><span class="st" id="projState"></span></span>
+    <span class="pill" id="streamPill"><span class="dot"></span><span id="streamText">Streaming app not connected</span></span>
+    <span class="fw" id="fw" hidden>
+      <span class="pill bad"><span class="dot"></span>Windows Firewall blocks the streaming PC</span>
+      <button type="button" class="go" id="fwAllow">Let the streaming PC in</button>
+      <span class="fw-note" id="fwNote">Windows asks once to confirm.</span>
+    </span>
+    <span class="addr" id="addr"></span>
+  </header>
+  <div class="cols">
+    <aside class="rundown" id="rundown" aria-label="Rundown">
+      <div class="head">
+        <h2>Rundown</h2>
+        <button id="addBtn" aria-haspopup="true" aria-expanded="false">+ Add</button>
+        <div class="menu" id="addMenu" hidden>
+          <button data-add="lowerthird">Lower third</button>
+          <button data-add="video">Video…</button>
+          <button data-add="photos">Photos or slideshow…</button>
+          <button data-add="window">A window on this laptop…</button>
+          <button data-add="bars">Color bars (and tone)</button>
+        </div>
+      </div>
+      <ul class="items" id="items"></ul>
+      <p class="hint" id="dropHint">Click to put in Preview, double-click to take it on air. Drag videos and photos from Explorer straight in.</p>
+    </aside>
+
+    <main>
+      <div class="monitors">
+        <section class="mon" aria-label="Preview">
+          <div class="mon-head"><span class="badge next">PREVIEW</span><strong id="previewName"></strong></div>
+          <div class="screen" id="previewScreen"><iframe src="/live?view=preview" title="Preview" tabindex="-1"></iframe></div>
+        </section>
+        <section class="mon" aria-label="On air">
+          <div class="mon-head"><span class="badge live">ON AIR</span><strong id="onairName"></strong></div>
+          <div class="screen live" id="onairScreen"><iframe src="/live?view=onair" title="On air" tabindex="-1"></iframe>
+            <img id="progImg" alt="The stream’s Live picture" hidden><span class="screen-tag" id="progTag" hidden>The stream’s Live</span></div>
+        </section>
+      </div>
+      <div class="actions">
+        <button class="take" id="take">Take</button>
+        <button id="hide">Hide</button>
+        <button id="next">Next ↓</button>
+        <button class="cue-btn" id="cue" hidden title="Put this video in a commercial break, in the streaming app’s Preview. Cue more to play them one after the other.">Cue to stream</button>
+      </div>
+      <div class="ask-bar" id="askBar" hidden role="alertdialog" aria-labelledby="askTitle">
+        <b id="askTitle">This video fills the whole stream</b>
+        <span id="askText">Take puts it on top of every scene and every camera in the streaming app’s Live picture, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.</span>
+        <div class="ask-row"><button class="cue-btn" id="askCue">Cue to stream</button><button id="askTake">Take anyway</button><button id="askCancel">Cancel</button></div>
+      </div>
+      <div class="cue-bar" id="cueBar" hidden role="status">
+        <div class="cue-head">
+          <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
+          <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
+          <label class="loop-switch" title="Play the break again from its first video until this is turned off; turned off, it ends after this round with the countdown"><input type="checkbox" id="breakLoop"> Loop the break</label>
+          <button id="uncue" class="small">Uncue</button>
+        </div>
+        <div class="cue-sound" id="cueSound" hidden><span>Sound on the stream</span><span class="cue-meter" role="meter" aria-label="Sound on the stream" aria-valuemin="0" aria-valuemax="100" id="cueMeter"><span id="cueLevel"></span></span><span id="cueSoundNote"></span></div>
+        <p class="cue-list-head" id="cueListHead" hidden>In the break, in play order · drag to change the order</p>
+        <ol class="cue-list" id="cueList"></ol>
+      </div>
+      <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
+    </main>
+
+    <aside class="settings" id="settings" aria-label="Item settings"></aside>
+  </div>
+</div>
+
+<dialog class="proj" id="projDialog" aria-labelledby="projTitle">
+  <header class="proj-head"><h2 id="projTitle"></h2><button id="projClose" aria-label="Close">✕</button></header>
+  <div class="proj-body" id="projBody"></div>
+  <footer class="proj-foot" id="projFoot"></footer>
+</dialog>
+<script>
+  const $ = (id) => document.getElementById(id)
+  const desk = window.gfxDesktop || null
+  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window', bars: 'Color bars' }
+  const STYLE_COLORS = {
+    classic: { box: '#f2f2f2', text: '#111111' },
+    block: { box: '#0c0e12', text: '#ffffff' },
+    minimal: { box: '#000000', text: '#ffffff' },
+    news: { box: '#f5f6f8', text: '#111111' }
+  }
+  let S = null
+
+  async function act(body) {
+    const r = await fetch('/api/do', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const out = await r.json().catch(() => ({}))
+    if (!r.ok) alertBar(out.error || 'That didn’t work')
+    return out
+  }
+  let barTimer = null
+  function alertBar(text) {
+    $('liveHint').textContent = text
+    $('liveHint').classList.add('warn')
+    clearTimeout(barTimer)
+    barTimer = setTimeout(() => {
+      $('liveHint').classList.remove('warn')
+      renderMain()
+    }, 5000)
+  }
+
+  // ---------- Screens: the graphics page at 1920 x 1080, shrunk to fit ----------
+  const fit = () => {
+    for (const s of document.querySelectorAll('.screen')) s.querySelector('iframe').style.transform = `scale(${s.clientWidth / 1920})`
+  }
+  new ResizeObserver(fit).observe(document.querySelector('.monitors'))
+
+  // ---------- The address to add in the streaming app ----------
+  fetch('/api/info').then((r) => r.json()).then((info) => {
+    const host = info.addresses[0] || location.hostname
+    $('addr').textContent = 'Add to the streaming app (Overlay → + Add → Graphics): '
+    const b = document.createElement('b')
+    b.textContent = `http://${host}:${info.port}/live`
+    $('addr').append(b)
+  }).catch(() => {})
+
+  // ---------- Windows Firewall: can the streaming PC reach this app? ----------
+  let fwAt = 0
+  async function checkFirewall() {
+    if (!desk?.firewall || Date.now() - fwAt < 30000) return
+    fwAt = Date.now()
+    const st = await desk.firewall().catch(() => 'unknown')
+    $('fw').hidden = st !== 'blocked'
+  }
+  $('fwAllow').onclick = async () => {
+    $('fwAllow').disabled = true
+    $('fwNote').textContent = 'Confirm in the Windows question…'
+    const st = await desk.allowFirewall().catch(() => 'unknown')
+    $('fwAllow').disabled = false
+    $('fwNote').textContent = st === 'blocked' ? 'Still blocked. Did Windows ask? Try again, or ask whoever looks after this PC.' : 'Windows asks once to confirm.'
+    $('fw').hidden = st !== 'blocked'
+  }
+  checkFirewall()
+  // Again whenever the window comes back to the front (the network or the rules may have changed).
+  window.addEventListener('focus', checkFirewall)
+
+  // ---------- Rundown ----------
+  const byId = (id) => S?.items.find((i) => i.id === id) ?? null
+  function subText(i) {
+    if (i.kind === 'lowerthird') return i.title || 'Lower third'
+    if (i.kind === 'video') return `Video · ${i.file}${i.ok ? '' : ' (missing)'}`
+    if (i.kind === 'photos') return `Slideshow · ${i.count} photo${i.count === 1 ? '' : 's'}`
+    if (i.kind === 'bars') return `Color bars · ${i.sound !== false ? 'with 1 kHz tone' : 'no tone'}`
+    return `Window · ${i.windowName || 'pick one'}`
+  }
+  /**
+   * A small picture of what the item shows: a frame of the video, the first photo, the lower third's
+   * words in its look, the window as it is now. Kept between renders (the list redraws often).
+   */
+  const thumbs = new Map()
+  function thumbFor(i) {
+    const look = S.look || {}
+    const key = `${i.id}|${i.kind}|${i.kind === 'video' ? `${i.file}|${i.ok}` : ''}|${i.kind === 'photos' ? (i.files || []).join('/') : ''}|${i.kind === 'lowerthird' ? `${i.name}|${i.title}|${look.accent}|${look.box}|${look.text}` : ''}|${i.kind === 'window' ? i.sourceId : ''}`
+    const had = thumbs.get(i.id)
+    if (had && had.key === key) return had.el
+    const el = document.createElement('span')
+    el.className = `thumb ${i.kind}`
+    if (i.kind === 'video') {
+      if (i.ok) {
+        const v = document.createElement('video')
+        v.muted = true
+        v.preload = 'metadata'
+        v.playsInline = true
+        // A frame a second in (the very first is often black).
+        v.src = `/media/${i.id}#t=1`
+        el.append(v)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = i.ok ? '▶' : 'missing'
+      el.append(b)
+    } else if (i.kind === 'photos') {
+      if (i.count) {
+        const img = document.createElement('img')
+        img.alt = ''
+        img.loading = 'lazy'
+        img.src = `/media/${i.id}/0`
+        el.append(img)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = String(i.count || 0)
+      el.append(b)
+    } else if (i.kind === 'lowerthird') {
+      const lt = document.createElement('span')
+      lt.className = 'lt'
+      const n = document.createElement('b')
+      n.textContent = i.name || ' '
+      n.style.background = look.box || '#f2f2f2'
+      n.style.color = look.text || '#111'
+      const t = document.createElement('i')
+      t.textContent = i.title || ' '
+      t.style.background = look.accent || '#2563d9'
+      t.style.color = '#fff'
+      lt.append(n, t)
+      el.append(lt)
+    } else if (i.kind === 'window') {
+      el.textContent = '▢'
+      windowThumb(i, el)
+    }
+    thumbs.set(i.id, { key, el })
+    return el
+  }
+  /** The window's picture as it is now (only in the gfx app window), refreshed every few seconds. */
+  function windowThumb(i, el) {
+    if (!window.gfxDesktop?.windowThumb) return
+    const img = document.createElement('img')
+    img.alt = ''
+    const load = async () => {
+      if (!el.isConnected && thumbs.get(i.id)?.el !== el) return
+      const url = await window.gfxDesktop.windowThumb(i.sourceId, i.name).catch(() => null)
+      if (url) {
+        img.src = url
+        if (!img.isConnected) el.append(img)
+      }
+      if (thumbs.get(i.id)?.el === el) setTimeout(load, 5000)
+    }
+    load()
+  }
+
+  function renderItems() {
+    const ul = $('items')
+    ul.textContent = ''
+    if (!S.items.length) {
+      const li = document.createElement('li')
+      li.className = 'empty'
+      li.textContent = 'Nothing yet. Press + Add, or drag videos and photos in.'
+      ul.append(li)
+    }
+    // Grouped by kind (the gfx app keeps them in this order): a heading over each group.
+    const GROUP_LABEL = { lowerthird: 'Lower thirds', video: 'Videos', photos: 'Photos and slideshows', window: 'Windows', bars: 'Color bars' }
+    const counts = {}
+    for (const i of S.items) counts[i.kind] = (counts[i.kind] || 0) + 1
+    S.items.forEach((i, n) => {
+      if (n === 0 || S.items[n - 1].kind !== i.kind) {
+        const h = document.createElement('li')
+        h.className = 'group-head'
+        h.setAttribute('role', 'presentation')
+        h.textContent = `${GROUP_LABEL[i.kind] || 'Other'} · ${counts[i.kind]}`
+        ul.append(h)
+      }
+      const li = document.createElement('li')
+      const onAir = S.onAir?.id === i.id
+      const preview = S.previewId === i.id
+      li.className = `item ${onAir ? 'onair' : preview ? 'preview' : ''}`
+      li.tabIndex = 0
+      const thumb = thumbFor(i)
+      const txt = document.createElement('span')
+      txt.style.minWidth = '0'
+      const nm = document.createElement('div')
+      nm.className = 'name'
+      nm.textContent = i.kind === 'lowerthird' ? i.name || '(no name)' : i.name
+      const sub = document.createElement('div')
+      sub.className = 'sub'
+      sub.textContent = `${subText(i)}${onAir ? ' · ON AIR' : preview ? ' · PREVIEW' : ''}`
+      txt.append(nm, sub)
+      const tools = document.createElement('span')
+      tools.className = 'tools'
+      const tool = (label, title, fn, off) => {
+        const b = document.createElement('button')
+        b.textContent = label
+        b.title = title
+        b.setAttribute('aria-label', `${title}: ${i.name}`)
+        b.disabled = !!off
+        b.onclick = (e) => {
+          e.stopPropagation()
+          fn()
+        }
+        tools.append(b)
+      }
+      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0 || S.items[n - 1].kind !== i.kind)
+      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1 || S.items[n + 1].kind !== i.kind)
+      tool('✕', 'Remove', () => confirmRemove(i))
+      li.append(thumb, txt, tools)
+      // A video can be dragged into the commercial break's list.
+      if (i.kind === 'video') {
+        li.draggable = true
+        li.addEventListener('dragstart', (e) => {
+          dragItem = i.id
+          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.setData('text/plain', i.name)
+        })
+        li.addEventListener('dragend', () => {
+          dragItem = ''
+          clearDrops()
+          renderMain()
+        })
+      }
+      li.onclick = () => act({ action: 'preview', id: i.id })
+      li.ondblclick = () => takeItem(i.id)
+      li.onkeydown = (e) => {
+        if (e.key === 'Enter') act({ action: 'preview', id: i.id })
+      }
+      ul.append(li)
+    })
+  }
+  function confirmRemove(i) {
+    if (S.onAir?.id === i.id) return alertBar('That item is on air. Hide it first.')
+    act({ action: 'remove', id: i.id })
+  }
+
+  // ---------- Adding ----------
+  const menu = $('addMenu')
+  $('addBtn').onclick = (e) => {
+    e.stopPropagation()
+    menu.hidden = !menu.hidden
+    $('addBtn').setAttribute('aria-expanded', String(!menu.hidden))
+  }
+  document.addEventListener('click', () => {
+    menu.hidden = true
+    $('addBtn').setAttribute('aria-expanded', 'false')
+  })
+  for (const b of menu.querySelectorAll('[data-add]')) b.onclick = () => add(b.dataset.add)
+
+  async function add(kind) {
+    menu.hidden = true
+    if (kind === 'lowerthird') return act({ action: 'add', item: { kind, name: 'New name', title: 'Title' } })
+    if (kind === 'bars') return act({ action: 'add', item: { kind, name: 'Color bars' } })
+    if (kind === 'window') {
+      if (!desk) return alertBar('Windows can be sent from the gfx app window only (Start Gfx App), not from a browser.')
+      return act({ action: 'add', item: { kind, name: 'Window' } })
+    }
+    if (!desk) return alertBar('Pick files in the gfx app window (Start Gfx App), or drag them in from Explorer there.')
+    const paths = await desk.pickFiles(kind)
+    if (!paths?.length) return
+    if (kind === 'video') for (const p of paths) await act({ action: 'add', item: { kind: 'video', path: p } })
+    else act({ action: 'add', item: { kind: 'photos', paths } })
+  }
+
+  // Drag files from Explorer: videos become video items, pictures one slideshow.
+  const rundown = $('rundown')
+  rundown.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].includes('Files')) return
+    e.preventDefault()
+    rundown.classList.add('drop')
+  })
+  rundown.addEventListener('dragleave', () => rundown.classList.remove('drop'))
+  rundown.addEventListener('drop', async (e) => {
+    e.preventDefault()
+    rundown.classList.remove('drop')
+    if (!desk) return alertBar('Drag files in the gfx app window (Start Gfx App), not a browser.')
+    const paths = [...e.dataTransfer.files].map((f) => desk.pathFor(f)).filter(Boolean)
+    const videos = paths.filter((p) => /\.(mp4|webm|mov|m4v|mkv)$/i.test(p))
+    const photos = paths.filter((p) => !videos.includes(p))
+    for (const p of videos) await act({ action: 'add', item: { kind: 'video', path: p } })
+    if (photos.length) await act({ action: 'add', item: { kind: 'photos', paths: photos } })
+  })
+
+  // ---------- Take, Hide, Next ----------
+  /** A full-screen video Taken while the streaming app shows this gfx app covers the whole stream: ask first. */
+  const covers = (i) => !!i && ((i.kind === 'video' && i.shows !== 'box') || i.kind === 'bars') && !!S?.stream?.connected
+  let asking = ''
+  function takeItem(id) {
+    const i = byId(id)
+    if (!i) return
+    if (covers(i) && asking !== id) {
+      asking = id
+      const bars = i.kind === 'bars'
+      $('askTitle').textContent = bars ? 'Color bars fill the whole stream' : 'This video fills the whole stream'
+      $('askText').textContent = bars
+        ? 'Take puts the bars on top of every scene and every camera in the streaming app’s Live picture, until you press Hide (or Esc). They also go off by themselves when a commercial break or a scene without the Overlay goes live, and don’t come back after it.'
+        : 'Take puts it on top of every scene and every camera in the streaming app’s Live picture, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.'
+      $('askCue').hidden = bars
+      $('askBar').hidden = false
+      ;(bars ? $('askCancel') : $('askCue')).focus()
+      return
+    }
+    closeAsk()
+    act({ action: 'take', id })
+  }
+  function closeAsk() {
+    asking = ''
+    $('askBar').hidden = true
+  }
+  $('askTake').onclick = () => asking && takeItem(asking)
+  $('askCue').onclick = () => {
+    const id = asking
+    closeAsk()
+    if (id) act({ action: 'cue', id })
+  }
+  $('askCancel').onclick = closeAsk
+  $('take').onclick = () => S?.previewId && takeItem(S.previewId)
+  $('hide').onclick = () => act({ action: 'hide' })
+  $('next').onclick = () => act({ action: 'next' })
+  const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+  document.addEventListener('keydown', (e) => {
+    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return
+    if (e.code === 'Space') {
+      e.preventDefault()
+      // While asking about a full-screen video, Space does nothing: the operator picks with the buttons.
+      if (!e.repeat && !asking) $('take').click()
+    } else if (e.key === 'Escape') {
+      if (asking) closeAsk()
+      else act({ action: 'hide' })
+    }
+    else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      act({ action: 'next' })
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      act({ action: 'next', back: true })
+    }
+  })
+
+  function renderMain() {
+    const p = byId(S.previewId)
+    const o = S.onAir ? byId(S.onAir.id) : null
+    $('previewName').textContent = p ? p.name : 'Nothing'
+    $('onairName').textContent = o ? o.name : 'Nothing'
+    $('take').disabled = !p
+    // A full-screen video: Cue to stream is the main button, Take the careful one.
+    $('take').closest('.actions').classList.toggle('covers', covers(p))
+    $('take').textContent = covers(p) ? 'Take over everything' : 'Take'
+    if (asking && asking !== p?.id) closeAsk()
+    $('hide').disabled = !o
+    const pill = $('streamPill')
+    pill.className = `pill ${S.stream.live ? 'live' : S.stream.connected ? 'ok' : ''}`
+    const onlyOn = S.stream.only ? ` · on ${S.stream.only} only` : ''
+    $('streamText').textContent = S.stream.live
+      ? `Streaming app connected · graphics live on the stream${onlyOn}`
+      : S.stream.connected
+        ? S.stream.only
+          ? `Streaming app connected · graphics wait for ${S.stream.only} to be live`
+          : 'Streaming app connected · graphics not on the stream now'
+        : 'Streaming app not connected'
+    renderCue(p)
+    // The On air screen shows the stream's real Live picture when the streaming app sends it.
+    const pic = !!S.stream.picture
+    if (pic && !$('progImg').getAttribute('src')) $('progImg').src = '/program.mjpg'
+    if (!pic && $('progImg').getAttribute('src')) $('progImg').removeAttribute('src')
+    $('progImg').hidden = !pic
+    $('progTag').hidden = !pic
+    if ($('liveHint').classList.contains('warn')) return
+    const waits = o && o.playOnLive !== false && S.stream.connected && !S.stream.live
+    $('liveHint').className = `hint ${waits ? 'waiting' : ''}`
+    $('liveHint').textContent = waits
+      ? S.stream.only
+        ? `${o.name} is ready: it comes in when ${S.stream.only} goes live on the stream.`
+        : `${o.name} is ready: it starts when the streaming app puts the graphics live.`
+      : 'Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.'
+  }
+
+  // ---------- Cue to stream: a video as a commercial, in the streaming app's Preview ----------
+  const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  /** The break video being dragged (its index), or -1; a rundown video being dragged in (its id), or ''. */
+  let dragFrom = -1
+  let dragItem = ''
+  let cueListSig = ''
+  function renderCue(p) {
+    const c = S.cue
+    // (An older gfx app server sends one video, not a list.)
+    const items = c?.items ?? (c?.id ? [{ id: c.id, name: c.name }] : [])
+    const onAir = c?.status === 'onair'
+    // A break can change until it has played: before it airs all of it, on air the ones still to come.
+    const open = !!c && !['done', 'failed'].includes(c.status)
+    const at = c?.at ?? 0
+    const free = onAir ? at + 1 : 0
+    const inBreak = open && items.some((x) => x.id === p?.id)
+    const addText = `Add to break (${items.length + 1})`
+    $('cue').hidden = !p || p.kind !== 'video'
+    $('cue').disabled = inBreak
+    $('cue').textContent = inBreak ? 'In the break' : open ? addText : 'Cue to stream'
+    $('askCue').textContent = open ? addText : 'Cue to stream'
+    $('cueBar').hidden = !c
+    if (!c) {
+      cueListSig = ''
+      return
+    }
+    const n = items.length
+    const last = at === n - 1
+    const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
+    const looping = !!S.breakLoop?.on
+    $('breakLoop').checked = looping
+    // A looping break doesn't end: no countdown until Loop is turned off.
+    const ending = onAir && last && !c.pending && c.dur && leftHere <= 10 && !looping
+    const what = n === 1 ? items[0].name : `Break of ${n}`
+    const words = {
+      waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
+      sent: ['Sent', 'to the streaming app…'],
+      copying: ['Copying', 'to the streaming PC…'],
+      cued: ['Cued', n > 1 ? 'in the streaming app’s Preview · one Transition plays them all, then the stream goes to its Preview' : 'in the streaming app’s Preview · waiting for Transition'],
+      onair: [
+        'On air',
+        c.pending
+          ? 'adding to the break…'
+          : ending
+            ? `Ends in ${Math.ceil(leftHere)}`
+            : looping
+              ? `Looping · ${n > 1 ? `${at + 1} of ${n}` : clock(c.pos)} · turn Loop off to end it after this round`
+            : n > 1
+              ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
+              : c.dur
+                ? `${clock(c.pos)} of ${clock(c.dur)}`
+                : clock(c.pos)
+      ],
+      done: ['Done', 'played on the stream; the streaming app went to its Preview'],
+      failed: ['Couldn’t cue', c.error || 'the streaming app could not copy it']
+    }[c.status] ?? [c.status, '']
+    $('cueBar').className = `cue-bar ${c.status} ${ending ? 'ending' : ''}`
+    $('cueState').textContent = `${what}: ${words[0]}`
+    $('cueText').textContent = onAir && c.error && !c.pending ? `${words[1]} · couldn’t add: ${c.error}` : words[1]
+    $('cueProg').hidden = !onAir || !c.dur
+    // The break's sound as the streaming app hears it (a meter like the one in its Sound panel).
+    $('cueSound').hidden = !onAir
+    const lvl = Math.round(Math.sqrt(Math.max(0, Math.min(1, c.level || 0))) * 100)
+    $('cueLevel').style.width = `${lvl}%`
+    $('cueMeter').setAttribute('aria-valuenow', String(lvl))
+    $('cueSoundNote').textContent = onAir && c.pos > 2 && !c.level ? 'no sound' : ''
+    $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
+    $('uncue').hidden = onAir
+    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : n > 1 ? 'Uncue all' : 'Uncue'
+    // The break's videos, in play order. Not rebuilt while dragging (it would change under the mouse).
+    const list = $('cueList')
+    if (dragFrom >= 0 || dragItem) return
+    // The streaming app reports 5 times a second: rebuild only when the list itself changes,
+    // so its buttons stay put under the mouse (a click on a row replaced mid-click is lost).
+    const sig = JSON.stringify([open, onAir, at, items.map((x) => [x.id, x.name])])
+    if (sig === cueListSig) return
+    cueListSig = sig
+    list.textContent = ''
+    $('cueListHead').hidden = !open
+    $('cueListHead').textContent = onAir
+      ? 'In the break, in play order · drag more videos in from the rundown'
+      : 'In the break, in play order · drag to change the order, or drag more in from the rundown'
+    if (!open) return
+    items.forEach((x, i) => {
+      const li = document.createElement('li')
+      if (onAir) li.className = i === at ? 'now' : i < at ? 'played' : ''
+      const canChange = i >= free
+      if (canChange && n - free > 1) {
+        li.classList.add('can-drag')
+        li.draggable = true
+        li.title = 'Drag to change the order'
+        const grip = document.createElement('span')
+        grip.className = 'grip'
+        grip.setAttribute('aria-hidden', 'true')
+        grip.textContent = '⋮⋮'
+        li.append(grip)
+        dragRow(li, i)
+      }
+      dropTarget(li, () => i, free)
+      const num = document.createElement('span')
+      num.className = 'n'
+      num.textContent = `${i + 1}.`
+      const nm = document.createElement('span')
+      nm.className = 'nm'
+      nm.textContent = onAir && i === at ? `${x.name} · playing` : x.name
+      li.append(num, nm)
+      if (canChange) {
+        const btn = (label, title, fn, off) => {
+          const b = document.createElement('button')
+          b.textContent = label
+          b.title = title
+          b.setAttribute('aria-label', `${title}: ${x.name}`)
+          b.disabled = !!off
+          b.onclick = fn
+          li.append(b)
+        }
+        btn('↑', 'Play earlier', () => act({ action: 'cue-move', index: i, up: true }), i <= free)
+        btn('↓', 'Play later', () => act({ action: 'cue-move', index: i }), i === n - 1)
+        btn('✕', 'Take out of the break', () => act({ action: 'uncue', index: i }))
+      }
+      list.append(li)
+    })
+    // The end of the list: a place to drop more videos.
+    const end = document.createElement('li')
+    end.className = 'drop-end'
+    end.textContent = '+ Drag a video here from the rundown'
+    dropTarget(end, () => n, free, true)
+    list.append(end)
+  }
+  const clearDrops = () => {
+    for (const x of $('cueList').children) x.classList.remove('drop-before', 'drop-after', 'drop-on')
+  }
+  /** A row a break video (reorder) or a rundown video (add) can be dropped on: before or after it. */
+  function dropTarget(li, index, free, isEnd) {
+    const after = (e) => !isEnd && e.clientY > li.getBoundingClientRect().top + li.getBoundingClientRect().height / 2
+    const place = (e) => Math.max(free, index() + (after(e) ? 1 : 0))
+    li.addEventListener('dragover', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = dragItem ? 'copy' : 'move'
+      clearDrops()
+      li.classList.add(isEnd ? 'drop-on' : after(e) ? 'drop-after' : 'drop-before')
+    })
+    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after', 'drop-on'))
+    li.addEventListener('drop', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      clearDrops()
+      const to = place(e)
+      if (dragItem) {
+        const id = dragItem
+        dragItem = ''
+        act({ action: 'cue', id, index: to })
+        return
+      }
+      const from = dragFrom
+      dragFrom = -1
+      // Where it lands once taken out of its old place.
+      const lands = from < to ? to - 1 : to
+      if (lands !== from) act({ action: 'cue-move', index: from, to: lands })
+      else renderMain()
+    })
+  }
+  /** Drag a video of the break to another place in the list. */
+  function dragRow(li, i) {
+    li.addEventListener('dragstart', (e) => {
+      dragFrom = i
+      li.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(i))
+    })
+    li.addEventListener('dragend', () => {
+      dragFrom = -1
+      li.classList.remove('dragging')
+      clearDrops()
+      renderMain()
+    })
+  }
+  $('cue').onclick = () => {
+    closeAsk()
+    act({ action: 'cue', id: S.previewId })
+  }
+  $('uncue').onclick = () => act({ action: 'uncue' })
+  $('breakLoop').onchange = (e) => act({ action: 'break-loop', on: e.target.checked })
+
+  // ---------- Settings for the item in Preview ----------
+  let builtFor = ''
+  let typingTimer = null
+  /** Send a change to the item, a moment after the last key or slider move. */
+  const change = (id, patch, now) => {
+    clearTimeout(typingTimer)
+    typingTimer = setTimeout(() => act({ action: 'update', id, item: patch }), now ? 0 : 250)
+  }
+  let lookPatch = {}
+  let lookTimer = null
+  const changeLook = (patch, now) => {
+    lookPatch = { ...lookPatch, ...patch }
+    clearTimeout(lookTimer)
+    lookTimer = setTimeout(() => {
+      const look = { ...S.look, ...lookPatch }
+      lookPatch = {}
+      act({ action: 'look', look })
+    }, now ? 0 : 120)
+  }
+
+  function field(label, input) {
+    const l = document.createElement('label')
+    l.append(label, input)
+    return l
+  }
+  function input(value, oninput, attrs = {}) {
+    const i = document.createElement('input')
+    Object.assign(i, attrs)
+    i.value = value ?? ''
+    i.oninput = () => oninput(i)
+    return i
+  }
+  function select(options, value, onchange) {
+    const s = document.createElement('select')
+    for (const [v, t] of options) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = t
+      s.append(o)
+    }
+    s.value = value
+    s.onchange = () => onchange(s.value)
+    return s
+  }
+  function check(text, checked, onchange) {
+    const l = document.createElement('label')
+    l.className = 'check'
+    const c = document.createElement('input')
+    c.type = 'checkbox'
+    c.checked = !!checked
+    c.onchange = () => onchange(c.checked)
+    l.append(c, text)
+    return l
+  }
+  const h2 = (t) => {
+    const h = document.createElement('h2')
+    h.textContent = t
+    return h
+  }
+  const div = (cls, ...kids) => {
+    const d = document.createElement('div')
+    d.className = cls
+    d.append(...kids)
+    return d
+  }
+
+  function renderSettings() {
+    const box = $('settings')
+    const it = byId(S.previewId)
+    const key = it ? `${it.id}|${it.kind}|${it.kind === 'window' ? it.sourceId : ''}|${it.kind === 'photos' ? it.count : ''}|${it.kind === 'video' ? it.file : ''}` : ''
+    // Rebuilt only for another item, so typing isn't interrupted; else just the values.
+    if (key === builtFor && box.childElementCount) return refreshValues(box)
+    builtFor = key
+    box.textContent = ''
+    if (!it) {
+      box.append(h2('Settings'), div('empty', 'Pick an item in the rundown.'))
+      return
+    }
+    box.append(h2(`${KIND_LABEL[it.kind]} in Preview`))
+    const id = it.id
+    if (it.kind === 'lowerthird') {
+      box.append(
+        field('Name', input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80 })),
+        field('Title', input(it.title, (i) => change(id, { title: i.value }), { maxLength: 120 }))
+      )
+      box.querySelectorAll('input')[0].dataset.k = 'name'
+      box.querySelectorAll('input')[1].dataset.k = 'title'
+    } else {
+      const n = field('Name in the rundown', input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80 }))
+      n.querySelector('input').dataset.k = 'name'
+      box.append(n)
+    }
+    if (it.kind === 'video') {
+      const name = document.createElement('span')
+      name.textContent = it.file + (it.ok ? '' : ' (missing)')
+      const pick = document.createElement('button')
+      pick.textContent = 'Change…'
+      pick.disabled = !desk
+      pick.onclick = async () => {
+        const paths = await desk.pickFiles('video')
+        if (paths?.[0]) act({ action: 'update', id, item: { path: paths[0] } })
+      }
+      box.append(
+        field('File', div('file', name, pick)),
+        field('Shows as', select([['full', 'Full screen'], ['box', 'A box over the cameras (bottom right)']], it.shows, (v) => change(id, { shows: v }, true))),
+        field('At the end', select([['loop', 'Loop'], ['hide', 'Play once, then hide'], ['hold', 'Play once, stay on the last frame']], it.end, (v) => change(id, { end: v }, true)))
+      )
+    }
+    if (it.kind === 'photos') {
+      const name = document.createElement('span')
+      name.textContent = `${it.count} photo${it.count === 1 ? '' : 's'}`
+      const pick = document.createElement('button')
+      pick.textContent = 'Change…'
+      pick.disabled = !desk
+      pick.onclick = async () => {
+        const paths = await desk.pickFiles('photos')
+        if (paths?.length) act({ action: 'update', id, item: { paths } })
+      }
+      const secs = input(it.seconds, (i) => Number(i.value) >= 1 && change(id, { seconds: Number(i.value) }), { type: 'number', min: 1, max: 600 })
+      secs.dataset.k = 'seconds'
+      box.append(
+        field('Photos', div('file', name, pick)),
+        div('two', field('Seconds each', secs), field('Change', select([['fade', 'Fade'], ['cut', 'Cut']], it.fade ? 'fade' : 'cut', (v) => change(id, { fade: v === 'fade' }, true)))),
+        div('two',
+          field('At the end', select([['loop', 'Start again'], ['hold', 'Stay on the last'], ['hide', 'Hide']], it.end, (v) => change(id, { end: v }, true))),
+          field('Shows as', select([['full', 'Full screen'], ['box', 'A box']], it.shows, (v) => change(id, { shows: v }, true))))
+      )
+    }
+    if (it.kind === 'window') {
+      const sel = document.createElement('select')
+      const refresh = document.createElement('button')
+      refresh.textContent = 'Refresh'
+      const fill = async () => {
+        sel.textContent = ''
+        const list = desk ? await desk.listWindows() : []
+        const none = document.createElement('option')
+        none.value = ''
+        none.textContent = list.length ? 'Pick a window…' : desk ? 'No windows found' : 'Only in the gfx app window'
+        sel.append(none)
+        let found = false
+        for (const w of list) {
+          const o = document.createElement('option')
+          o.value = w.id
+          o.textContent = w.name
+          if (w.id === it.sourceId) found = true
+          sel.append(o)
+        }
+        if (it.sourceId && !found) {
+          const o = document.createElement('option')
+          o.value = it.sourceId
+          o.textContent = `${it.windowName} (closed?)`
+          sel.append(o)
+        }
+        sel.value = it.sourceId || ''
+      }
+      sel.onchange = () => {
+        const name = sel.selectedOptions[0]?.textContent ?? ''
+        act({ action: 'update', id, item: { sourceId: sel.value, windowName: name, name: it.name === 'Window' ? name.slice(0, 80) : it.name } })
+      }
+      refresh.onclick = fill
+      fill()
+      box.append(
+        field('Window', div('file', sel, refresh)),
+        div('hint', 'Keep that app open on this laptop (not minimised). It is sent like a live camera, so it uses more network and arrives a fraction of a second late. A network cable helps.'),
+        field('Shows as', select([['full', 'Full screen'], ['box', 'A box over the cameras (bottom right)']], it.shows, (v) => change(id, { shows: v }, true)))
+      )
+    }
+    const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
+    box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
+    if (it.kind === 'lowerthird') box.append(lookSection())
+    if (it.kind === 'bars') {
+      box.append(check('Send a 1 kHz tone to the stream (−20 dBFS, the usual line-up level)', it.sound !== false, (v) => change(id, { sound: v }, true)))
+      box.append(div('hint', 'Bars and tone go out before the show, so the streaming operator and the platforms can check the picture and the sound level. The tone is heard only on the stream, not here.'))
+    }
+    if (it.kind === 'video') {
+      box.append(check('Send its sound to the stream', it.sound !== false, (v) => change(id, { sound: v }, true)))
+      box.append(div('hint', 'The sound shows up in the streaming app as a channel named after the graphics source, with its own volume in that source’s settings.'))
+    }
+  }
+
+  function refreshValues(box) {
+    const it = byId(S.previewId)
+    for (const i of box.querySelectorAll('[data-k]')) {
+      if (document.activeElement === i) continue
+      i.value = i.dataset.k in (it ?? {}) ? it[i.dataset.k] : i.value
+    }
+    for (const i of box.querySelectorAll('[data-look]')) if (document.activeElement !== i) i.value = S.look[i.dataset.look]
+    for (const b of box.querySelectorAll('[data-style]')) b.setAttribute('aria-checked', String(b.dataset.style === S.look.style))
+    for (const v of box.querySelectorAll('[data-lookv]')) v.textContent = lookValue(v.dataset.lookv)
+    const custom = box.querySelector('#customRow')
+    if (custom) custom.hidden = S.look.font !== 'custom'
+    const boxRow = box.querySelector('#boxRow')
+    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+  }
+
+  const lookValue = (k) => (k === 'length' ? (S.look.length > 0 ? `${S.look.length}% of the width` : 'Fits the words') : `${S.look[k]} px`)
+
+  function lookSection() {
+    const sec = div('sep', h2('Look of every lower third'))
+    const styles = div('styles')
+    styles.setAttribute('role', 'radiogroup')
+    styles.setAttribute('aria-label', 'Style')
+    const thumbs = {
+      classic: ['Classic', '#2b3038', '<span style="left:5px;bottom:7px;width:30px;height:7px;background:#f2f2f2"></span><span style="left:5px;bottom:3px;width:36px;height:4px;background:#2563d9"></span>'],
+      block: ['Bold block', '#33291f', '<span style="left:5px;bottom:4px;width:38px;height:12px;background:#0c0e12;border-left:3px solid #2563d9"></span>'],
+      minimal: ['Minimal', '#24302e', '<span style="left:5px;bottom:10px;width:30px;height:5px;background:#fff"></span><span style="left:5px;bottom:6px;width:12px;height:2px;background:#2563d9"></span>'],
+      news: ['News strip', '#2a2a38', '<span style="left:0;right:0;bottom:4px;height:8px;background:#f5f6f8;border-left:9px solid #2563d9"></span>']
+    }
+    for (const [k, [label, bg, inner]] of Object.entries(thumbs)) {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.setAttribute('role', 'radio')
+      b.dataset.style = k
+      b.setAttribute('aria-checked', String(S.look.style === k))
+      b.innerHTML = `<span class="st" style="background:${bg}">${inner}</span>`
+      b.append(label)
+      b.onclick = () => changeLook({ style: k, ...STYLE_COLORS[k] }, true)
+      styles.append(b)
+    }
+    sec.append(styles)
+    const lookSelect = (k, options) => {
+      const s = select(options, S.look[k], (v) => changeLook({ [k]: k === 'stayFor' ? Number(v) : v }, true))
+      s.dataset.look = k
+      return s
+    }
+    const slider = (k, label, min, max) => {
+      const l = document.createElement('label')
+      const row = div('row', label)
+      const v = document.createElement('span')
+      v.className = 'v'
+      v.dataset.lookv = k
+      v.textContent = lookValue(k)
+      row.append(v)
+      const i = input(S.look[k], (x) => changeLook({ [k]: Number(x.value) }), { type: 'range', min, max })
+      i.dataset.look = k
+      l.append(row, i)
+      return l
+    }
+    const color = (k, label) => {
+      const i = input(S.look[k], (x) => changeLook({ [k]: x.value }), { type: 'color' })
+      i.dataset.look = k
+      const f = field(label, i)
+      if (k === 'box') f.id = 'boxRow'
+      return f
+    }
+    const custom = input(S.look.customFont, (x) => changeLook({ customFont: x.value }), { maxLength: 60, placeholder: 'e.g. Arial Black' })
+    custom.dataset.look = 'customFont'
+    const customRow = field('Font name (as installed on the streaming PC)', custom)
+    customRow.id = 'customRow'
+    customRow.hidden = S.look.font !== 'custom'
+    sec.append(
+      div('two',
+        field('Font', lookSelect('font', [['Inter', 'Inter'], ['Space Grotesk', 'Space Grotesk'], ['Montserrat', 'Montserrat'], ['Roboto Slab', 'Roboto Slab'], ['custom', 'A font on the streaming PC…']])),
+        field('Position', lookSelect('position', [['left', 'Bottom left'], ['center', 'Bottom centre'], ['right', 'Bottom right']]))),
+      customRow,
+      slider('nameSize', 'Name size', 20, 120),
+      slider('titleSize', 'Title size', 12, 80),
+      slider('length', 'Length', 0, 100),
+      div('three', color('accent', 'Accent'), color('box', 'Box'), color('text', 'Text')),
+      div('two',
+        field('Stays on for', lookSelect('stayFor', [['0', 'Until Hide'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds']])),
+        field('Animation', lookSelect('animation', [['slide', 'Slide in'], ['fade', 'Fade'], ['wipe', 'Wipe']])))
+    )
+    const boxRow = sec.querySelector('#boxRow')
+    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+    return sec
+  }
+
+  // ---------- Sending a window (WebRTC), when a graphics page asks ----------
+  /** The windows being captured now: item id -> { sourceId, promise of its stream }. */
+  const captures = new Map()
+  let captureQueue = Promise.resolve()
+  async function windowStream(item) {
+    const have = captures.get(item.id)
+    if (have && have.sourceId === item.sourceId) {
+      const s = await have.promise.catch(() => null)
+      if (s && s.getVideoTracks()[0]?.readyState === 'live') return s
+    }
+    if (have) (await have.promise.catch(() => null))?.getTracks().forEach((t) => t.stop())
+    if (!desk) throw new Error('only the gfx app window can send a window')
+    if (!item.sourceId) throw new Error('no window picked yet')
+    // One at a time: the gfx app gets the window ready, then the page asks for it.
+    const promise = captureQueue.then(async () => {
+      const sourceId = await desk.findWindow(item.sourceId, item.windowName)
+      if (!sourceId) throw new Error(`${item.windowName || 'the window'} is closed`)
+      return navigator.mediaDevices.getDisplayMedia({ audio: false, video: { width: { max: 1920 }, height: { max: 1080 }, frameRate: { max: 30 } } })
+    })
+    captureQueue = promise.catch(() => {})
+    captures.set(item.id, { sourceId: item.sourceId, promise })
+    try {
+      return await promise
+    } catch (e) {
+      captures.delete(item.id)
+      throw e
+    }
+  }
+  async function answerOffer(msg) {
+    const reply = (body) => fetch('/api/rtc/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: msg.id, ...body }) })
+    try {
+      const it = byId(msg.itemId)
+      if (!it || it.kind !== 'window') throw new Error('not a window item')
+      const stream = await windowStream(it)
+      const pc = new RTCPeerConnection()
+      for (const t of stream.getVideoTracks()) {
+        const sender = pc.addTrack(t, stream)
+        // A sharp picture for text (slides, documents): keep the resolution, drop frames if the network is short.
+        const p = sender.getParameters()
+        p.degradationPreference = 'maintain-resolution'
+        p.encodings = [{ ...(p.encodings?.[0] ?? {}), maxBitrate: 8_000_000 }]
+        sender.setParameters(p).catch(() => {})
+      }
+      pc.onconnectionstatechange = () => ['failed', 'closed', 'disconnected'].includes(pc.connectionState) && setTimeout(() => pc.close(), 5000)
+      await pc.setRemoteDescription({ type: 'offer', sdp: msg.sdp })
+      await pc.setLocalDescription(await pc.createAnswer())
+      await new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') return resolve()
+        pc.addEventListener('icegatheringstatechange', () => pc.iceGatheringState === 'complete' && resolve())
+        setTimeout(resolve, 2000)
+      })
+      reply({ sdp: pc.localDescription.sdp })
+    } catch (e) {
+      reply({ error: e.message })
+    }
+  }
+  // Stop capturing windows nothing shows any more.
+  function dropCaptures() {
+    const used = new Set([S.previewId, S.onAir?.id].filter(Boolean))
+    for (const [id, c] of captures) {
+      if (used.has(id)) continue
+      c.promise.then((s) => s.getTracks().forEach((t) => t.stop())).catch(() => {})
+      captures.delete(id)
+    }
+  }
+
+
+  // ---------- File menu: projects (a rundown and its look) saved and opened again ----------
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  function savedWhen(at) {
+    if (!at) return ''
+    const d = new Date(at)
+    const today = new Date()
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (d.toDateString() === today.toDateString()) return `today ${time}`
+    return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`
+  }
+  const P = () => S?.project ?? { name: 'Untitled rundown', file: '', savedAt: 0, changed: true }
+  /** Something on air or a break on air: a rundown can't be swapped now. */
+  const busyWhy = () => (S?.cue?.status === 'onair' ? 'A commercial break is on air' : S?.onAir ? 'Something is on air: Hide it first' : '')
+  async function listProjects() {
+    const r = await act({ action: 'project.list' })
+    return r?.result?.projects ?? []
+  }
+  function renderProject() {
+    const p = P()
+    $('projName').textContent = p.name
+    $('projName').title = p.file ? `Saved as ${p.file}` : ''
+    const st = $('projState')
+    st.className = `st ${p.changed ? 'unsaved' : ''}`
+    st.textContent = !p.file ? 'Not saved as a project yet' : p.changed ? 'Saving…' : `Saved ${savedWhen(p.savedAt)} · saves itself`
+    document.title = `${p.name} · Gfx app`
+  }
+
+  const fileMenu = $('fileMenu')
+  const closeFile = () => {
+    fileMenu.hidden = true
+    $('fileBtn').setAttribute('aria-expanded', 'false')
+    $('fileBtn').classList.remove('open')
+  }
+  $('fileBtn').onclick = async (e) => {
+    e.stopPropagation()
+    if (!fileMenu.hidden) return closeFile()
+    fileMenu.hidden = false
+    $('fileBtn').setAttribute('aria-expanded', 'true')
+    $('fileBtn').classList.add('open')
+    const why = busyWhy()
+    for (const b of fileMenu.querySelectorAll('[data-file="new"],[data-file="open"],[data-file="import"]')) {
+      b.disabled = !!why
+      b.title = why
+    }
+    const rows = (await listProjects()).filter((r) => r.file !== P().file).slice(0, 5)
+    $('recentList').innerHTML = rows.length
+      ? `<div class="menu-label">Recent projects</div>` + rows.map((r) => `<button role="menuitem" class="recent" data-recent="${esc(r.file)}" ${why ? `disabled title="${esc(why)}"` : ''}>${esc(r.name)}<small>saved ${esc(savedWhen(r.savedAt))}</small></button>`).join('')
+      : ''
+  }
+  fileMenu.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const b = e.target.closest('button')
+    if (!b || b.disabled) return
+    closeFile()
+    if (b.dataset.recent) return openProject(b.dataset.recent)
+    fileAction(b.dataset.file)
+  })
+  document.addEventListener('click', closeFile)
+
+  function fileAction(what) {
+    if (what === 'new') return dialog('new')
+    if (what === 'open') return dialog('open')
+    if (what === 'save') return saveProject()
+    if (what === 'saveAs') return dialog('saveAs')
+    if (what === 'import') return $('importInput').click()
+    if (what === 'export') return exportProject()
+  }
+  async function saveProject() {
+    if (!P().file) return dialog('saveAs')
+    const r = await act({ action: 'project.save' })
+    if (r.ok) alertBar(`Saved ${P().name}`)
+  }
+  async function exportProject() {
+    const r = await act({ action: 'project.export' })
+    if (!r.ok) return
+    const blob = new Blob([JSON.stringify(r.result, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${P().name.replace(/[<>:"/\\|?*]/g, ' ').trim() || 'Rundown'}.gfx.json`
+    document.body.append(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+  }
+  $('importInput').onchange = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    let project
+    try {
+      project = JSON.parse(await f.text())
+    } catch {
+      return alertBar('That file isn’t a gfx app project (it can’t be read).')
+    }
+    if (P().changed && P().file === '' && !confirm(`${P().name} isn’t saved as a project. Open ${f.name} anyway?`)) return
+    const r = await act({ action: 'project.import', project })
+    if (r.ok) alertBar(r.result?.missing ? `Opened ${f.name}. ${r.result.missing} video or photo item(s) point at files that aren’t on this laptop: pick them again.` : `Opened ${f.name}. It is kept with your other projects now.`)
+  }
+  async function openProject(file, skipCheck) {
+    // Only an unsaved rundown (no project file yet) can lose anything: a project saves itself.
+    if (!skipCheck && !P().file && P().changed) return dialog('open', { selected: file, confirm: 'unsaved' })
+    const r = await act({ action: 'project.open', file })
+    return r.ok
+  }
+
+  // One window for Open, Save as and New.
+  const dlg = $('projDialog')
+  $('projClose').onclick = () => dlg.close()
+  dlg.addEventListener('click', (e) => e.target === dlg && dlg.close())
+  async function dialog(kind, opts = {}) {
+    const p = P()
+    let selected = opts.selected ?? null
+    let confirmBox = opts.confirm ?? null
+    let rows = null
+    const body = $('projBody')
+    const foot = $('projFoot')
+    $('projTitle').textContent = kind === 'open' ? 'Open project' : kind === 'saveAs' ? 'Save project as' : 'New rundown'
+    const draw = () => {
+      if (kind === 'open') {
+        const list = rows === null ? '<p class="muted">Looking for saved projects…</p>'
+          : !rows.length ? '<p class="muted">No saved projects yet. Set up a rundown, then choose File, Save project (Ctrl+S).</p>'
+          : `<ul class="proj-list" role="listbox" aria-label="Saved projects">${rows.map((r) => `<li><button role="option" data-f="${esc(r.file)}" aria-selected="${selected === r.file}" class="${selected === r.file ? 'on' : ''}"><strong>${esc(r.name)}</strong><span class="meta">${r.items} ${r.items === 1 ? 'item' : 'items'} · saved ${esc(savedWhen(r.savedAt))}</span>${r.file === p.file ? '<span class="pill now">Open now</span>' : ''}</button></li>`).join('')}</ul>`
+        const sel = rows?.find((r) => r.file === selected)
+        const conf = confirmBox === 'unsaved' && sel
+          ? `<div class="proj-confirm"><span>${esc(p.name)} isn’t saved as a project yet.</span><button data-do="saveOpen">Save it, then open</button><button class="danger" data-do="openAnyway">Open without saving</button></div>`
+          : confirmBox === 'delete' && sel
+            ? `<div class="proj-confirm"><span>Delete ${esc(sel.name)} for good?</span><button class="danger" data-do="delete">Delete</button><button data-do="keep">Keep it</button></div>`
+            : ''
+        body.innerHTML = list + conf + '<p class="muted">Opening a project also opens its lower thirds’ look. What you change after that saves itself.</p>'
+        foot.innerHTML = `<button data-do="askDelete" ${selected ? '' : 'disabled'}>Delete…</button><div class="row"><button data-do="cancel">Cancel</button><button class="primary" data-do="open" ${selected ? '' : 'disabled'}>Open</button></div>`
+      } else {
+        const taken = rows?.find((r) => kind === 'saveAs' && r.file !== p.file && r.name.trim().toLowerCase() === (body.querySelector('input')?.value ?? '').trim().toLowerCase())
+        if (!body.querySelector('input')) {
+          body.innerHTML = `${kind === 'new' ? `<p class="muted">Starts an empty rundown and keeps the lower thirds’ look.${!p.file && p.changed ? ` ${esc(p.name)} isn’t saved as a project: save it first if you want to keep it.` : ' The project open now is already saved.'}</p>` : ''}
+            <label>Project name<input id="projNameInput" maxlength="80" placeholder="${kind === 'new' ? 'Sunday service' : esc(p.name)}" value="${kind === 'saveAs' && !p.file && p.name !== 'Untitled rundown' ? esc(p.name) : ''}"></label>
+            <p class="warn-text" id="projTaken" hidden></p>
+            ${kind === 'saveAs' ? '<p class="muted">After this it saves itself as you work. File, Save is there too.</p>' : ''}`
+          body.querySelector('input').oninput = draw
+        }
+        $('projTaken').hidden = !taken
+        $('projTaken').textContent = taken ? `A project called ${taken.name} is already saved. Saving replaces it.` : ''
+        const name = body.querySelector('input').value.trim()
+        foot.innerHTML = `<span></span><div class="row"><button data-do="cancel">Cancel</button><button class="primary" data-do="${kind}" ${name ? '' : 'disabled'}>${kind === 'new' ? 'Start new rundown' : 'Save'}</button></div>`
+      }
+    }
+    const finish = async (fn) => {
+      const ok = await fn()
+      if (ok) dlg.close()
+    }
+    body.onclick = (e) => {
+      const opt = e.target.closest('[data-f]')
+      if (opt) {
+        selected = opt.dataset.f
+        confirmBox = null
+        draw()
+        if (e.detail === 2) foot.querySelector('[data-do="open"]').click()
+        return
+      }
+      handle(e.target.closest('[data-do]')?.dataset.do)
+    }
+    foot.onclick = (e) => handle(e.target.closest('[data-do]')?.dataset.do)
+    body.onkeydown = (e) => {
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT') foot.querySelector('.primary:not(:disabled)')?.click()
+    }
+    const handle = async (what) => {
+      const name = body.querySelector('input')?.value.trim()
+      if (what === 'cancel') return dlg.close()
+      if (what === 'open') {
+        if (!p.file && p.changed && confirmBox !== 'unsaved') {
+          confirmBox = 'unsaved'
+          return draw()
+        }
+        return finish(() => openProject(selected, true))
+      }
+      if (what === 'openAnyway') return finish(() => openProject(selected, true))
+      if (what === 'saveOpen') {
+        dlg.close()
+        return dialog('saveAs', { then: selected })
+      }
+      if (what === 'askDelete') {
+        confirmBox = 'delete'
+        return draw()
+      }
+      if (what === 'keep') {
+        confirmBox = null
+        return draw()
+      }
+      if (what === 'delete') {
+        await act({ action: 'project.delete', file: selected })
+        selected = null
+        confirmBox = null
+        rows = await listProjects()
+        return draw()
+      }
+      if (what === 'saveAs' && name) {
+        return finish(async () => {
+          const r = await act({ action: 'project.save', name, overwrite: true })
+          if (!r.ok) return false
+          if (opts.then) await act({ action: 'project.open', file: opts.then })
+          return true
+        })
+      }
+      if (what === 'new' && name) return finish(async () => (await act({ action: 'project.new', name })).ok)
+    }
+    body.innerHTML = ''
+    draw()
+    if (!dlg.open) dlg.showModal()
+    body.querySelector('input')?.focus()
+    rows = await listProjects()
+    draw()
+  }
+
+  // Ctrl+S saves, Ctrl+Shift+S saves as, Ctrl+O opens: like any other program.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    const k = e.key.toLowerCase()
+    if (k === 's') {
+      e.preventDefault()
+      if (e.shiftKey) dialog('saveAs')
+      else saveProject()
+    } else if (k === 'o' && !e.shiftKey) {
+      e.preventDefault()
+      if (!busyWhy()) dialog('open')
+      else alertBar(busyWhy())
+    }
+  })
+
+  // ---------- State from the gfx app's server ----------
+  const events = new EventSource('/events?role=operator')
+  events.onmessage = (e) => {
+    const msg = JSON.parse(e.data)
+    if (msg.type === 'rtc-offer') return answerOffer(msg)
+    if (msg.type !== 'state') return
+    S = msg
+    renderItems()
+    renderMain()
+    renderSettings()
+    renderProject()
+    dropCaptures()
+    fit()
+  }
+</script>
+</body>
+</html>
