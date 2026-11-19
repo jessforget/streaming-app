@@ -74,6 +74,8 @@ There are no camera switching commands: cameras are switched on the ATEM itself.
 | `scene.program` | `{ "sceneId": "brb" }` (on air now) | remote, buttons |
 | `scene.goLive` | none (Preview goes on air) | remote, buttons |
 | `transition.set` | `{ "kind": "cut" \| "fade", "durationMs": 300 }` | remote, buttons |
+| `color.set` | `{ "exposure"?: -2..2 (stops), "temperature"?, "tint"?, "contrast"?, "saturation"?: -100..100 }`: color of the picture that goes out (Live, stream, recordings; Preview too). Only the controls given change; 0 = as it comes in. Overlay graphics keep their own colors. `state.color` holds it (absent = all 0); saved in the project. | remote, buttons |
+| `color.reset` | none: every color control back to 0 | remote, buttons |
 | `layer.setVisible` | `{ "sceneId", "layerId", "visible": true }` | remote, buttons |
 | `overlay.set` | `{ "on": true \| false }`: turn the Overlay off or on until the app restarts (it starts on; the app itself has no button for it). The Overlay's sources (scene id `"overlay"`) sit on top of every scene; `state.overlayOn` says if it is on. | remote, buttons |
 | `audio.setVolume` | `{ "sourceId": "mic", "volume": 0.8 }` (0 to 1) | remote, buttons |
