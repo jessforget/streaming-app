@@ -213,7 +213,7 @@
       </div>
       <div class="ask-bar" id="askBar" hidden role="alertdialog" aria-labelledby="askTitle">
         <b id="askTitle">This video fills the whole stream</b>
-        <span>Take puts it on top of every scene and every camera in the streaming app, in Preview and Live, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.</span>
+        <span id="askText">Take puts it on top of every scene and every camera in the streaming app’s Live picture, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.</span>
         <div class="ask-row"><button class="cue-btn" id="askCue">Cue to stream</button><button id="askTake">Take anyway</button><button id="askCancel">Cancel</button></div>
       </div>
       <div class="cue-bar" id="cueBar" hidden role="status">
@@ -512,15 +512,21 @@
 
   // ---------- Take, Hide, Next ----------
   /** A full-screen video Taken while the streaming app shows this gfx app covers the whole stream: ask first. */
-  const covers = (i) => !!i && i.kind === 'video' && i.shows !== 'box' && !!S?.stream?.connected
+  const covers = (i) => !!i && ((i.kind === 'video' && i.shows !== 'box') || i.kind === 'bars') && !!S?.stream?.connected
   let asking = ''
   function takeItem(id) {
     const i = byId(id)
     if (!i) return
     if (covers(i) && asking !== id) {
       asking = id
+      const bars = i.kind === 'bars'
+      $('askTitle').textContent = bars ? 'Color bars fill the whole stream' : 'This video fills the whole stream'
+      $('askText').textContent = bars
+        ? 'Take puts the bars on top of every scene and every camera in the streaming app’s Live picture, until you press Hide (or Esc).'
+        : 'Take puts it on top of every scene and every camera in the streaming app’s Live picture, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.'
+      $('askCue').hidden = bars
       $('askBar').hidden = false
-      $('askCue').focus()
+      ;(bars ? $('askCancel') : $('askCue')).focus()
       return
     }
     closeAsk()
