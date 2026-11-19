@@ -279,12 +279,21 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Device
           <select value={v.device} onChange={(e) => set('device', e.target.value)}>
             <option value="">Pick a device…</option>
-            {state.inputs.video.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
+            {videoGroups(state.inputs.video).map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {g.phoneLink ? `${d.name} · only with Phone Link’s camera on` : d.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
+          {isPhoneLink(state.inputs.video.find((d) => d.id === v.device)) && (
+            <span className="warn-text small">
+              This is Windows’ Phone Link camera, not the QR phone page. It shows a phone icon until Phone Link is set to share the phone’s camera. For a phone through the QR code, pick it under “Phones (QR code)”.
+            </span>
+          )}
         </label>
       )}
       {kind === 'text' && (
@@ -538,7 +547,7 @@ function kindFields(kind: LayerKind, v: Fields) {
 
 export function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
   const [kind, setKind] = useState<LayerKind>('video')
-  const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
+  const [v, set] = useFields({ device: videoGroups(state.inputs.video).find((g) => !g.phoneLink)?.devices[0]?.id ?? state.inputs.video[0]?.id, placement: 'full' })
   const pick = (k: LayerKind) => {
     setKind(k)
     set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
@@ -946,4 +955,19 @@ export function AudioEditor({ state, run, source, onDone }: { state: AppState; r
       </div>
     </form>
   )
+}
+
+/** Windows' Phone Link camera ("… (Windows Virtual Camera)"): a placeholder picture until Phone Link shares the phone's camera. */
+export const isPhoneLink = (d?: InputDevice) => !!d && /windows virtual camera/i.test(d.name)
+
+/** The video devices for a picker: phones from the QR code first, then cameras and capture cards, then Phone Link's camera. */
+export function videoGroups(list: InputDevice[]): { label: string; devices: InputDevice[]; phoneLink?: boolean }[] {
+  const phones = list.filter((d) => d.id.startsWith('phone:'))
+  const link = list.filter((d) => !d.id.startsWith('phone:') && isPhoneLink(d))
+  const rest = list.filter((d) => !phones.includes(d) && !link.includes(d))
+  return [
+    { label: 'Phones (QR code)', devices: phones },
+    { label: 'Cameras and capture cards', devices: rest },
+    { label: 'Needs Windows Phone Link', devices: link, phoneLink: true }
+  ].filter((g) => g.devices.length)
 }
