@@ -35,12 +35,19 @@ export function saveShow(state: AppState, run: Run, ask: (k: ShowDialogKind) => 
 
 /** The project's name in the top bar, and whether it is saved. */
 export function ProjectName({ state }: { state: AppState }) {
-  const status = state.show.changed ? 'Changes not saved' : state.show.file ? `Saved ${savedWhen(state.show.savedAt ?? 0)}`.trim() : 'Not saved yet'
+  const auto = state.show.autosave !== false && !!state.show.file
+  const status = !state.show.file
+    ? 'Not saved yet: File, Save project'
+    : state.show.changed
+      ? auto
+        ? 'Saving…'
+        : 'Changes not saved'
+      : `Saved ${savedWhen(state.show.savedAt ?? 0)}`.trim()
   return (
     <div className="project-name">
       <strong title={state.show.file ? `Project file: ${state.show.file}` : undefined}>{state.setupName}</strong>
-      <span className={`show-status ${state.show.changed ? 'unsaved' : ''}`}>
-        {state.show.changed && <span className="dot" aria-hidden="true" />}
+      <span className={`show-status ${state.show.changed && !auto ? 'unsaved' : ''}`} title={auto ? 'Saves by itself a moment after each change (File, Save automatically)' : undefined}>
+        {state.show.changed && !auto && <span className="dot" aria-hidden="true" />}
         {status}
       </span>
       {state.engine.mode === 'simulated' && (
@@ -155,6 +162,18 @@ export function MenuBar(props: { state: AppState; run: Run; bridge: Bridge; open
             </button>
             <button role="menuitem" onClick={pick(() => open('saveAs'))}>
               Save project as…<kbd>Ctrl+Shift+S</kbd>
+            </button>
+            <button
+              role="menuitemcheckbox"
+              aria-checked={state.show.autosave !== false}
+              className="check-item"
+              onClick={pick(() => void run('show.setAutosave', { on: state.show.autosave === false }))}
+            >
+              <span>
+                <span className="tick" aria-hidden="true">{state.show.autosave !== false ? '✓' : ''}</span>
+                Save automatically
+              </span>
+              <small>A moment after each change, and when the app closes</small>
             </button>
             <hr />
             <button role="menuitem" onClick={pick(() => fileInput.current?.click())} disabled={busy} title={busyTitle}>

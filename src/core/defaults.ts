@@ -28,7 +28,7 @@ export function freshSetup(): AppState {
 export function defaultState(): AppState {
   return {
     setupName: 'My show',
-    show: { file: null, savedAt: null, changed: false },
+    show: { file: null, savedAt: null, changed: false, autosave: true },
     engine: { mode: 'simulated', note: 'Practice mode: nothing is captured or sent' },
     scenes: [
       {

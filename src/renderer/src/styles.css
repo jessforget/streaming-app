@@ -844,3 +844,6 @@ button.menubar-item:hover:not(:disabled), button.menubar-item.open { background:
 .project-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; max-width: 320px; margin-right: 4px; }
 .project-name strong { font-family: var(--display); font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-name .pill.practice { align-self: flex-start; margin-top: 2px; }
+.menu button.check-item > span { display: inline-flex; align-items: center; gap: 0; }
+.menu button.check-item .tick { display: inline-block; width: 18px; margin-left: -4px; color: var(--good); font-weight: 700; }
+.menu button.check-item small { padding-left: 14px; }

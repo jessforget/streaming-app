@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore, MemoryShowStore } from '../src/core/ports'
@@ -24,7 +24,7 @@ describe('show files', () => {
     expect(c.state.show.changed).toBe(false)
     await c.run('local', 'show.save', { name: 'Sunday service' })
     expect(c.state.setupName).toBe('Sunday service')
-    expect(c.state.show).toEqual({ file: 'Sunday service.show.json', savedAt: 5000, changed: false })
+    expect(c.state.show).toMatchObject({ file: 'Sunday service.show.json', savedAt: 5000, changed: false })
 
     await c.run('local', 'scene.rename', { sceneId: 'live', name: 'Sermon' })
     await c.run('local', 'data.set', { values: { 'guest.name': 'Pastor Kim' } })
@@ -56,7 +56,7 @@ describe('show files', () => {
     expect(list.shows).toHaveLength(2)
     await c.run('local', 'show.new', { name: 'Podcast' })
     expect(c.state.setupName).toBe('Podcast')
-    expect(c.state.show).toEqual({ file: null, savedAt: null, changed: true })
+    expect(c.state.show).toMatchObject({ file: null, savedAt: null, changed: true })
     expect(keys.get('youtube')).toBe('secret-key-123')
     expect(c.state.stream.destinations.find((d) => d.id === 'youtube')?.hasKey).toBe(true)
   })
@@ -137,5 +137,41 @@ describe('shows folder on disk', () => {
     const back = file.load()
     expect(back.show).toEqual(s.show)
     expect(back.data['team1.name'].value).toBe('Lions')
+  })
+})
+
+describe('saving by itself', () => {
+  it('saves the open project a moment after a change, unless turned off', async () => {
+    vi.useFakeTimers()
+    try {
+      const { c, shows } = await setup()
+      // No file yet: nothing to save to.
+      await c.run('local', 'scene.rename', { sceneId: 'live', name: 'Sermon' })
+      vi.advanceTimersByTime(5000)
+      expect(shows.list()).toHaveLength(0)
+
+      await c.run('local', 'show.save', { name: 'Church' })
+      await c.run('local', 'scene.rename', { sceneId: 'live', name: 'Worship' })
+      expect(c.state.show.changed).toBe(true)
+      vi.advanceTimersByTime(3500)
+      expect(c.state.show.changed).toBe(false)
+      expect(readShow(shows.read('Church.show.json')).scenes.find((s) => s.id === 'live')?.name).toBe('Worship')
+
+      await c.run('local', 'show.setAutosave', { on: false })
+      await c.run('local', 'scene.rename', { sceneId: 'live', name: 'Prayer' })
+      vi.advanceTimersByTime(5000)
+      expect(c.state.show.changed).toBe(true)
+      expect(readShow(shows.read('Church.show.json')).scenes.find((s) => s.id === 'live')?.name).toBe('Worship')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('saves what is left when the app closes', async () => {
+    const { c, shows } = await setup()
+    await c.run('local', 'show.save', { name: 'Late' })
+    await c.run('local', 'scene.rename', { sceneId: 'live', name: 'Last change' })
+    await c.stop()
+    expect(readShow(shows.read('Late.show.json')).scenes.find((s) => s.id === 'live')?.name).toBe('Last change')
   })
 })

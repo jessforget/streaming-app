@@ -68,6 +68,7 @@ export class Controller extends Emitter<Events> {
       d.keyEnd = keyEnd(this.keys.get(d.id))
     }
     this.s.show ??= { file: null, savedAt: null, changed: false }
+    this.s.show.autosave ??= true
     if (!this.s.show.changed) this.savedPrint = showFingerprint(this.s)
     // The engine says when an output stops on its own (connection lost, the studio page closed).
     this.engine.onNotice = (message) => this.emit('error', message)
@@ -104,6 +105,8 @@ export class Controller extends Emitter<Events> {
    */
   async start(options: { statsIntervalMs?: number; devicePollMs?: number } = {}) {
     await this.engine.init(this.s)
+    // Changes left unsaved last time (the app was closed too soon) go to the project file.
+    this.scheduleAutosave()
     await this.refreshAllTexts()
     await this.refreshInputs()
     const ms = options.statsIntervalMs ?? 1000
@@ -113,6 +116,10 @@ export class Controller extends Emitter<Events> {
   }
 
   async stop() {
+    // Anything not saved yet goes to the project file before closing.
+    if (this.autosaveTimer) clearTimeout(this.autosaveTimer)
+    this.autosaveTimer = null
+    this.autosaveNow()
     if (this.statsTimer) clearInterval(this.statsTimer)
     if (this.deviceTimer) clearInterval(this.deviceTimer)
     this.statsTimer = null
@@ -744,7 +751,7 @@ export class Controller extends Emitter<Events> {
         const show = showFromState(fresh, showName, 0)
         await this.loadShow(() => applyShow(this.s, show, this.now()))
         this.s.data = {}
-        this.s.show = { file: null, savedAt: null, changed: true }
+        this.s.show = { file: null, savedAt: null, changed: true, autosave: this.s.show.autosave ?? true }
         this.savedPrint = ''
         this.changed()
         return { name: showName }
@@ -758,9 +765,13 @@ export class Controller extends Emitter<Events> {
           throw new CommandError(`Could not delete the project: ${errorText(e)}`)
         }
         if (this.s.show.file === file) {
-          this.s.show = { file: null, savedAt: null, changed: true }
+          this.s.show = { file: null, savedAt: null, changed: true, autosave: this.s.show.autosave ?? true }
           this.savedPrint = ''
         }
+        return this.changed()
+      }
+      case 'show.setAutosave': {
+        this.s.show.autosave = bool(P, 'on')
         return this.changed()
       }
       case 'show.export':
@@ -1242,7 +1253,38 @@ export class Controller extends Emitter<Events> {
   private changed(): AppState {
     if (!this.s.show.changed && showFingerprint(this.s) !== this.savedPrint) this.s.show.changed = true
     this.emit('state', this.s)
+    this.scheduleAutosave()
     return this.s
+  }
+
+  private autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  /** How long after the last change the project saves itself. */
+  static AUTOSAVE_MS = 3000
+
+  /** A project with a file saves itself a moment after the last change (unless autosave is off). */
+  private scheduleAutosave() {
+    const show = this.s.show
+    if (!this.shows || !show.file || !show.changed || show.autosave === false || this.autosaveTimer) return
+    this.autosaveTimer = setTimeout(() => {
+      this.autosaveTimer = null
+      this.autosaveNow()
+    }, Controller.AUTOSAVE_MS)
+    this.autosaveTimer.unref?.()
+  }
+
+  /** Save the open project to its file now, if it has changes. Used by autosave (and tests). */
+  autosaveNow() {
+    const show = this.s.show
+    if (!this.shows || !show.file || !show.changed || show.autosave === false) return
+    const at = this.now()
+    try {
+      this.shows.write(show.file, showFromState(this.s, this.s.setupName, at))
+    } catch (e) {
+      this.emit('error', `Could not save the project by itself: ${errorText(e)}. Use File, Save project as to save it somewhere else.`)
+      return
+    }
+    this.markSaved(show.file, at)
+    this.emit('state', this.s)
   }
 
   /** A scene, or the Overlay (its sources are edited like a scene's). */
@@ -1276,7 +1318,7 @@ export class Controller extends Emitter<Events> {
   }
 
   private markSaved(file: string, savedAt: number | null) {
-    this.s.show = { file, savedAt, changed: false }
+    this.s.show = { file, savedAt, changed: false, autosave: this.s.show.autosave ?? true }
     this.savedPrint = showFingerprint(this.s)
   }
 

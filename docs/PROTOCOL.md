@@ -114,6 +114,7 @@ Projects (File menu; streaming PC only). A project file keeps a show's standard 
 | `show.delete` | `{ "file" }` |
 | `show.export` | none → the show file (to take to another PC) |
 | `show.import` | `{ "show": <show file> }`: opens it and keeps it in the shows folder |
+| `show.setAutosave` | `{ "on": true \| false }`: save the open project to its file by itself 3 s after each change and when the app closes (on by default; `state.show.autosave`) |
 
 `device` ids come from `state.inputs.video` and `state.inputs.audio`. Each audio device has its real name, its `driver` (`wasapi` or `asio`), and when known its `channels` count and `channelNames`. The list updates by itself when a device is plugged in or unplugged.
 

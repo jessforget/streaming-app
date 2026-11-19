@@ -386,7 +386,13 @@ export interface AppState {
   /** The show's name (top left of the main window). */
   setupName: string
   /** The show file it was opened from or saved to (in the shows folder), and whether there are changes not saved yet. */
-  show: { file: string | null; savedAt: number | null; changed: boolean }
+  show: {
+    file: string | null
+    savedAt: number | null
+    changed: boolean
+    /** Save the project to its file by itself a moment after each change (File menu, on by default). */
+    autosave?: boolean
+  }
   engine: EngineInfo
   scenes: Scene[]
   previewSceneId: string

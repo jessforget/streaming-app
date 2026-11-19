@@ -190,6 +190,8 @@ export interface CommandMap {
   'show.export': Record<string, never>
   /** Open a show file from another PC, and keep it in the shows folder. */
   'show.import': { show: unknown }
+  /** Save the project by itself a moment after each change (on by default). */
+  'show.setAutosave': { on: boolean }
   'devices.setPairingOpen': { open: boolean }
   'devices.newPairingCode': Record<string, never>
   'devices.remove': { deviceId: string }
@@ -259,6 +261,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'show.delete': 'admin',
   'show.export': 'admin',
   'show.import': 'admin',
+  'show.setAutosave': 'admin',
   'devices.setPairingOpen': 'admin',
   'devices.newPairingCode': 'admin',
   'devices.remove': 'admin',
