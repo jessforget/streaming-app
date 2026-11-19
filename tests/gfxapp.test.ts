@@ -122,6 +122,51 @@ describe('gfx app server', () => {
     ctl.abort()
   })
 
+  it('File menu: save a project, start a new rundown, open it again; it saves itself; reopens after a restart', async () => {
+    let s = (await state()) as State & { project: { name: string; file: string; changed: boolean } }
+    expect(s.project).toMatchObject({ name: 'Untitled rundown', file: '' })
+    expect((await doit({ action: 'project.save' })).error).toMatch(/name/)
+    expect((await doit({ action: 'project.save', name: 'Sunday service' })).result).toEqual({ file: 'Sunday service.gfx.json' })
+    s = (await state()) as typeof s
+    expect(s.project).toMatchObject({ name: 'Sunday service', file: 'Sunday service.gfx.json', changed: false })
+    // A change saves itself a moment later.
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'Pastor', title: 'Host' } })
+    expect(((await state()) as typeof s).project.changed).toBe(true)
+    await new Promise((r) => setTimeout(r, 1800))
+    expect(((await state()) as typeof s).project.changed).toBe(false)
+    // New rundown: empty, the look kept.
+    await doit({ action: 'project.new', name: 'Youth night' })
+    s = (await state()) as typeof s
+    expect(s.items).toEqual([])
+    expect(s.project).toMatchObject({ name: 'Youth night', file: '' })
+    const list = (await doit({ action: 'project.list' })).result.projects
+    expect(list).toMatchObject([{ file: 'Sunday service.gfx.json', name: 'Sunday service', items: 2 }])
+    // Not while something is on air.
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'X', title: 'Y' } })
+    await doit({ action: 'take' })
+    expect((await doit({ action: 'project.open', file: 'Sunday service.gfx.json' })).error).toMatch(/on air/)
+    await doit({ action: 'hide' })
+    await doit({ action: 'project.open', file: 'Sunday service.gfx.json' })
+    s = (await state()) as typeof s
+    expect(s.items.map((i) => i.name)).toEqual(['Sam Rivera', 'Pastor'])
+    expect(s.project).toMatchObject({ name: 'Sunday service', changed: false })
+    // Export, then import elsewhere.
+    const exported = (await doit({ action: 'project.export' })).result
+    expect(exported).toMatchObject({ format: 'gfx-app-project', name: 'Sunday service' })
+    // Closed and started again: the last project is open.
+    gfx.close()
+    gfx = await startServer({ port: 0, dataDir: dir, log: () => {} })
+    base = `http://127.0.0.1:${gfx.port}`
+    s = (await state()) as typeof s
+    expect(s.project).toMatchObject({ name: 'Sunday service', file: 'Sunday service.gfx.json', changed: false })
+    expect(s.items.map((i) => i.name)).toEqual(['Sam Rivera', 'Pastor'])
+    await doit({ action: 'project.import', project: { ...exported, name: 'From USB' } })
+    expect(((await state()) as typeof s).project).toMatchObject({ name: 'From USB', file: 'From USB.gfx.json' })
+    expect((await doit({ action: 'project.import', project: { nope: 1 } })).error).toMatch(/isn’t a gfx app project/)
+    await doit({ action: 'project.delete', file: 'From USB.gfx.json' })
+    expect((await doit({ action: 'project.list' })).result.projects.map((x: { name: string }) => x.name)).toEqual(['Sunday service'])
+  })
+
   it('cues a video to the stream and follows how it goes', async () => {
     writeFileSync(join(dir, 'ad.mp4'), Buffer.alloc(100))
     const v = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })

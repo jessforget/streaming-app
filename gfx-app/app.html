@@ -22,7 +22,46 @@
   input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
   input[type='range'] { padding: 0; border: 0; background: transparent; accent-color: var(--accent); height: 24px; }
   input[type='color'] { height: 34px; padding: 2px; }
-  .app { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .app { height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+
+  /* Menu bar (File) and project dialogs */
+  .menubar { display: flex; align-items: center; gap: 2px; padding: 2px 10px; border-bottom: 1px solid var(--line); position: relative; z-index: 20; }
+  .menubar-slot { position: relative; }
+  .menubar-item { min-height: 28px; padding: 2px 12px; background: transparent; border-color: transparent; }
+  .menubar-item:hover, .menubar-item.open { background: var(--panel-2); }
+  .menubar .menu { left: 0; right: auto; top: calc(100% + 2px); min-width: 280px; }
+  .menubar .menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 16px; min-height: 36px; padding: 4px 12px; }
+  .menubar .menu button:disabled { opacity: .45; cursor: default; }
+  .menubar .menu small { grid-column: 1; color: var(--muted); font-size: 11px; }
+  .menubar .menu kbd { grid-row: 1; grid-column: 2; color: var(--muted); font: 11px ui-monospace, Consolas, monospace; }
+  .menubar .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px; }
+  .menubar .menu-label { padding: 8px 12px 2px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .menubar .menu button.recent { padding-left: 22px; }
+  .project-name { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .project-name strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+  .project-name .st { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .project-name .st.unsaved { color: #f0c46b; }
+  .project-name .st.unsaved::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #f0c46b; }
+  dialog.proj { width: min(560px, calc(100% - 32px)); background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 0; }
+  dialog.proj::backdrop { background: rgba(0, 0, 0, .55); }
+  .proj-head, .proj-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px; }
+  .proj-head { border-bottom: 1px solid var(--line); } .proj-foot { border-top: 1px solid var(--line); }
+  .proj-head h2 { margin: 0; font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); }
+  .proj-body { padding: 14px 18px; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
+  .proj-body label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .proj-body input { font-size: 14px; color: var(--text); }
+  .proj-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .proj-list button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; text-align: left; padding: 8px 12px; min-height: 52px; }
+  .proj-list button.on { border-color: var(--accent); background: #16233a; }
+  .proj-list .meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+  .proj-list .now { grid-row: 1 / 3; grid-column: 2; align-self: center; }
+  .proj-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid #6b5520; border-radius: 8px; background: rgba(240, 196, 107, .08); }
+  .proj-confirm span { flex: 1 1 200px; }
+  .proj .warn-text { color: #f0c46b; margin: 0; font-size: 12px; }
+  .proj .muted { color: var(--muted); margin: 0; font-size: 12px; }
+  .proj button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+  .proj button.danger { border-color: #7a2e2e; color: #ff9b9b; }
+  .proj-foot .row { display: flex; gap: 8px; }
 
   /* Top bar */
   .top { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
@@ -166,8 +205,26 @@
 </head>
 <body>
 <div class="app">
+  <nav class="menubar" id="menubar" role="menubar">
+    <div class="menubar-slot">
+      <button class="menubar-item" id="fileBtn" aria-haspopup="menu" aria-expanded="false">File</button>
+      <div class="menu" id="fileMenu" role="menu" aria-label="File" hidden>
+        <button role="menuitem" data-file="new">New rundown…</button>
+        <button role="menuitem" data-file="open">Open project…<kbd>Ctrl+O</kbd></button>
+        <div id="recentList"></div>
+        <hr>
+        <button role="menuitem" data-file="save">Save project<kbd>Ctrl+S</kbd></button>
+        <button role="menuitem" data-file="saveAs">Save project as…<kbd>Ctrl+Shift+S</kbd></button>
+        <hr>
+        <button role="menuitem" data-file="import">Import project file…<small>From another PC or a USB stick</small></button>
+        <button role="menuitem" data-file="export">Export project file…<small>To take it to another PC</small></button>
+      </div>
+    </div>
+    <input type="file" id="importInput" accept=".json,application/json" hidden>
+  </nav>
   <header class="top">
     <h1>Gfx app</h1>
+    <span class="project-name"><strong id="projName"></strong><span class="st" id="projState"></span></span>
     <span class="pill" id="streamPill"><span class="dot"></span><span id="streamText">Streaming app not connected</span></span>
     <span class="fw" id="fw" hidden>
       <span class="pill bad"><span class="dot"></span>Windows Firewall blocks the streaming PC</span>
@@ -234,6 +291,11 @@
   </div>
 </div>
 
+<dialog class="proj" id="projDialog" aria-labelledby="projTitle">
+  <header class="proj-head"><h2 id="projTitle"></h2><button id="projClose" aria-label="Close">✕</button></header>
+  <div class="proj-body" id="projBody"></div>
+  <footer class="proj-foot" id="projFoot"></footer>
+</dialog>
 <script>
   const $ = (id) => document.getElementById(id)
   const desk = window.gfxDesktop || null
@@ -548,7 +610,7 @@
   $('next').onclick = () => act({ action: 'next' })
   const typing = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
   document.addEventListener('keydown', (e) => {
-    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
+    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]')) return
     if (e.code === 'Space') {
       e.preventDefault()
       // While asking about a full-screen video, Space does nothing: the operator picks with the buttons.
@@ -1125,6 +1187,234 @@
     }
   }
 
+
+  // ---------- File menu: projects (a rundown and its look) saved and opened again ----------
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  function savedWhen(at) {
+    if (!at) return ''
+    const d = new Date(at)
+    const today = new Date()
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (d.toDateString() === today.toDateString()) return `today ${time}`
+    return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`
+  }
+  const P = () => S?.project ?? { name: 'Untitled rundown', file: '', savedAt: 0, changed: true }
+  /** Something on air or a break on air: a rundown can't be swapped now. */
+  const busyWhy = () => (S?.cue?.status === 'onair' ? 'A commercial break is on air' : S?.onAir ? 'Something is on air: Hide it first' : '')
+  async function listProjects() {
+    const r = await act({ action: 'project.list' })
+    return r?.result?.projects ?? []
+  }
+  function renderProject() {
+    const p = P()
+    $('projName').textContent = p.name
+    $('projName').title = p.file ? `Saved as ${p.file}` : ''
+    const st = $('projState')
+    st.className = `st ${p.changed ? 'unsaved' : ''}`
+    st.textContent = !p.file ? 'Not saved as a project yet' : p.changed ? 'Saving…' : `Saved ${savedWhen(p.savedAt)} · saves itself`
+    document.title = `${p.name} · Gfx app`
+  }
+
+  const fileMenu = $('fileMenu')
+  const closeFile = () => {
+    fileMenu.hidden = true
+    $('fileBtn').setAttribute('aria-expanded', 'false')
+    $('fileBtn').classList.remove('open')
+  }
+  $('fileBtn').onclick = async (e) => {
+    e.stopPropagation()
+    if (!fileMenu.hidden) return closeFile()
+    fileMenu.hidden = false
+    $('fileBtn').setAttribute('aria-expanded', 'true')
+    $('fileBtn').classList.add('open')
+    const why = busyWhy()
+    for (const b of fileMenu.querySelectorAll('[data-file="new"],[data-file="open"],[data-file="import"]')) {
+      b.disabled = !!why
+      b.title = why
+    }
+    const rows = (await listProjects()).filter((r) => r.file !== P().file).slice(0, 5)
+    $('recentList').innerHTML = rows.length
+      ? `<div class="menu-label">Recent projects</div>` + rows.map((r) => `<button role="menuitem" class="recent" data-recent="${esc(r.file)}" ${why ? `disabled title="${esc(why)}"` : ''}>${esc(r.name)}<small>saved ${esc(savedWhen(r.savedAt))}</small></button>`).join('')
+      : ''
+  }
+  fileMenu.addEventListener('click', (e) => {
+    e.stopPropagation()
+    const b = e.target.closest('button')
+    if (!b || b.disabled) return
+    closeFile()
+    if (b.dataset.recent) return openProject(b.dataset.recent)
+    fileAction(b.dataset.file)
+  })
+  document.addEventListener('click', closeFile)
+
+  function fileAction(what) {
+    if (what === 'new') return dialog('new')
+    if (what === 'open') return dialog('open')
+    if (what === 'save') return saveProject()
+    if (what === 'saveAs') return dialog('saveAs')
+    if (what === 'import') return $('importInput').click()
+    if (what === 'export') return exportProject()
+  }
+  async function saveProject() {
+    if (!P().file) return dialog('saveAs')
+    const r = await act({ action: 'project.save' })
+    if (r.ok) alertBar(`Saved ${P().name}`)
+  }
+  async function exportProject() {
+    const r = await act({ action: 'project.export' })
+    if (!r.ok) return
+    const blob = new Blob([JSON.stringify(r.result, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${P().name.replace(/[<>:"/\\|?*]/g, ' ').trim() || 'Rundown'}.gfx.json`
+    document.body.append(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+  }
+  $('importInput').onchange = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    let project
+    try {
+      project = JSON.parse(await f.text())
+    } catch {
+      return alertBar('That file isn’t a gfx app project (it can’t be read).')
+    }
+    if (P().changed && P().file === '' && !confirm(`${P().name} isn’t saved as a project. Open ${f.name} anyway?`)) return
+    const r = await act({ action: 'project.import', project })
+    if (r.ok) alertBar(r.result?.missing ? `Opened ${f.name}. ${r.result.missing} video or photo item(s) point at files that aren’t on this laptop: pick them again.` : `Opened ${f.name}. It is kept with your other projects now.`)
+  }
+  async function openProject(file, skipCheck) {
+    // Only an unsaved rundown (no project file yet) can lose anything: a project saves itself.
+    if (!skipCheck && !P().file && P().changed) return dialog('open', { selected: file, confirm: 'unsaved' })
+    const r = await act({ action: 'project.open', file })
+    return r.ok
+  }
+
+  // One window for Open, Save as and New.
+  const dlg = $('projDialog')
+  $('projClose').onclick = () => dlg.close()
+  dlg.addEventListener('click', (e) => e.target === dlg && dlg.close())
+  async function dialog(kind, opts = {}) {
+    const p = P()
+    let selected = opts.selected ?? null
+    let confirmBox = opts.confirm ?? null
+    let rows = null
+    const body = $('projBody')
+    const foot = $('projFoot')
+    $('projTitle').textContent = kind === 'open' ? 'Open project' : kind === 'saveAs' ? 'Save project as' : 'New rundown'
+    const draw = () => {
+      if (kind === 'open') {
+        const list = rows === null ? '<p class="muted">Looking for saved projects…</p>'
+          : !rows.length ? '<p class="muted">No saved projects yet. Set up a rundown, then choose File, Save project (Ctrl+S).</p>'
+          : `<ul class="proj-list" role="listbox" aria-label="Saved projects">${rows.map((r) => `<li><button role="option" data-f="${esc(r.file)}" aria-selected="${selected === r.file}" class="${selected === r.file ? 'on' : ''}"><strong>${esc(r.name)}</strong><span class="meta">${r.items} ${r.items === 1 ? 'item' : 'items'} · saved ${esc(savedWhen(r.savedAt))}</span>${r.file === p.file ? '<span class="pill now">Open now</span>' : ''}</button></li>`).join('')}</ul>`
+        const sel = rows?.find((r) => r.file === selected)
+        const conf = confirmBox === 'unsaved' && sel
+          ? `<div class="proj-confirm"><span>${esc(p.name)} isn’t saved as a project yet.</span><button data-do="saveOpen">Save it, then open</button><button class="danger" data-do="openAnyway">Open without saving</button></div>`
+          : confirmBox === 'delete' && sel
+            ? `<div class="proj-confirm"><span>Delete ${esc(sel.name)} for good?</span><button class="danger" data-do="delete">Delete</button><button data-do="keep">Keep it</button></div>`
+            : ''
+        body.innerHTML = list + conf + '<p class="muted">Opening a project also opens its lower thirds’ look. What you change after that saves itself.</p>'
+        foot.innerHTML = `<button data-do="askDelete" ${selected ? '' : 'disabled'}>Delete…</button><div class="row"><button data-do="cancel">Cancel</button><button class="primary" data-do="open" ${selected ? '' : 'disabled'}>Open</button></div>`
+      } else {
+        const taken = rows?.find((r) => kind === 'saveAs' && r.file !== p.file && r.name.trim().toLowerCase() === (body.querySelector('input')?.value ?? '').trim().toLowerCase())
+        if (!body.querySelector('input')) {
+          body.innerHTML = `${kind === 'new' ? `<p class="muted">Starts an empty rundown and keeps the lower thirds’ look.${!p.file && p.changed ? ` ${esc(p.name)} isn’t saved as a project: save it first if you want to keep it.` : ' The project open now is already saved.'}</p>` : ''}
+            <label>Project name<input id="projNameInput" maxlength="80" placeholder="${kind === 'new' ? 'Sunday service' : esc(p.name)}" value="${kind === 'saveAs' && !p.file && p.name !== 'Untitled rundown' ? esc(p.name) : ''}"></label>
+            <p class="warn-text" id="projTaken" hidden></p>
+            ${kind === 'saveAs' ? '<p class="muted">After this it saves itself as you work. File, Save is there too.</p>' : ''}`
+          body.querySelector('input').oninput = draw
+        }
+        $('projTaken').hidden = !taken
+        $('projTaken').textContent = taken ? `A project called ${taken.name} is already saved. Saving replaces it.` : ''
+        const name = body.querySelector('input').value.trim()
+        foot.innerHTML = `<span></span><div class="row"><button data-do="cancel">Cancel</button><button class="primary" data-do="${kind}" ${name ? '' : 'disabled'}>${kind === 'new' ? 'Start new rundown' : 'Save'}</button></div>`
+      }
+    }
+    const finish = async (fn) => {
+      const ok = await fn()
+      if (ok) dlg.close()
+    }
+    body.onclick = (e) => {
+      const opt = e.target.closest('[data-f]')
+      if (opt) {
+        selected = opt.dataset.f
+        confirmBox = null
+        draw()
+        if (e.detail === 2) foot.querySelector('[data-do="open"]').click()
+        return
+      }
+      handle(e.target.closest('[data-do]')?.dataset.do)
+    }
+    foot.onclick = (e) => handle(e.target.closest('[data-do]')?.dataset.do)
+    body.onkeydown = (e) => {
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT') foot.querySelector('.primary:not(:disabled)')?.click()
+    }
+    const handle = async (what) => {
+      const name = body.querySelector('input')?.value.trim()
+      if (what === 'cancel') return dlg.close()
+      if (what === 'open') {
+        if (!p.file && p.changed && confirmBox !== 'unsaved') {
+          confirmBox = 'unsaved'
+          return draw()
+        }
+        return finish(() => openProject(selected, true))
+      }
+      if (what === 'openAnyway') return finish(() => openProject(selected, true))
+      if (what === 'saveOpen') {
+        dlg.close()
+        return dialog('saveAs', { then: selected })
+      }
+      if (what === 'askDelete') {
+        confirmBox = 'delete'
+        return draw()
+      }
+      if (what === 'keep') {
+        confirmBox = null
+        return draw()
+      }
+      if (what === 'delete') {
+        await act({ action: 'project.delete', file: selected })
+        selected = null
+        confirmBox = null
+        rows = await listProjects()
+        return draw()
+      }
+      if (what === 'saveAs' && name) {
+        return finish(async () => {
+          const r = await act({ action: 'project.save', name, overwrite: true })
+          if (!r.ok) return false
+          if (opts.then) await act({ action: 'project.open', file: opts.then })
+          return true
+        })
+      }
+      if (what === 'new' && name) return finish(async () => (await act({ action: 'project.new', name })).ok)
+    }
+    body.innerHTML = ''
+    draw()
+    if (!dlg.open) dlg.showModal()
+    body.querySelector('input')?.focus()
+    rows = await listProjects()
+    draw()
+  }
+
+  // Ctrl+S saves, Ctrl+Shift+S saves as, Ctrl+O opens: like any other program.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    const k = e.key.toLowerCase()
+    if (k === 's') {
+      e.preventDefault()
+      if (e.shiftKey) dialog('saveAs')
+      else saveProject()
+    } else if (k === 'o' && !e.shiftKey) {
+      e.preventDefault()
+      if (!busyWhy()) dialog('open')
+      else alertBar(busyWhy())
+    }
+  })
+
   // ---------- State from the gfx app's server ----------
   const events = new EventSource('/events?role=operator')
   events.onmessage = (e) => {
@@ -1135,6 +1425,7 @@
     renderItems()
     renderMain()
     renderSettings()
+    renderProject()
     dropCaptures()
     fit()
   }

@@ -19,10 +19,11 @@
  * No packages needed: plain Node.js.
  */
 const http = require('node:http')
-const { createReadStream, readFileSync, writeFileSync, statSync, readdirSync, mkdirSync } = require('node:fs')
+const { createReadStream, readFileSync, writeFileSync, statSync, readdirSync, mkdirSync, unlinkSync } = require('node:fs')
 const { join, extname, basename, dirname } = require('node:path')
 const os = require('node:os')
 
+const PROJECT_FORMAT = 'gfx-app-project'
 const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars']
 const STYLES = ['classic', 'block', 'minimal', 'news']
 const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'custom']
@@ -157,28 +158,49 @@ function startServer(opts = {}) {
   /** The show: the rundown, the lower thirds' look, Preview and On air. */
   let show = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
   let nextId = 1
-  try {
-    const saved = JSON.parse(readFileSync(SAVED, 'utf8'))
-    const items = Array.isArray(saved.items) ? saved.items : []
+  /** The rundown from a saved file (the app's own save, or a project): items, look, Preview. */
+  function readShow(saved) {
+    const out = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
+    let next = 1
+    const items = Array.isArray(saved?.items) ? saved.items.slice(0, 2000) : []
     for (const raw of items) {
       try {
         const it = cleanItem(raw, null)
-        it.id = typeof raw.id === 'string' ? raw.id : `item-${nextId}`
+        it.id = typeof raw.id === 'string' && /^item-\d+$/.test(raw.id) && !out.items.some((x) => x.id === raw.id) ? raw.id : ''
         if (it.kind === 'video') it.path = typeof raw.path === 'string' ? raw.path : ''
         if (it.kind === 'photos') it.paths = Array.isArray(raw.paths) ? raw.paths.filter((x) => typeof x === 'string') : []
-        show.items.push(it)
+        out.items.push(it)
       } catch {
         // skip an item we can't read
       }
     }
-    for (const it of show.items) {
+    for (const it of out.items) {
       const n = Number(/^item-(\d+)$/.exec(it.id)?.[1])
-      if (n >= nextId) nextId = n + 1
+      if (n >= next) next = n + 1
     }
+    for (const it of out.items) if (!it.id) it.id = `item-${next++}`
     // Grouped by kind, keeping the order within each group (rundowns saved before groups existed too).
-    sortByGroup(show.items)
-    show.look = cleanLook(saved.look ?? {}, DEFAULT_LOOK)
-    show.previewId = show.items.some((i) => i.id === saved.previewId) ? saved.previewId : show.items[0]?.id ?? null
+    sortByGroup(out.items)
+    out.look = cleanLook(saved?.look ?? {}, DEFAULT_LOOK)
+    out.previewId = out.items.some((i) => i.id === saved?.previewId) ? saved.previewId : out.items[0]?.id ?? null
+    return { show: out, nextId: next }
+  }
+  /**
+   * The project this rundown belongs to (File menu): its name, its file in the projects folder (or none
+   * yet), when it was saved, and what it held then (to tell "changes not saved").
+   */
+  let project = { name: 'Untitled rundown', file: '', savedAt: 0, saved: '' }
+  try {
+    const saved = JSON.parse(readFileSync(SAVED, 'utf8'))
+    ;({ show, nextId } = readShow(saved))
+    if (saved.project && typeof saved.project === 'object') {
+      project = {
+        name: text(saved.project.name, 80) || 'Untitled rundown',
+        file: typeof saved.project.file === 'string' ? basename(saved.project.file) : '',
+        savedAt: Number(saved.project.savedAt) || 0,
+        saved: typeof saved.project.saved === 'string' ? saved.project.saved : ''
+      }
+    }
   } catch {
     // First start: a lower third to begin with.
     show.items.push({ id: 'item-1', kind: 'lowerthird', name: 'Sam Rivera', title: 'Guest speaker', playOnLive: true })
@@ -232,7 +254,7 @@ function startServer(opts = {}) {
   const save = () => {
     try {
       mkdirSync(dataDir, { recursive: true })
-      writeFileSync(SAVED, JSON.stringify({ items: show.items, look: show.look, previewId: show.previewId }, null, 2))
+      writeFileSync(SAVED, JSON.stringify({ items: show.items, look: show.look, previewId: show.previewId, project }, null, 2))
     } catch (e) {
       log(`Could not save the show: ${e.message}`)
     }
@@ -263,6 +285,7 @@ function startServer(opts = {}) {
     onAir: show.onAir,
     cue,
     breakLoop: { on: breakLoop, seq: loopSeq },
+    project: { name: project.name, file: project.file, savedAt: project.savedAt, changed: fingerprint() !== project.saved },
     stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, only: streamPages.size > 0 ? streamOnly : '', picture: hasPicture() }
   })
   const send = (res, msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`)
@@ -270,8 +293,25 @@ function startServer(opts = {}) {
     const msg = snapshot()
     for (const res of listeners) send(res, msg)
   }
+  /** A project with its own file saves itself a moment after each change (the File menu's Save is still there). */
+  let autoTimer = null
+  const autosave = () => {
+    clearTimeout(autoTimer)
+    if (!project.file) return
+    autoTimer = setTimeout(() => {
+      if (!project.file || fingerprint() === project.saved) return
+      try {
+        writeProject(project.name)
+        save()
+        broadcast()
+      } catch (e) {
+        log(`Could not save the project: ${e.message}`)
+      }
+    }, 1500)
+  }
   const changed = () => {
     save()
+    autosave()
     broadcast()
   }
 
@@ -346,6 +386,60 @@ function startServer(opts = {}) {
     return out.slice(0, 2000)
   }
 
+  // ---------- Projects (File menu): a rundown and its look, saved to a file and opened again ----------
+  const PROJECTS = join(dataDir, 'projects')
+  /** What a project holds: the items (with their file paths) and the lower thirds' look. */
+  const projectData = () => ({ items: show.items.map((i) => ({ ...i })), look: show.look })
+  /** What decides "changes not saved": the rundown and the look, not Preview or what's on air. */
+  const fingerprint = () => JSON.stringify(projectData())
+  const fileFor = (name) => {
+    const base = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Rundown'
+    return `${base}.gfx.json`
+  }
+  const projectFile = (name, savedAt) => ({ format: PROJECT_FORMAT, version: 1, name, savedAt, ...projectData() })
+  function writeProject(name) {
+    const savedAt = Date.now()
+    const file = fileFor(name)
+    mkdirSync(PROJECTS, { recursive: true })
+    writeFileSync(join(PROJECTS, file), JSON.stringify(projectFile(name, savedAt), null, 2))
+    project = { name, file, savedAt, saved: fingerprint() }
+    return file
+  }
+  function listProjects() {
+    let names = []
+    try {
+      names = readdirSync(PROJECTS).filter((f) => f.endsWith('.gfx.json'))
+    } catch {
+      return []
+    }
+    const out = []
+    for (const file of names) {
+      try {
+        const p = JSON.parse(readFileSync(join(PROJECTS, file), 'utf8'))
+        if (p?.format !== PROJECT_FORMAT) continue
+        out.push({ file, name: text(p.name, 80) || file.replace(/\.gfx\.json$/, ''), savedAt: Number(p.savedAt) || 0, items: Array.isArray(p.items) ? p.items.length : 0 })
+      } catch {
+        // not readable: left out
+      }
+    }
+    return out.sort((a, b) => b.savedAt - a.savedAt)
+  }
+  /** Nothing may be swapped out from under a break on air, or an item on air. */
+  function checkFree() {
+    if (cue?.status === 'onair') throw new Error('A commercial break is on air: open or start a rundown when it has ended')
+    if (show.onAir) throw new Error('Something is on air: press Hide first')
+  }
+  /** Put a project's rundown in place (a fresh start: nothing in Preview from before, no break cued). */
+  function useProject(p, name, file, savedAt) {
+    checkFree()
+    const read = readShow(p)
+    show = read.show
+    nextId = read.nextId
+    clearTimeout(hideTimer)
+    if (cue && !['onair'].includes(cue.status)) cue = null
+    project = { name, file, savedAt, saved: fingerprint() }
+  }
+
   function apply(body, local) {
     switch (body.action) {
       case 'preview': {
@@ -413,6 +507,64 @@ function startServer(opts = {}) {
         show.onAir = null
         clearTimeout(hideTimer)
         return
+      }
+      case 'project.list': {
+        return { projects: listProjects() }
+      }
+      case 'project.new': {
+        if (!local) throw new Error('Projects are opened and saved on the gfx laptop itself')
+        const name = text(body.name, 80) || 'Untitled rundown'
+        // A new rundown starts empty, with the look kept (the look is often the same show after show) unless asked.
+        useProject({ items: [], look: body.keepLook === false ? {} : show.look }, name, '', 0)
+        return
+      }
+      case 'project.open': {
+        if (!local) throw new Error('Projects are opened and saved on the gfx laptop itself')
+        const file = basename(String(body.file ?? ''))
+        let p
+        try {
+          p = JSON.parse(readFileSync(join(PROJECTS, file), 'utf8'))
+        } catch {
+          throw new Error('That project isn’t there any more')
+        }
+        if (p?.format !== PROJECT_FORMAT) throw new Error('That file isn’t a gfx app project')
+        useProject(p, text(p.name, 80) || file.replace(/\.gfx\.json$/, ''), file, Number(p.savedAt) || 0)
+        return
+      }
+      case 'project.save': {
+        if (!local) throw new Error('Projects are opened and saved on the gfx laptop itself')
+        // Save as: a new name (a new file). Save: its own file (the first time, a name is asked for).
+        const name = body.name !== undefined ? text(body.name, 80) : project.file ? project.name : ''
+        if (!name) throw new Error('Give the project a name')
+        if (body.name !== undefined && body.overwrite !== true && fileFor(name) !== project.file && listProjects().some((x) => x.file === fileFor(name))) {
+          throw new Error(`There is already a project called ${name}. Pick another name, or replace it.`)
+        }
+        return { file: writeProject(name) }
+      }
+      case 'project.delete': {
+        if (!local) throw new Error('Projects are opened and saved on the gfx laptop itself')
+        const file = basename(String(body.file ?? ''))
+        if (!file.endsWith('.gfx.json')) throw new Error('No such project')
+        try {
+          unlinkSync(join(PROJECTS, file))
+        } catch {
+          // already gone
+        }
+        if (project.file === file) project = { ...project, file: '', saved: '' }
+        return
+      }
+      case 'project.export': {
+        return projectFile(project.name, Date.now())
+      }
+      case 'project.import': {
+        if (!local) throw new Error('Projects are opened and saved on the gfx laptop itself')
+        const p = body.project
+        if (!p || typeof p !== 'object' || p.format !== PROJECT_FORMAT) throw new Error('That file isn’t a gfx app project')
+        const name = text(p.name, 80) || 'Imported rundown'
+        useProject(p, name, '', 0)
+        // Kept with the other projects (a copy, under its own name).
+        writeProject(name)
+        return { missing: show.items.filter((i) => (i.kind === 'video' && !exists(i.path)) || (i.kind === 'photos' && i.paths.some((x) => !exists(x)))).length }
       }
       case 'next': {
         const i = show.items.findIndex((x) => x.id === show.previewId)
@@ -743,6 +895,16 @@ function startServer(opts = {}) {
         server,
         addresses: lanAddresses,
         close: () => {
+          // A change still waiting to be saved goes into its project now.
+          clearTimeout(autoTimer)
+          if (project.file && fingerprint() !== project.saved) {
+            try {
+              writeProject(project.name)
+              save()
+            } catch {
+              // nothing more to do while closing
+            }
+          }
           clearInterval(pictureCheck)
           for (const res of programViewers) res.end()
           for (const res of listeners) res.end()
