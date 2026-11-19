@@ -67,6 +67,20 @@ describe('gfx app server', () => {
     expect((await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'pics', 'notes.txt') } })).error).toMatch(/video file/)
   })
 
+  it('keeps the rundown grouped by kind: lower thirds, videos, photos, windows, color bars', async () => {
+    await doit({ action: 'add', item: { kind: 'bars', name: 'Bars' } })
+    await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'clip.mp4') } })
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'Second', title: 'T' } })
+    await doit({ action: 'add', item: { kind: 'photos', paths: [join(dir, 'pics')] } })
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'Third', title: 'T' } })
+    const s = await state()
+    expect(s.items.map((i) => i.kind)).toEqual(['lowerthird', 'lowerthird', 'lowerthird', 'video', 'photos', 'bars'])
+    // Moving stays inside the group.
+    const video = s.items.find((i) => i.kind === 'video')!
+    await doit({ action: 'move', id: video.id, up: true })
+    expect((await state()).items.map((i) => i.kind)).toEqual(['lowerthird', 'lowerthird', 'lowerthird', 'video', 'photos', 'bars'])
+  })
+
   it('knows when the streaming app has the graphics live', async () => {
     const ctl = new AbortController()
     await fetch(`${base}/events?role=stream`, { signal: ctl.signal })

@@ -143,6 +143,17 @@ function startServer(opts = {}) {
   const SAVED = join(dataDir, 'gfx-show.json')
   const log = opts.log ?? ((s) => console.log(s))
 
+  /** The rundown is grouped by kind, in this order: lower thirds, videos, photos and slideshows, windows, color bars. */
+  const GROUPS = ['lowerthird', 'video', 'photos', 'window', 'bars']
+  const groupOf = (i) => {
+    const n = GROUPS.indexOf(i?.kind)
+    return n < 0 ? GROUPS.length : n
+  }
+  const sortByGroup = (items) => {
+    const order = new Map(items.map((x, n) => [x, n]))
+    items.sort((a, b) => groupOf(a) - groupOf(b) || order.get(a) - order.get(b))
+  }
+
   /** The show: the rundown, the lower thirds' look, Preview and On air. */
   let show = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
   let nextId = 1
@@ -164,6 +175,8 @@ function startServer(opts = {}) {
       const n = Number(/^item-(\d+)$/.exec(it.id)?.[1])
       if (n >= nextId) nextId = n + 1
     }
+    // Grouped by kind, keeping the order within each group (rundowns saved before groups existed too).
+    sortByGroup(show.items)
     show.look = cleanLook(saved.look ?? {}, DEFAULT_LOOK)
     show.previewId = show.items.some((i) => i.id === saved.previewId) ? saved.previewId : show.items[0]?.id ?? null
   } catch {
@@ -292,8 +305,15 @@ function startServer(opts = {}) {
       if (!it.paths.length) throw new Error('Pick some photos (jpg, png, webp)')
       if (!p.name) it.name = it.paths.length === 1 ? basename(it.paths[0], extname(it.paths[0])) : basename(dirname(it.paths[0])) || 'Photos'
     }
-    const at = show.items.findIndex((i) => i.id === show.previewId)
-    show.items.splice(at >= 0 ? at + 1 : show.items.length, 0, it)
+    // Into its group: after the selected item when that is one of the same kind, else at the end of the group.
+    const sel = show.items.findIndex((i) => i.id === show.previewId)
+    const g = groupOf(it)
+    let at = sel >= 0 && groupOf(show.items[sel]) === g ? sel + 1 : -1
+    if (at < 0) {
+      at = show.items.findIndex((i) => groupOf(i) > g)
+      if (at < 0) at = show.items.length
+    }
+    show.items.splice(at, 0, it)
     if (!show.previewId) show.previewId = it.id
     return it
   }
@@ -427,6 +447,8 @@ function startServer(opts = {}) {
         const at = show.items.findIndex((i) => i.id === body.id)
         const to = at + (body.up ? -1 : 1)
         if (at < 0 || to < 0 || to >= show.items.length) return
+        // Items move within their group (lower thirds stay with lower thirds...).
+        if (groupOf(show.items[to]) !== groupOf(show.items[at])) return
         show.items.splice(to, 0, ...show.items.splice(at, 1))
         return
       }

@@ -44,6 +44,8 @@
 
   /* Rundown */
   .rundown { border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .items .group-head { list-style: none; margin: 10px 2px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .items .group-head:first-child { margin-top: 0; }
   .rundown.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
   .menu { position: absolute; right: 0; top: 36px; z-index: 5; display: grid; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px; min-width: 190px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
@@ -311,7 +313,18 @@
       li.textContent = 'Nothing yet. Press + Add, or drag videos and photos in.'
       ul.append(li)
     }
+    // Grouped by kind (the gfx app keeps them in this order): a heading over each group.
+    const GROUP_LABEL = { lowerthird: 'Lower thirds', video: 'Videos', photos: 'Photos and slideshows', window: 'Windows', bars: 'Color bars' }
+    const counts = {}
+    for (const i of S.items) counts[i.kind] = (counts[i.kind] || 0) + 1
     S.items.forEach((i, n) => {
+      if (n === 0 || S.items[n - 1].kind !== i.kind) {
+        const h = document.createElement('li')
+        h.className = 'group-head'
+        h.setAttribute('role', 'presentation')
+        h.textContent = `${GROUP_LABEL[i.kind] || 'Other'} · ${counts[i.kind]}`
+        ul.append(h)
+      }
       const li = document.createElement('li')
       const onAir = S.onAir?.id === i.id
       const preview = S.previewId === i.id
@@ -344,8 +357,8 @@
         }
         tools.append(b)
       }
-      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0)
-      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1)
+      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0 || S.items[n - 1].kind !== i.kind)
+      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1 || S.items[n + 1].kind !== i.kind)
       tool('✕', 'Remove', () => confirmRemove(i))
       li.append(thumb, txt, tools)
       // A video can be dragged into the commercial break's list.
