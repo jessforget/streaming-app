@@ -156,6 +156,12 @@ export class GpuCompositor extends Compositor {
       this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
       this.collectOverlay(ops, program, s, w, h, fadeAlpha)
     }
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, identity, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     this.render(enc, this.ctx.program, w, h, ops)
     if (withPreview) {
       const pw = this.preview.width
@@ -186,6 +192,11 @@ export class GpuCompositor extends Compositor {
     const ops: Op[] = []
     this.collect(ops, program, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, 1)
     this.collectOverlay(ops, program, s, w, h, 1)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     const bpr = Math.ceil((w * 4) / 256) * 256
     const buf = this.device.createBuffer({ size: bpr * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
     const enc = this.device.createCommandEncoder()

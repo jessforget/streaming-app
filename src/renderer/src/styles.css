@@ -177,7 +177,7 @@ button.end-live { background: var(--live); border-color: var(--live); color: var
 
 .monitors-wrap { display: flex; flex-direction: column; gap: 12px; }
 /* Preview and Live side by side, the same size (like OBS's Studio Mode). */
-.monitors { display: grid; grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr); gap: 14px; align-items: center; }
+.monitors { display: grid; grid-template-columns: minmax(0, 1fr) 176px minmax(0, 1fr); gap: 14px; align-items: center; }
 .monitor { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-self: start; }
 /* Cut / Fade and Transition sit between Preview and Live, like the T-bar on a vision mixer. */
 .transition-col { display: flex; flex-direction: column; gap: 10px; align-items: stretch; padding-top: 34px; }
@@ -725,3 +725,33 @@ label.check { display: flex; flex-direction: row; align-items: center; gap: 8px;
 .gfx-open .gfx-add { min-height: 64px; }
 .gfx-open-note { max-width: 180px; }
 .gfx-add-form { margin-top: 10px; max-width: 720px; }
+
+/* ---------- Fade time and the manual fader (T-bar) ---------- */
+.fade-times { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.fade-times button { padding: 0; min-height: 28px; font-size: 12px; font-weight: 600; }
+.fade-times button.on { background: var(--accent-bg); border-color: var(--accent); }
+.fade-custom { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.fade-custom input { width: 100%; min-width: 0; min-height: 28px; padding: 0 6px; }
+.tbar {
+  position: relative; align-self: center; width: 40px; height: 150px; margin: 12px 0 22px;
+  border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); touch-action: none; cursor: ns-resize;
+  user-select: none; -webkit-user-select: none;
+}
+.tbar::before { content: ''; position: absolute; left: 50%; top: 8px; bottom: 8px; width: 4px; margin-left: -2px; border-radius: 2px; background: #0b0c0f; }
+.tbar.disabled { opacity: .45; cursor: not-allowed; }
+.tbar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tbar-fill { position: absolute; left: 0; right: 0; border-radius: 8px; background: rgba(76, 141, 255, .25); pointer-events: none; }
+.tbar-handle {
+  position: absolute; left: -12px; right: -12px; height: 20px; transform: translateY(-50%); pointer-events: none;
+  border-radius: 5px; background: linear-gradient(#eef1f6, #b9c0cc); box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+}
+.tbar.mixing .tbar-handle { background: linear-gradient(#cfe0ff, #7fa8f5); }
+.tbar-pct { position: absolute; left: 50%; bottom: -20px; transform: translateX(-50%); font: 600 11px/1 var(--display); color: var(--muted); white-space: nowrap; }
+/* The T-bar stands to the right of the buttons, as tall as they are. */
+.transition-col { display: grid; grid-template-columns: minmax(0, 1fr) 30px; column-gap: 12px; row-gap: 8px; align-content: start; }
+.transition-col > .tbar { grid-column: 2; grid-row: 1 / span 6; align-self: stretch; width: 30px; height: auto; min-height: 160px; margin: 0; }
+.transition-col .take { min-height: 76px; }
+.tbar-handle { left: -7px; right: -7px; }
+.tbar-pct { bottom: auto; top: -18px; }
+@media (max-width: 760px) { .tbar { display: none; } .transition-col { display: flex; } }
+.transition-col > .key-hint { justify-self: center; }

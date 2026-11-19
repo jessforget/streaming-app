@@ -160,15 +160,19 @@ export class Controller extends Emitter<Events> {
       }
       case 'scene.preview': {
         const scene = this.showScene(str(P, 'sceneId'))
+        // A half-done fader mix goes with the old Preview.
+        if (scene.id !== this.s.previewSceneId) delete this.s.mix
         this.s.previewSceneId = scene.id
         await this.engine.setPreviewScene(scene.id)
         return this.changed()
       }
       case 'scene.program': {
+        delete this.s.mix
         await this.takeLive(this.showScene(str(P, 'sceneId')))
         return this.changed()
       }
       case 'scene.goLive': {
+        delete this.s.mix
         const next = this.showScene(this.s.previewSceneId)
         const previous = this.s.programSceneId
         await this.takeLive(next)
@@ -182,6 +186,32 @@ export class Controller extends Emitter<Events> {
         if (kind !== 'cut' && kind !== 'fade') throw new CommandError('kind must be "cut" or "fade"')
         const durationMs = P.durationMs === undefined ? this.s.transition.durationMs : num(P, 'durationMs', 0, 5000)
         this.s.transition = { kind, durationMs }
+        return this.changed()
+      }
+      case 'transition.mix': {
+        const level = num(P, 'level', 0, 1)
+        if (this.s.previewSceneId === this.s.programSceneId) {
+          delete this.s.mix
+          return this.changed()
+        }
+        if (level < 0.999) {
+          if (level <= 0) delete this.s.mix
+          else this.s.mix = Math.round(level * 1000) / 1000
+          return this.changed()
+        }
+        // The fader reached the end: Preview is on air (already fully mixed in, so a cut), and what was live goes to Preview.
+        delete this.s.mix
+        const next = this.showScene(this.s.previewSceneId)
+        const previous = this.s.programSceneId
+        const kind = this.s.transition
+        this.s.transition = { ...kind, kind: 'cut' }
+        try {
+          await this.takeLive(next)
+        } finally {
+          this.s.transition = kind
+        }
+        this.s.previewSceneId = previous
+        await this.engine.setPreviewScene(previous)
         return this.changed()
       }
       case 'layer.setVisible': {

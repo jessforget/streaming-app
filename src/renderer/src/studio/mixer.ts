@@ -249,6 +249,9 @@ export class Mixer {
   }
 
   /** Make the mixer match the app's channels. Cheap to call on every state change. */
+  /** The manual fader was mixing at the last update. */
+  private wasMixing = false
+
   update(state: AppState) {
     this.state = state
     const onAir = scenesOnAir(state)
@@ -262,6 +265,16 @@ export class Mixer {
     const brk = state.scenes.find((s) => s.commercial)
     const inBreak = !!brk && state.programSceneId === brk.id && brk.layers.some((l) => l.kind === 'media')
     const micGain = inBreak ? 0 : 1
+    // The manual fader: the Preview scene's sound comes in as far as the bar is pulled, Live's goes out.
+    const mix = (state.mix ?? 0) > 0 && state.previewSceneId !== state.programSceneId ? Math.min(1, state.mix ?? 0) : 0
+    const nextOn = new Map<string, boolean>()
+    if (mix > 0) {
+      const as = { ...state, programSceneId: state.previewSceneId }
+      const onNext = scenesOnAir(as)
+      for (const c of [...state.audio.map((a) => ({ a, on: audible(a, onNext) })), ...this.mediaChannels(as, onNext), ...this.graphicsChannels(as, onNext), ...this.toneChannels(as, onNext)]) nextOn.set(c.a.id, c.on)
+    }
+    const fading = mix > 0 || this.wasMixing
+    this.wasMixing = mix > 0
     const wanted = new Set(channels.map((c) => c.a.id))
     for (const id of [...this.chains.keys()]) if (!wanted.has(id)) this.drop(id)
     for (const { a, on } of channels) {
@@ -280,7 +293,17 @@ export class Mixer {
       // Channels follow the break with the Transition's fade; a fader move is quick.
       chain.gain.gain.setTargetAtTime(level, t, channel && sceneChanged ? fadeS / 3 : 0.02)
       chain.delay.delayTime.setTargetAtTime(Math.max(0, a.syncOffsetMs ?? 0) / 1000, t, 0.05)
-      if (fresh || chain.open !== on || sceneChanged) {
+      if (fading) {
+        // Follow the bar closely (and settle where it ends).
+        const n = mix > 0 ? (nextOn.get(a.id) ?? false) : on
+        const g = mix <= 0 ? (on ? 1 : 0) : on && n ? 1 : on ? 1 - mix : n ? mix : 0
+        const opening = g > 0 && !chain.open
+        chain.open = g > 0
+        chain.gate.gain.cancelScheduledValues(t)
+        if (fresh) chain.gate.gain.setValueAtTime(g, t)
+        else chain.gate.gain.setTargetAtTime(g, t, 0.03)
+        if (a.kind === 'file' && device && (opening || fresh || g === 0)) this.playFile(device, a, g > 0, opening || fresh, 0.1)
+      } else if (fresh || chain.open !== on || sceneChanged) {
         const opening = on && !chain.open
         chain.open = on
         chain.gate.gain.cancelScheduledValues(t)

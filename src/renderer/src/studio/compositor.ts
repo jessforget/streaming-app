@@ -96,7 +96,9 @@ export class Compositor {
     this.state = state
     if (before && state.programSceneId !== this.shownProgram) {
       const old = before.scenes.find((s) => s.id === this.shownProgram)
-      if (old && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
+      // After the manual fader, the new scene was already mixed in: no fade on top.
+      const faded = (before.mix ?? 0) > 0
+      if (old && !faded && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
         this.fadeFrom = { scene: old, start: performance.now(), ms: state.transition.durationMs }
       }
     }
@@ -303,6 +305,12 @@ export class Compositor {
       }
     }
     if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height)
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      pctx.globalAlpha = mixing.level
+      this.drawWithOverlay(pctx, mixing.scene, s, this.program.width, this.program.height)
+    }
     pctx.globalAlpha = 1
     if (withPreview) {
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
@@ -312,6 +320,14 @@ export class Compositor {
       // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
       if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
     }
+  }
+
+  /** The manual fader's mix: the Preview scene and how much of it is in Live, or null. */
+  protected mixing(s: AppState): { scene: Scene; level: number } | null {
+    const level = s.mix ?? 0
+    if (level <= 0 || s.previewSceneId === s.programSceneId) return null
+    const scene = s.scenes.find((x) => x.id === s.previewSceneId)
+    return scene ? { scene, level: Math.min(1, level) } : null
   }
 
   /**
@@ -347,6 +363,12 @@ export class Compositor {
     ctx.save()
     ctx.scale(canvas.width / w, canvas.height / h)
     this.drawWithOverlay(ctx, scene, s, w, h)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      ctx.globalAlpha = mixing.level
+      this.drawWithOverlay(ctx, mixing.scene, s, w, h)
+      ctx.globalAlpha = 1
+    }
     ctx.restore()
     return true
   }

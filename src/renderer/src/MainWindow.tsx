@@ -175,31 +175,7 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
           </div>
           {studio ? <LiveCanvas canvas={studio.compositor.preview} next /> : <ScenePicture scene={preview} state={state} next />}
         </section>
-        <div className="transition-col" role="group" aria-label="Transition">
-          <div className="segmented stacked" role="group" aria-label="Transition type">
-            {(['cut', 'fade'] as const).map((k) => (
-              <button
-                key={k}
-                className={state.transition.kind === k ? 'on' : ''}
-                aria-pressed={state.transition.kind === k}
-                onClick={() => run('transition.set', { kind: k })}
-              >
-                {k === 'cut' ? 'Cut' : `Fade ${state.transition.durationMs / 1000} s`}
-              </button>
-            ))}
-          </div>
-          <button
-            className="take"
-            onClick={() => run('scene.goLive')}
-            disabled={same}
-            title={same ? 'Preview and Live show the same scene' : `Put ${preview.name} on air (space bar)`}
-          >
-            Transition
-          </button>
-          <kbd className="key-hint" title="Press the space bar to transition">
-            Space
-          </kbd>
-        </div>
+        <TransitionColumn state={state} run={run} preview={preview} same={same} />
         <section className="monitor program" aria-label="Live">
           <div className="monitor-head">
             <span className="badge live">{state.stream.live ? 'ON AIR' : 'LIVE'}</span>
@@ -211,6 +187,161 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
           {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
         </section>
       </div>
+    </div>
+  )
+}
+
+const FADE_TIMES = [300, 500, 1000, 2000]
+const secs = (ms: number) => `${Math.round(ms / 100) / 10}`
+
+/**
+ * Between Preview and Live, like a vision mixer: Cut or Fade (and how long), the
+ * Transition button, and a manual fader (T-bar) to mix by hand.
+ */
+function TransitionColumn({ state, run, preview, same }: { state: AppState; run: Run; preview: Scene; same: boolean }) {
+  const t = state.transition
+  const [custom, setCustom] = useState<string | null>(null)
+  const setTime = (ms: number) => run('transition.set', { kind: 'fade', durationMs: Math.max(100, Math.min(5000, Math.round(ms))) })
+  return (
+    <div className="transition-col" role="group" aria-label="Transition">
+      <div className="segmented stacked" role="group" aria-label="Transition type">
+        {(['cut', 'fade'] as const).map((k) => (
+          <button key={k} className={t.kind === k ? 'on' : ''} aria-pressed={t.kind === k} onClick={() => run('transition.set', { kind: k })}>
+            {k === 'cut' ? 'Cut' : `Fade ${secs(t.durationMs)} s`}
+          </button>
+        ))}
+      </div>
+      {t.kind === 'fade' && (
+        <div className="fade-times" role="group" aria-label="Fade time">
+          {FADE_TIMES.map((ms) => (
+            <button key={ms} className={`small ${t.durationMs === ms ? 'on' : ''}`} aria-pressed={t.durationMs === ms} onClick={() => setTime(ms)} title={`Fade in ${secs(ms)} seconds`}>
+              {secs(ms)}
+            </button>
+          ))}
+          <label className="fade-custom" title="Any time up to 5 seconds">
+            <input
+              type="number"
+              min={0.1}
+              max={5}
+              step={0.1}
+              aria-label="Fade time in seconds"
+              value={custom ?? secs(t.durationMs)}
+              onChange={(e) => setCustom(e.target.value)}
+              onBlur={() => {
+                const v = Number(custom)
+                if (custom !== null && Number.isFinite(v) && v > 0) setTime(v * 1000)
+                setCustom(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') {
+                  setCustom(null)
+                  ;(e.target as HTMLInputElement).blur()
+                }
+              }}
+            />
+            s
+          </label>
+        </div>
+      )}
+      <button className="take" onClick={() => run('scene.goLive')} disabled={same} title={same ? 'Preview and Live show the same scene' : `Put ${preview.name} on air (space bar)`}>
+        Transition
+      </button>
+      <kbd className="key-hint" title="Press the space bar to transition">
+        Space
+      </kbd>
+      <TBar state={state} run={run} disabled={same} />
+    </div>
+  )
+}
+
+/**
+ * The manual fader (T-bar): drag it from one end to the other to mix Live into the
+ * Preview scene by hand. Let go halfway and Live stays mixed. At the far end, Preview
+ * is on air, and the bar stays there: the next pull goes back the other way.
+ */
+function TBar({ state, run, disabled }: { state: AppState; run: Run; disabled: boolean }) {
+  const track = useRef<HTMLDivElement>(null)
+  // Which end the bar rests at: the mix grows as it moves away from it.
+  const [restTop, setRestTop] = useState(true)
+  const [held, setHeld] = useState<number | null>(null)
+  const done = useRef(false)
+  const sendAt = useRef(0)
+  const pending = useRef<number | null>(null)
+  const mix = state.mix ?? 0
+  const level = held ?? mix
+  const pos = restTop ? level : 1 - level
+  const send = (v: number, now = false) => {
+    pending.current = v
+    const go = () => {
+      if (pending.current === null) return
+      const x = pending.current
+      pending.current = null
+      sendAt.current = performance.now()
+      void run('transition.mix', { level: x })
+    }
+    if (now || performance.now() - sendAt.current > 40) go()
+    else window.setTimeout(go, 40)
+  }
+  const levelAt = (clientY: number) => {
+    const r = track.current!.getBoundingClientRect()
+    const p = Math.min(1, Math.max(0, (clientY - r.top) / r.height))
+    return restTop ? p : 1 - p
+  }
+  const move = (v: number) => {
+    if (done.current) return
+    if (v >= 0.995) {
+      // The end: Preview goes on air; the bar now rests at this end.
+      done.current = true
+      setHeld(null)
+      send(1, true)
+      setRestTop((x) => !x)
+      return
+    }
+    setHeld(v)
+    send(v)
+  }
+  return (
+    <div
+      ref={track}
+      className={`tbar ${disabled ? 'disabled' : ''} ${level > 0 ? 'mixing' : ''}`}
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-label="Manual fader"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(level * 100)}
+      aria-disabled={disabled}
+      title={disabled ? 'Preview and Live show the same scene' : 'Drag to mix Live into Preview by hand. At the end, Preview is on air.'}
+      onPointerDown={(e) => {
+        if (disabled || e.button !== 0) return
+        // No text selection or native drag: those would cancel the pull.
+        e.preventDefault()
+        window.getSelection()?.removeAllRanges()
+        e.currentTarget.focus()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        done.current = false
+        move(levelAt(e.clientY))
+      }}
+      onPointerMove={(e) => {
+        if (disabled || !e.currentTarget.hasPointerCapture(e.pointerId)) return
+        move(levelAt(e.clientY))
+      }}
+      onPointerUp={() => setHeld(null)}
+      onPointerCancel={() => setHeld(null)}
+      onKeyDown={(e) => {
+        if (disabled) return
+        const step = e.key === 'ArrowDown' ? 0.1 : e.key === 'ArrowUp' ? -0.1 : 0
+        if (!step) return
+        e.preventDefault()
+        done.current = false
+        move(Math.max(0, Math.min(1, level + (restTop ? step : -step))))
+        setHeld(null)
+      }}
+    >
+      <div className="tbar-fill" style={restTop ? { top: 0, height: `${pos * 100}%` } : { bottom: 0, height: `${(1 - pos) * 100}%` }} />
+      <div className="tbar-handle" style={{ top: `${pos * 100}%` }} />
+      {level > 0 && <span className="tbar-pct">{Math.round(level * 100)}%</span>}
     </div>
   )
 }

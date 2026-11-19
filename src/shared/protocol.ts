@@ -41,6 +41,8 @@ export interface CommandMap {
   'scene.program': { sceneId: string }
   'scene.goLive': Record<string, never>
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
+  /** The manual fader: mix Live into Preview, 0 to 1. At 1, Preview goes on air (what was live goes to Preview). */
+  'transition.mix': { level: number }
   'layer.setVisible': { sceneId: string; layerId: string; visible: boolean }
   /** The Overlay's ON AIR button: its sources on top of every scene, or off. Its sources use sceneId "overlay". */
   'overlay.set': { on: boolean }
@@ -194,6 +196,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.program': 'operate',
   'scene.goLive': 'operate',
   'transition.set': 'operate',
+  'transition.mix': 'operate',
   'layer.setVisible': 'operate',
   'overlay.set': 'operate',
   'audio.setVolume': 'operate',
