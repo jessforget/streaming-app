@@ -290,6 +290,18 @@ function startServer(opts = {}) {
     }
   }
 
+  /**
+   * Color bars are a line-up picture, not part of the show: once the stream moves away from them (it stops
+   * showing the graphics, e.g. a commercial break or a scene that hides the Overlay, or a cued break goes on
+   * air) they go off air, so they never come back by themselves afterwards.
+   */
+  function dropBars() {
+    if (show.onAir && item(show.onAir.id)?.kind === 'bars') {
+      show.onAir = null
+      clearTimeout(hideTimer)
+    }
+  }
+
   function addItem(p, local) {
     const it = cleanItem(p, null)
     it.id = `item-${nextId++}`
@@ -594,7 +606,9 @@ function startServer(opts = {}) {
       // The graphics page in the streaming app: the stream put it live, or took it off.
       if (req.method === 'POST' && path === '/api/stream') {
         const body = await readBody(req)
+        const wasLive = streamLive
         streamLive = body.live === true
+        if (wasLive && !streamLive) dropBars()
         streamOnly = typeof body.only === 'string' ? body.only.slice(0, 300) : ''
         broadcast()
         return json(res, 200, { ok: true })
@@ -649,6 +663,7 @@ function startServer(opts = {}) {
             liveTake: body.status === 'onair' ? (latest ? body.take : cue.liveTake ?? body.take) : cue.liveTake
           }
           if (body.status === 'cleared') cue = null
+          if (body.status === 'onair') dropBars()
           broadcast()
         }
         return json(res, 200, { ok: true })

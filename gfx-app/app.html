@@ -522,7 +522,7 @@
       const bars = i.kind === 'bars'
       $('askTitle').textContent = bars ? 'Color bars fill the whole stream' : 'This video fills the whole stream'
       $('askText').textContent = bars
-        ? 'Take puts the bars on top of every scene and every camera in the streaming app’s Live picture, until you press Hide (or Esc).'
+        ? 'Take puts the bars on top of every scene and every camera in the streaming app’s Live picture, until you press Hide (or Esc). They also go off by themselves when a commercial break or a scene without the Overlay goes live, and don’t come back after it.'
         : 'Take puts it on top of every scene and every camera in the streaming app’s Live picture, until it ends or you press Hide. For a commercial, use Cue to stream: it goes in the streaming app’s Preview, and the streaming operator puts it on with Transition.'
       $('askCue').hidden = bars
       $('askBar').hidden = false

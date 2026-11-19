@@ -94,6 +94,34 @@ describe('gfx app server', () => {
     expect((await state()).stream).toEqual({ connected: false, live: false, only: '', picture: false })
   })
 
+  it('color bars go off air once the stream moves away from them (graphics taken off Live, or a break on air)', async () => {
+    const bars = (await doit({ action: 'add', item: { kind: 'bars', name: 'Bars' } })).result
+    const ctl = new AbortController()
+    await fetch(`${base}/events?role=stream`, { signal: ctl.signal })
+    const stream = (live: boolean) => fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live }) })
+    await stream(true)
+    await doit({ action: 'take', id: bars })
+    await stream(true) // still live: stays
+    expect((await state()).onAir?.id).toBe(bars)
+    await stream(false) // e.g. a commercial break: the bars are gone for good
+    expect((await state()).onAir).toBeNull()
+    await stream(true)
+    expect((await state()).onAir).toBeNull()
+    // A lower third stays through the same.
+    await doit({ action: 'take', id: 'item-1' })
+    await stream(false)
+    expect((await state()).onAir?.id).toBe('item-1')
+    // A cued break going on air also takes the bars off.
+    writeFileSync(join(dir, 'ad.mp4'), Buffer.alloc(100))
+    const v = (await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })).result
+    await doit({ action: 'take', id: bars })
+    await doit({ action: 'cue', id: v })
+    const take = ((await state()) as State & { cue: { take: number } }).cue.take
+    await fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify({ take, status: 'onair', at: 0 }) })
+    expect((await state()).onAir).toBeNull()
+    ctl.abort()
+  })
+
   it('cues a video to the stream and follows how it goes', async () => {
     writeFileSync(join(dir, 'ad.mp4'), Buffer.alloc(100))
     const v = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })
