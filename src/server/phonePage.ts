@@ -166,9 +166,34 @@ export const PHONE_PAGE = `<!doctype html>
   }
   document.addEventListener('visibilitychange', function () {
     if (!running) return;
-    if (document.visibilityState === 'visible') { keepAwake(); if (!pc) connectSoon(0); }
+    if (document.visibilityState === 'visible') { keepAwake(); recover(); }
     else status('The phone stopped the camera because the page is hidden. Come back to this page.', true);
   });
+  // Back from another app, the lock screen or another browser tab: phones often end the camera while
+  // the page is hidden. Open it again and reconnect, so the app gets this camera back by itself.
+  window.addEventListener('pageshow', function (e) { if (e.persisted && running) recover(); });
+  var recovering = false;
+  function cameraDead() {
+    var cam = stream && stream.camera ? stream.camera.getVideoTracks()[0] : null;
+    return !cam || cam.readyState === 'ended';
+  }
+  function recover() {
+    if (!running || recovering || document.visibilityState !== 'visible') return;
+    var linkOk = pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting' || pc.connectionState === 'new');
+    if (!cameraDead() && linkOk) return;
+    recovering = true;
+    badge('Reconnecting', 'wait');
+    status('Opening the camera again...');
+    (cameraDead() ? openCamera() : Promise.resolve()).then(function () {
+      recovering = false;
+      connectSoon(0);
+    }).catch(function (e) {
+      recovering = false;
+      status('Could not open the camera again: ' + (e && e.message ? e.message : e) + '. Press Stop camera, then Start camera.', true);
+    });
+  }
+  // A camera that ends while the page is showing (another app took it): try to get it back.
+  setInterval(function () { if (running && document.visibilityState === 'visible' && cameraDead()) recover(); }, 3000);
 
   function constraints() {
     var h = $('quality').value === '1080' ? 1080 : 720;
