@@ -11,7 +11,7 @@
  * same server and show the same page, with no rewrite.
  */
 import { homedir } from 'node:os'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { Controller, errorText } from '../core/controller'
 import { freshSetup } from '../core/defaults'
@@ -22,16 +22,38 @@ import { PairingManager } from './control/pairing'
 import { findFfmpeg, pickEncoder } from './ffmpeg'
 import { NetCamHub } from './netcams'
 import { DEFAULT_RTMP_PORT, RtmpReceiver } from './rtmp'
-import { PhoneHub } from './phones'
-import { DeviceFile, FileKeyStore, SetupFile, files } from './storage'
+import { PhoneHub, namedLanAddresses } from './phones'
+import { DeviceFile, FileKeyStore, SetupFile, ShowFolder, files } from './storage'
 
-const VERSION = '0.2.0'
+import about from '../../about.json'
+
+const VERSION = about.version
 
 /** Where the Setup, paired devices and stream keys are kept. */
 function dataDir() {
   if (process.env.STREAMING_APP_DATA) return process.env.STREAMING_APP_DATA
   if (process.platform === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Streaming App')
   return join(homedir(), '.streaming-app')
+}
+
+/** Saved projects: Documents\Streaming App Projects on Windows, easy to find and copy to another PC. */
+function showsFolder(dir: string): ShowFolder {
+  if (process.env.STREAMING_APP_SHOWS) return new ShowFolder(process.env.STREAMING_APP_SHOWS)
+  if (process.platform === 'win32' || existsSync(join(homedir(), 'Documents'))) {
+    const docs = join(homedir(), 'Documents')
+    const dir = join(docs, 'Streaming App Projects')
+    // Projects saved before the File menu were in "Streaming App Shows": move them over once.
+    const old = join(docs, 'Streaming App Shows')
+    if (existsSync(old) && !existsSync(dir)) {
+      try {
+        renameSync(old, dir)
+      } catch {
+        return new ShowFolder(old, process.platform === 'win32' ? 'Documents\\Streaming App Shows' : '~/Documents/Streaming App Shows')
+      }
+    }
+    return new ShowFolder(dir, process.platform === 'win32' ? 'Documents\\Streaming App Projects' : '~/Documents/Streaming App Projects')
+  }
+  return new ShowFolder(join(dir, 'shows'))
 }
 
 async function main() {
@@ -50,7 +72,8 @@ async function main() {
   const engine = new BrowserEngine(ffmpeg, encoder)
   const keys = new FileKeyStore(f.keys)
   const pairing = new PairingManager(new DeviceFile(f.devices))
-  const controller = new Controller({ engine, keys, initial, devices: pairing })
+  const shows = showsFolder(dir)
+  const controller = new Controller({ engine, keys, initial, devices: pairing, shows })
   pairing.onChange((s) => controller.updateDevices(s))
   // Problems also go to app.log in the data folder, so they can be read after the window is closed.
   const logFile = join(dir, 'app.log')
@@ -121,6 +144,23 @@ async function main() {
     process.exit(1)
   }
   controller.updateDevices({ ...pairing.snapshot(), controlUrl: server.urls()[0] })
+  // Where other computers reach this PC (Settings, About). Checked again now and then: Wi-Fi can change.
+  let lastNet = ''
+  const updateNetwork = () => {
+    const network = {
+      addresses: namedLanAddresses(),
+      controlPort: server.port,
+      phonePort: phonesOn ? port + 1 : 0,
+      rtmpPort: rtmpOn ? rtmp.port : 0
+    }
+    const text = JSON.stringify(network)
+    if (text === lastNet) return
+    lastNet = text
+    controller.updateDevices({ network, controlUrl: server.urls()[0] })
+  }
+  updateNetwork()
+  const netTimer = setInterval(updateNetwork, 10_000)
+  netTimer.unref()
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   controller.on('state', () => {

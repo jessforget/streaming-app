@@ -8,6 +8,8 @@ import { InstallButton } from './install'
 import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
 import { Settings, type SettingsTab } from './Settings'
+import { About } from './About'
+import { MenuBar, ProjectName, ShowDialog, useShowKeys, type ShowDialogKind } from './ShowMenu'
 import type { Studio } from './studio/studio'
 import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
 import { useApp, useElapsed, type Run } from './useApp'
@@ -26,14 +28,18 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   const { bridge, studio = null, studioElsewhere = false } = props
   const { state, stats, run, notice, showNotice, clearNotice } = useApp(bridge)
   const [settings, setSettings] = useState<SettingsTab | null>(null)
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const [showDialog, setShowDialog] = useState<ShowDialogKind | null>(null)
   /** The Camera panel of a phone camera (from Sources, or the camera button on a scene card). */
   const [phonePanel, setPhonePanel] = useState<string | null>(null)
   useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
-  useSpaceToTransition(state, run, settings === null)
+  useSpaceToTransition(state, run, settings === null && !aboutOpen && showDialog === null)
+  useShowKeys(state, run, setShowDialog)
   if (!state) return <div className="loading">Starting…</div>
   return (
     <div className="app">
-      <TopBar state={state} stats={stats} run={run} openSettings={setSettings} />
+      <MenuBar state={state} run={run} bridge={bridge} open={setShowDialog} openAbout={() => setAboutOpen(true)} openSettings={() => setSettings('golive')} notice={showNotice} />
+      <TopBar state={state} stats={stats} run={run} openSettings={setSettings} showMenu={<ProjectName state={state} />} />
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
       <PhonePanelContext.Provider value={setPhonePanel}>
@@ -73,12 +79,15 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           tab={settings}
           onTab={setSettings}
           onClose={() => setSettings(null)}
+          rescan={studio ? () => studio.rescanDevices() : undefined}
           testKey={async (id) => {
             const r = await bridge.command('settings.testDestination', { id })
             return r.ok ? (r.data as { ok: boolean; message: string }) : { ok: false, message: r.error ?? 'Could not check the key.' }
           }}
         />
       )}
+      {aboutOpen && <About state={state} onClose={() => setAboutOpen(false)} />}
+      {showDialog && <ShowDialog key={showDialog} kind={showDialog} state={state} run={run} bridge={bridge} onKind={setShowDialog} onClose={() => setShowDialog(null)} />}
     </div>
   )
 }
@@ -86,8 +95,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
 /** Platforms shown as switches in the top bar: the three most used, plus any other that is on or has a key. */
 const MAIN_PLATFORMS = ['youtube', 'facebook', 'instagram']
 
-function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void }) {
-  const { state, stats, run, openSettings } = props
+function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; openSettings: (t: SettingsTab) => void; showMenu: React.ReactNode }) {
+  const { state, stats, run, openSettings, showMenu } = props
   const liveFor = useElapsed(state.stream.startedAt)
   const recFor = useElapsed(state.recording.startedAt)
   const live = state.stream.live
@@ -95,20 +104,7 @@ function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; o
   const enabled = state.stream.destinations.filter((d) => d.enabled)
   return (
     <header className="topbar">
-      <div className="setup-name">
-        <strong>{state.setupName}</strong>
-        <span className="muted small">
-          {state.engine.mode === 'simulated' ? (
-            <span className="pill practice" title={state.engine.note}>
-              Practice mode
-            </span>
-          ) : (
-            <button className="link small" onClick={() => openSettings('golive')}>
-              Settings
-            </button>
-          )}
-        </span>
-      </div>
+      {showMenu}
       <HealthPill stats={stats} />
       <div className="platforms" role="group" aria-label="Go live on">
         <span className="eyebrow">Go live on</span>
@@ -136,6 +132,13 @@ function TopBar(props: { state: AppState; stats: HealthStats | null; run: Run; o
       </div>
       <div className="topbar-actions">
         <InstallButton />
+        <button className="settings-button" onClick={() => openSettings('golive')} title="Platforms, quality, inputs, devices">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          Settings
+        </button>
         <button className={`rec ${state.recording.active ? 'danger' : ''}`} onClick={() => run(state.recording.active ? 'record.stop' : 'record.start')}>
           <span className="rec-dot" aria-hidden="true" />
           {state.recording.active ? `Stop rec ${recFor}` : 'Record'}

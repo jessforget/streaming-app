@@ -28,6 +28,7 @@ export function freshSetup(): AppState {
 export function defaultState(): AppState {
   return {
     setupName: 'My show',
+    show: { file: null, savedAt: null, changed: false, autosave: true },
     engine: { mode: 'simulated', note: 'Practice mode: nothing is captured or sent' },
     scenes: [
       {
@@ -109,7 +110,7 @@ export function defaultState(): AppState {
     recording: { active: false, startedAt: null, folder: 'Videos/Streams', format: 'mkv' },
     inputs: { video: [], audio: [] },
     data: {},
-    devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [] },
+    devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [], network: { addresses: [], controlPort: 0, phonePort: 0, rtmpPort: 0 } },
     stats: { ...IDLE_STATS }
   }
 }

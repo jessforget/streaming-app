@@ -177,6 +177,21 @@ export interface CommandMap {
   'studio.cameraRate': { family: 'pal' | 'ntsc' | null; note: string }
   'audio.remove': { sourceId: string }
   'inputs.refresh': Record<string, never>
+  /** Saved shows: { folder, shows: [{ file, name, savedAt, scenes }] }, newest first. */
+  'show.list': Record<string, never>
+  /** Save the show to its file; with a name, save a copy under that name (Save as). */
+  'show.save': { name?: string }
+  /** Open a saved show (not while streaming or recording). */
+  'show.open': { file: string }
+  /** Start a new show with a fresh layout. */
+  'show.new': { name: string }
+  'show.delete': { file: string }
+  /** The show as a show file (to download and take to another PC). */
+  'show.export': Record<string, never>
+  /** Open a show file from another PC, and keep it in the shows folder. */
+  'show.import': { show: unknown }
+  /** Save the project by itself a moment after each change (on by default). */
+  'show.setAutosave': { on: boolean }
   'devices.setPairingOpen': { open: boolean }
   'devices.newPairingCode': Record<string, never>
   'devices.remove': { deviceId: string }
@@ -239,6 +254,14 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'studio.cameraRate': 'admin',
   'audio.remove': 'admin',
   'inputs.refresh': 'admin',
+  'show.list': 'admin',
+  'show.save': 'admin',
+  'show.open': 'admin',
+  'show.new': 'admin',
+  'show.delete': 'admin',
+  'show.export': 'admin',
+  'show.import': 'admin',
+  'show.setAutosave': 'admin',
   'devices.setPairingOpen': 'admin',
   'devices.newPairingCode': 'admin',
   'devices.remove': 'admin',

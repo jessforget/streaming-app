@@ -12,14 +12,13 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createReadStream } from 'node:fs'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { networkInterfaces } from 'node:os'
 import { extname, join, normalize, sep } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { CommandError, PROTOCOL_VERSION, ROLES, type Caller, type Role, type ServerMessage } from '../../shared/protocol'
 import type { AppState } from '../../shared/state'
 import type { Controller } from '../../core/controller'
 import { errorText } from '../../core/controller'
-import type { PhoneOffer } from '../phones'
+import { namedLanAddresses, type PhoneOffer } from '../phones'
 import type { PairingManager } from './pairing'
 import { TEST_PAGE } from './testPage'
 
@@ -161,12 +160,7 @@ export class ControlServer {
 
   /** Addresses a tablet on the same network can open. */
   urls(): string[] {
-    const out: string[] = []
-    for (const list of Object.values(networkInterfaces())) {
-      for (const a of list ?? []) {
-        if (a.family === 'IPv4' && !a.internal) out.push(`http://${a.address}:${this.boundPort}`)
-      }
-    }
+    const out = namedLanAddresses().map((a) => `http://${a.ip}:${this.boundPort}`)
     return out.length ? out : [`http://localhost:${this.boundPort}`]
   }
 
