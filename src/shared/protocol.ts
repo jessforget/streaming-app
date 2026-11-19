@@ -34,9 +34,15 @@ export type DataValue = string | number | boolean | null
 export interface CommandMap {
   'state.get': Record<string, never>
   'scene.preview': { sceneId: string }
+  /** Switch a phone camera to its front ('user') or back ('environment') camera. */
+  'phone.facing': { device: string; facing: 'user' | 'environment' }
+  /** Change a phone camera's settings: { exposure: 'manual', shutter: 200, iso: 400 }... (only what that phone allows). */
+  'phone.camera': { device: string; set: Record<string, number | boolean | 'auto' | 'manual'> }
   'scene.program': { sceneId: string }
   'scene.goLive': Record<string, never>
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
+  /** The manual fader: mix Live into Preview, 0 to 1. At 1, Preview goes on air (what was live goes to Preview). */
+  'transition.mix': { level: number }
   'layer.setVisible': { sceneId: string; layerId: string; visible: boolean }
   /** The Overlay's ON AIR button: its sources on top of every scene, or off. Its sources use sceneId "overlay". */
   'overlay.set': { on: boolean }
@@ -72,8 +78,24 @@ export interface CommandMap {
   'scene.store': { sceneId: string; stored: boolean }
   /** Leave the Overlay off while this scene is on air. */
   'scene.setHideOverlay': { sceneId: string; hide: boolean }
-  /** A gfx app cued a commercial (a video file on this PC): fill the Commercial scene with it and put it in Preview. */
-  'cue.commercial': { name: string; path: string }
+  /** Link a Graphics (Overlay) source to a scene: it then shows only while that scene is in Live. on: false unlinks it. */
+  'overlay.link': { layerId: string; sceneId: string; on: boolean }
+  /**
+   * A gfx app cued a commercial break (video files on this PC, played in order): fill the Gfx commercial
+   * scene with them and put it in Preview. One video can be given as name and path.
+   */
+  'cue.commercial': { name?: string; path?: string; items?: { name: string; path: string }[]; extend?: boolean }
+  /** The break's video (layerId) ended: show the next one in the Gfx commercial scene. */
+  'cue.next': { layerId: string }
+  /** The commercial break's sound: its level, mute, and what the mics do during a break. */
+  'cue.sound': { volume?: number; muted?: boolean; mics?: 'off' | 'duck' | 'on' }
+  /** Loop the commercial break (on), or let it end after this round (off). */
+  'cue.loop': { on: boolean }
+  /** The one sound for a scene: 'picture' (the sound with its camera), a channel's id, or null for none. */
+  'scene.setSound': { sceneId: string; sourceId: string | null }
+  /** Add a sound to a scene ('picture' or a channel's id), next to the ones it has. */
+  'scene.addSound': { sceneId: string; sourceId: string }
+  'scene.removeSound': { sceneId: string; sourceId: string }
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -182,9 +204,12 @@ type Permission = 'read' | 'operate' | 'data' | 'admin'
 export const ACTION_PERMISSION: Record<Action, Permission> = {
   'state.get': 'read',
   'scene.preview': 'operate',
+  'phone.facing': 'operate',
+  'phone.camera': 'operate',
   'scene.program': 'operate',
   'scene.goLive': 'operate',
   'transition.set': 'operate',
+  'transition.mix': 'operate',
   'layer.setVisible': 'operate',
   'overlay.set': 'operate',
   'audio.setVolume': 'operate',
@@ -207,8 +232,15 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.move': 'admin',
   'scene.store': 'admin',
   'scene.setHideOverlay': 'admin',
+  'overlay.link': 'admin',
   'cue.commercial': 'admin',
   'cue.clear': 'admin',
+  'cue.next': 'admin',
+  'cue.sound': 'operate',
+  'cue.loop': 'operate',
+  'scene.setSound': 'admin',
+  'scene.addSound': 'admin',
+  'scene.removeSound': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',

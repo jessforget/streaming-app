@@ -38,28 +38,34 @@
   .addr { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .addr b { color: var(--text); font-weight: 600; user-select: all; }
 
-  .cols { display: grid; grid-template-columns: 280px minmax(0, 1fr) 320px; min-height: 0; }
+  .cols { display: grid; grid-template-columns: 340px minmax(0, 1fr) 320px; min-height: 0; }
   aside, main { min-height: 0; overflow: auto; }
   h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 
   /* Rundown */
   .rundown { border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .items .group-head { list-style: none; margin: 10px 2px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .items .group-head:first-child { margin-top: 0; }
   .rundown.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
   .menu { position: absolute; right: 0; top: 36px; z-index: 5; display: grid; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 4px; min-width: 190px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
   .menu button { border: 0; background: transparent; text-align: left; min-height: 34px; border-radius: 6px; }
   .menu button:hover { background: var(--card); }
   ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-  .item { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
+  .item { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
   .item.preview { background: #16223a; border-color: var(--accent-strong); }
   .item.onair { background: #2a1618; border-color: var(--live); }
-  .thumb { height: 30px; border-radius: 4px; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
-  .thumb.lowerthird { background: #20242c; }
-  .thumb.lowerthird::before { content: ''; position: absolute; left: 5px; bottom: 9px; width: 28px; height: 6px; background: #f2f2f2; }
-  .thumb.lowerthird::after { content: ''; position: absolute; left: 5px; bottom: 5px; width: 32px; height: 4px; background: var(--accent); }
+  .thumb { height: 54px; border-radius: 4px; background-color: #0b0c0f; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
+  .thumb.lowerthird { background: #20242c; place-items: end start; }
+  .thumb .lt { margin: 0 0 7px 5px; max-width: 86px; display: grid; text-align: left; line-height: 1.15; }
+  .thumb .lt b { padding: 1px 4px; font-size: 8px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb .lt i { padding: 1px 4px; font-size: 6.5px; font-style: normal; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb video, .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb .badge { position: absolute; right: 3px; bottom: 3px; padding: 0 4px; border-radius: 3px; background: rgba(0,0,0,.65); font-size: 9px; }
   .thumb.video { background: linear-gradient(135deg, #3d5a80, #98c1d9); }
   .thumb.photos { background: linear-gradient(135deg, #7a5f52, #e0b48a); }
   .thumb.window { background: #4b5563; }
+  .thumb.bars { background: linear-gradient(90deg, #bfbfbf 0 14%, #bfbf00 0 28%, #00bfbf 0 42%, #00bf00 0 57%, #bf00bf 0 71%, #bf0000 0 85%, #0000bf 0); }
   .item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item.preview .sub { color: #9fc1ff; } .item.onair .sub { color: #ff9b9b; }
@@ -98,12 +104,39 @@
   .ask-bar .ask-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-start; }
   .ask-bar .ask-row button { min-height: 34px; padding: 0 14px; font-weight: 600; }
   .ask-bar .ask-row .cue-btn { background: var(--accent); border-color: var(--accent); color: #0b1a33; }
-  .cue-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
+  .cue-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cue-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; max-height: 190px; overflow: auto; }
+  .cue-list:empty { display: none; }
+  .cue-list li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 6px; color: var(--muted); }
+  .cue-list-head { margin: 8px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .cue-list li.can-drag { cursor: grab; border: 1px solid var(--line); background: var(--bg, #14171d); color: inherit; }
+  .cue-list li.can-drag:hover { border-color: var(--accent); }
+  .cue-list li .grip { color: var(--muted); font-size: 14px; line-height: 1; letter-spacing: -2px; user-select: none; }
+  .cue-list li.dragging { opacity: 0.4; }
+  .cue-list li.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+  .cue-list li.drop-after { box-shadow: 0 3px 0 var(--accent); }
+  .cue-list li.drop-end { justify-content: center; border: 1px dashed var(--line-2); color: var(--muted); font-size: 12px; padding: 6px; }
+  .cue-list li.drop-end.drop-on { border-color: var(--accent); color: inherit; background: rgba(76, 141, 255, 0.12); }
+  .cue-list li .n { width: 18px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cue-list li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cue-list li.now { color: inherit; background: rgba(255, 90, 90, 0.12); font-weight: 600; }
+  .cue-list li.played { opacity: 0.5; }
+  .cue-list li button { min-height: 24px; padding: 0 7px; font-size: 12px; margin: 0; }
+  .cue-bar.ending { border-color: #ff5a5a; background: rgba(255, 90, 90, 0.15); }
+  .cue-bar.ending #cueText { color: #ff8a8a; font-weight: 700; font-size: 15px; }
+  .cue-bar { display: block; font-size: 13px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); min-width: 0; }
   .cue-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .cue-bar.onair .dot { background: #ff5a5a; } .cue-bar.done .dot { background: var(--go); } .cue-bar.failed .dot { background: #f0c36b; }
   .cue-bar #cueText { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .loop-switch { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .loop-switch input { width: 16px; height: 16px; accent-color: #4c8dff; }
+  .cue-head .loop-switch + button { margin-left: 0; }
+  .cue-sound { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .cue-sound[hidden] { display: none; }
+  .cue-meter { flex: 1; height: 8px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .cue-meter span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3fb37f 0%, #3fb37f 70%, #e2b93b 100%); transition: width 0.18s linear; }
   .cue-prog { flex: 1; height: 4px; border-radius: 2px; background: var(--line); min-width: 60px; } .cue-prog span { display: block; height: 100%; border-radius: 2px; background: #ff5a5a; }
-  .cue-bar button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
+  .cue-head button { margin-left: auto; min-height: 30px; padding: 0 10px; font-size: 12px; }
   .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   .screen-tag { position: absolute; top: 6px; left: 6px; font-size: 11px; font-weight: 600; background: rgba(14, 16, 20, 0.8); color: #e8eaee; padding: 2px 6px; border-radius: 4px; }
 
@@ -179,6 +212,7 @@
           <button data-add="video">Video…</button>
           <button data-add="photos">Photos or slideshow…</button>
           <button data-add="window">A window on this laptop…</button>
+          <button data-add="bars">Color bars (and tone)</button>
         </div>
       </div>
       <ul class="items" id="items"></ul>
@@ -201,7 +235,7 @@
         <button class="take" id="take">Take</button>
         <button id="hide">Hide</button>
         <button id="next">Next ↓</button>
-        <button class="cue-btn" id="cue" hidden title="Put this video in the streaming app’s Preview as a full-screen commercial">Cue to stream</button>
+        <button class="cue-btn" id="cue" hidden title="Put this video in a commercial break, in the streaming app’s Preview. Cue more to play them one after the other.">Cue to stream</button>
       </div>
       <div class="ask-bar" id="askBar" hidden role="alertdialog" aria-labelledby="askTitle">
         <b id="askTitle">This video fills the whole stream</b>
@@ -209,9 +243,15 @@
         <div class="ask-row"><button class="cue-btn" id="askCue">Cue to stream</button><button id="askTake">Take anyway</button><button id="askCancel">Cancel</button></div>
       </div>
       <div class="cue-bar" id="cueBar" hidden role="status">
-        <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
-        <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
-        <button id="uncue" class="small">Uncue</button>
+        <div class="cue-head">
+          <span class="dot"></span><b id="cueState"></b><span id="cueText"></span>
+          <span class="cue-prog" id="cueProg" hidden><span id="cueFill"></span></span>
+          <label class="loop-switch" title="Play the break again from its first video until this is turned off; turned off, it ends after this round with the countdown"><input type="checkbox" id="breakLoop"> Loop the break</label>
+          <button id="uncue" class="small">Uncue</button>
+        </div>
+        <div class="cue-sound" id="cueSound" hidden><span>Sound on the stream</span><span class="cue-meter" role="meter" aria-label="Sound on the stream" aria-valuemin="0" aria-valuemax="100" id="cueMeter"><span id="cueLevel"></span></span><span id="cueSoundNote"></span></div>
+        <p class="cue-list-head" id="cueListHead" hidden>In the break, in play order · drag to change the order</p>
+        <ol class="cue-list" id="cueList"></ol>
       </div>
       <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
     </main>
@@ -243,7 +283,7 @@
 <script>
   const $ = (id) => document.getElementById(id)
   const desk = window.gfxDesktop || null
-  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window' }
+  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window', bars: 'Color bars' }
   const STYLE_COLORS = {
     classic: { box: '#f2f2f2', text: '#111111' },
     block: { box: '#0c0e12', text: '#ffffff' },
@@ -385,8 +425,84 @@
     if (i.kind === 'lowerthird') return i.title || 'Lower third'
     if (i.kind === 'video') return `Video · ${i.file}${i.ok ? '' : ' (missing)'}`
     if (i.kind === 'photos') return `Slideshow · ${i.count} photo${i.count === 1 ? '' : 's'}`
+    if (i.kind === 'bars') return `Color bars · ${i.sound !== false ? 'with 1 kHz tone' : 'no tone'}`
     return `Window · ${i.windowName || 'pick one'}`
   }
+  /**
+   * A small picture of what the item shows: a frame of the video, the first photo, the lower third's
+   * words in its look, the window as it is now. Kept between renders (the list redraws often).
+   */
+  const thumbs = new Map()
+  function thumbFor(i) {
+    const look = S.look || {}
+    const key = `${i.id}|${i.kind}|${i.kind === 'video' ? `${i.file}|${i.ok}` : ''}|${i.kind === 'photos' ? (i.files || []).join('/') : ''}|${i.kind === 'lowerthird' ? `${i.name}|${i.title}|${look.accent}|${look.box}|${look.text}` : ''}|${i.kind === 'window' ? i.sourceId : ''}`
+    const had = thumbs.get(i.id)
+    if (had && had.key === key) return had.el
+    const el = document.createElement('span')
+    el.className = `thumb ${i.kind}`
+    if (i.kind === 'video') {
+      if (i.ok) {
+        const v = document.createElement('video')
+        v.muted = true
+        v.preload = 'metadata'
+        v.playsInline = true
+        // A frame a second in (the very first is often black).
+        v.src = `/media/${i.id}#t=1`
+        el.append(v)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = i.ok ? '▶' : 'missing'
+      el.append(b)
+    } else if (i.kind === 'photos') {
+      if (i.count) {
+        const img = document.createElement('img')
+        img.alt = ''
+        img.loading = 'lazy'
+        img.src = `/media/${i.id}/0`
+        el.append(img)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = String(i.count || 0)
+      el.append(b)
+    } else if (i.kind === 'lowerthird') {
+      const lt = document.createElement('span')
+      lt.className = 'lt'
+      const n = document.createElement('b')
+      n.textContent = i.name || ' '
+      n.style.background = look.box || '#f2f2f2'
+      n.style.color = look.text || '#111'
+      const t = document.createElement('i')
+      t.textContent = i.title || ' '
+      t.style.background = look.accent || '#2563d9'
+      t.style.color = '#fff'
+      lt.append(n, t)
+      el.append(lt)
+    } else if (i.kind === 'window') {
+      el.textContent = '▢'
+      windowThumb(i, el)
+    }
+    thumbs.set(i.id, { key, el })
+    return el
+  }
+  /** The window's picture as it is now (only in the gfx app window), refreshed every few seconds. */
+  function windowThumb(i, el) {
+    if (!window.gfxDesktop?.windowThumb) return
+    const img = document.createElement('img')
+    img.alt = ''
+    const load = async () => {
+      if (!el.isConnected && thumbs.get(i.id)?.el !== el) return
+      const url = await window.gfxDesktop.windowThumb(i.sourceId, i.name).catch(() => null)
+      if (url) {
+        img.src = url
+        if (!img.isConnected) el.append(img)
+      }
+      if (thumbs.get(i.id)?.el === el) setTimeout(load, 5000)
+    }
+    load()
+  }
+
   function renderItems() {
     const ul = $('items')
     ul.textContent = ''
@@ -396,16 +512,24 @@
       li.textContent = 'Nothing yet. Press + Add, or drag videos and photos in.'
       ul.append(li)
     }
+    // Grouped by kind (the gfx app keeps them in this order): a heading over each group.
+    const GROUP_LABEL = { lowerthird: 'Lower thirds', video: 'Videos', photos: 'Photos and slideshows', window: 'Windows', bars: 'Color bars' }
+    const counts = {}
+    for (const i of S.items) counts[i.kind] = (counts[i.kind] || 0) + 1
     S.items.forEach((i, n) => {
+      if (n === 0 || S.items[n - 1].kind !== i.kind) {
+        const h = document.createElement('li')
+        h.className = 'group-head'
+        h.setAttribute('role', 'presentation')
+        h.textContent = `${GROUP_LABEL[i.kind] || 'Other'} · ${counts[i.kind]}`
+        ul.append(h)
+      }
       const li = document.createElement('li')
       const onAir = S.onAir?.id === i.id
       const preview = S.previewId === i.id
       li.className = `item ${onAir ? 'onair' : preview ? 'preview' : ''}`
       li.tabIndex = 0
-      const thumb = document.createElement('span')
-      thumb.className = `thumb ${i.kind}`
-      if (i.kind === 'video') thumb.textContent = '▶'
-      if (i.kind === 'window') thumb.textContent = '▢'
+      const thumb = thumbFor(i)
       const txt = document.createElement('span')
       txt.style.minWidth = '0'
       const nm = document.createElement('div')
@@ -429,10 +553,24 @@
         }
         tools.append(b)
       }
-      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0)
-      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1)
+      tool('↑', 'Move up', () => act({ action: 'move', id: i.id, up: true }), n === 0 || S.items[n - 1].kind !== i.kind)
+      tool('↓', 'Move down', () => act({ action: 'move', id: i.id }), n === S.items.length - 1 || S.items[n + 1].kind !== i.kind)
       tool('✕', 'Remove', () => confirmRemove(i))
       li.append(thumb, txt, tools)
+      // A video can be dragged into the commercial break's list.
+      if (i.kind === 'video') {
+        li.draggable = true
+        li.addEventListener('dragstart', (e) => {
+          dragItem = i.id
+          e.dataTransfer.effectAllowed = 'copy'
+          e.dataTransfer.setData('text/plain', i.name)
+        })
+        li.addEventListener('dragend', () => {
+          dragItem = ''
+          clearDrops()
+          renderMain()
+        })
+      }
       li.onclick = () => act({ action: 'preview', id: i.id })
       li.ondblclick = () => takeItem(i.id)
       li.onkeydown = (e) => {
@@ -462,6 +600,7 @@
   async function add(kind) {
     menu.hidden = true
     if (kind === 'lowerthird') return act({ action: 'add', item: { kind, name: 'New name', title: 'Title' } })
+    if (kind === 'bars') return act({ action: 'add', item: { kind, name: 'Color bars' } })
     if (kind === 'window') {
       if (!desk) return alertBar('Windows can be sent from the gfx app window only (Start Gfx App), not from a browser.')
       return act({ action: 'add', item: { kind, name: 'Window' } })
@@ -556,10 +695,13 @@
     $('hide').disabled = !o
     const pill = $('streamPill')
     pill.className = `pill ${S.stream.live ? 'live' : S.stream.connected ? 'ok' : ''}`
+    const onlyOn = S.stream.only ? ` · on ${S.stream.only} only` : ''
     $('streamText').textContent = S.stream.live
-      ? 'Streaming app connected · graphics live on the stream'
+      ? `Streaming app connected · graphics live on the stream${onlyOn}`
       : S.stream.connected
-        ? 'Streaming app connected · graphics not on the stream now'
+        ? S.stream.only
+          ? `Streaming app connected · graphics wait for ${S.stream.only} to be live`
+          : 'Streaming app connected · graphics not on the stream now'
         : 'Streaming app not connected'
     renderCue(p)
     // The On air screen shows the stream's real Live picture when the streaming app sends it.
@@ -572,41 +714,198 @@
     const waits = o && o.playOnLive !== false && S.stream.connected && !S.stream.live
     $('liveHint').className = `hint ${waits ? 'waiting' : ''}`
     $('liveHint').textContent = waits
-      ? `${o.name} is ready: it starts when the streaming app puts the graphics live (Overlay on, or a scene with them).`
+      ? S.stream.only
+        ? `${o.name} is ready: it comes in when ${S.stream.only} goes live on the stream.`
+        : `${o.name} is ready: it starts when the streaming app puts the graphics live.`
       : 'Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.'
   }
 
   // ---------- Cue to stream: a video as a commercial, in the streaming app's Preview ----------
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  /** The break video being dragged (its index), or -1; a rundown video being dragged in (its id), or ''. */
+  let dragFrom = -1
+  let dragItem = ''
+  let cueListSig = ''
   function renderCue(p) {
     const c = S.cue
+    // (An older gfx app server sends one video, not a list.)
+    const items = c?.items ?? (c?.id ? [{ id: c.id, name: c.name }] : [])
+    const onAir = c?.status === 'onair'
+    // A break can change until it has played: before it airs all of it, on air the ones still to come.
+    const open = !!c && !['done', 'failed'].includes(c.status)
+    const at = c?.at ?? 0
+    const free = onAir ? at + 1 : 0
+    const inBreak = open && items.some((x) => x.id === p?.id)
+    const addText = `Add to break (${items.length + 1})`
     $('cue').hidden = !p || p.kind !== 'video'
-    $('cue').disabled = !!c && c.status === 'onair'
-    $('cue').textContent = c?.status === 'onair' ? 'Commercial on air…' : c && c.id === p?.id && c.status !== 'done' && c.status !== 'failed' ? 'Cue again' : 'Cue to stream'
+    $('cue').disabled = inBreak
+    $('cue').textContent = inBreak ? 'In the break' : open ? addText : 'Cue to stream'
+    $('askCue').textContent = open ? addText : 'Cue to stream'
     $('cueBar').hidden = !c
-    if (!c) return
+    if (!c) {
+      cueListSig = ''
+      return
+    }
+    const n = items.length
+    const last = at === n - 1
+    const leftHere = Math.max(0, (c.dur || 0) - (c.pos || 0))
+    const looping = !!S.breakLoop?.on
+    $('breakLoop').checked = looping
+    // A looping break doesn't end: no countdown until Loop is turned off.
+    const ending = onAir && last && !c.pending && c.dur && leftHere <= 10 && !looping
+    const what = n === 1 ? items[0].name : `Break of ${n}`
     const words = {
       waiting: ['Waiting', 'for the streaming app (it needs a Graphics source from this gfx app)'],
       sent: ['Sent', 'to the streaming app…'],
       copying: ['Copying', 'to the streaming PC…'],
-      cued: ['Cued', 'in the streaming app’s Preview · waiting for Transition'],
-      onair: ['On air', c.dur ? `${clock(c.pos)} of ${clock(c.dur)}` : clock(c.pos)],
-      done: ['Done', 'played on the stream; back to the scene before'],
+      cued: ['Cued', n > 1 ? 'in the streaming app’s Preview · one Transition plays them all, then the stream goes to its Preview' : 'in the streaming app’s Preview · waiting for Transition'],
+      onair: [
+        'On air',
+        c.pending
+          ? 'adding to the break…'
+          : ending
+            ? `Ends in ${Math.ceil(leftHere)}`
+            : looping
+              ? `Looping · ${n > 1 ? `${at + 1} of ${n}` : clock(c.pos)} · turn Loop off to end it after this round`
+            : n > 1
+              ? `${at + 1} of ${n} · ${clock(c.left || 0)} left in the break`
+              : c.dur
+                ? `${clock(c.pos)} of ${clock(c.dur)}`
+                : clock(c.pos)
+      ],
+      done: ['Done', 'played on the stream; the streaming app went to its Preview'],
       failed: ['Couldn’t cue', c.error || 'the streaming app could not copy it']
     }[c.status] ?? [c.status, '']
-    $('cueBar').className = `cue-bar ${c.status}`
-    $('cueState').textContent = `${c.name}: ${words[0]}`
-    $('cueText').textContent = words[1]
-    $('cueProg').hidden = c.status !== 'onair' || !c.dur
+    $('cueBar').className = `cue-bar ${c.status} ${ending ? 'ending' : ''}`
+    $('cueState').textContent = `${what}: ${words[0]}`
+    $('cueText').textContent = onAir && c.error && !c.pending ? `${words[1]} · couldn’t add: ${c.error}` : words[1]
+    $('cueProg').hidden = !onAir || !c.dur
+    // The break's sound as the streaming app hears it (a meter like the one in its Sound panel).
+    $('cueSound').hidden = !onAir
+    const lvl = Math.round(Math.sqrt(Math.max(0, Math.min(1, c.level || 0))) * 100)
+    $('cueLevel').style.width = `${lvl}%`
+    $('cueMeter').setAttribute('aria-valuenow', String(lvl))
+    $('cueSoundNote').textContent = onAir && c.pos > 2 && !c.level ? 'no sound' : ''
     $('cueFill').style.width = `${c.dur ? Math.min(100, (100 * c.pos) / c.dur) : 0}%`
-    $('uncue').hidden = c.status === 'onair'
-    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : 'Uncue'
+    $('uncue').hidden = onAir
+    $('uncue').textContent = c.status === 'done' || c.status === 'failed' ? 'Clear' : n > 1 ? 'Uncue all' : 'Uncue'
+    // The break's videos, in play order. Not rebuilt while dragging (it would change under the mouse).
+    const list = $('cueList')
+    if (dragFrom >= 0 || dragItem) return
+    // The streaming app reports 5 times a second: rebuild only when the list itself changes,
+    // so its buttons stay put under the mouse (a click on a row replaced mid-click is lost).
+    const sig = JSON.stringify([open, onAir, at, items.map((x) => [x.id, x.name])])
+    if (sig === cueListSig) return
+    cueListSig = sig
+    list.textContent = ''
+    $('cueListHead').hidden = !open
+    $('cueListHead').textContent = onAir
+      ? 'In the break, in play order · drag more videos in from the rundown'
+      : 'In the break, in play order · drag to change the order, or drag more in from the rundown'
+    if (!open) return
+    items.forEach((x, i) => {
+      const li = document.createElement('li')
+      if (onAir) li.className = i === at ? 'now' : i < at ? 'played' : ''
+      const canChange = i >= free
+      if (canChange && n - free > 1) {
+        li.classList.add('can-drag')
+        li.draggable = true
+        li.title = 'Drag to change the order'
+        const grip = document.createElement('span')
+        grip.className = 'grip'
+        grip.setAttribute('aria-hidden', 'true')
+        grip.textContent = '⋮⋮'
+        li.append(grip)
+        dragRow(li, i)
+      }
+      dropTarget(li, () => i, free)
+      const num = document.createElement('span')
+      num.className = 'n'
+      num.textContent = `${i + 1}.`
+      const nm = document.createElement('span')
+      nm.className = 'nm'
+      nm.textContent = onAir && i === at ? `${x.name} · playing` : x.name
+      li.append(num, nm)
+      if (canChange) {
+        const btn = (label, title, fn, off) => {
+          const b = document.createElement('button')
+          b.textContent = label
+          b.title = title
+          b.setAttribute('aria-label', `${title}: ${x.name}`)
+          b.disabled = !!off
+          b.onclick = fn
+          li.append(b)
+        }
+        btn('↑', 'Play earlier', () => act({ action: 'cue-move', index: i, up: true }), i <= free)
+        btn('↓', 'Play later', () => act({ action: 'cue-move', index: i }), i === n - 1)
+        btn('✕', 'Take out of the break', () => act({ action: 'uncue', index: i }))
+      }
+      list.append(li)
+    })
+    // The end of the list: a place to drop more videos.
+    const end = document.createElement('li')
+    end.className = 'drop-end'
+    end.textContent = '+ Drag a video here from the rundown'
+    dropTarget(end, () => n, free, true)
+    list.append(end)
+  }
+  const clearDrops = () => {
+    for (const x of $('cueList').children) x.classList.remove('drop-before', 'drop-after', 'drop-on')
+  }
+  /** A row a break video (reorder) or a rundown video (add) can be dropped on: before or after it. */
+  function dropTarget(li, index, free, isEnd) {
+    const after = (e) => !isEnd && e.clientY > li.getBoundingClientRect().top + li.getBoundingClientRect().height / 2
+    const place = (e) => Math.max(free, index() + (after(e) ? 1 : 0))
+    li.addEventListener('dragover', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = dragItem ? 'copy' : 'move'
+      clearDrops()
+      li.classList.add(isEnd ? 'drop-on' : after(e) ? 'drop-after' : 'drop-before')
+    })
+    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after', 'drop-on'))
+    li.addEventListener('drop', (e) => {
+      if (dragFrom < 0 && !dragItem) return
+      e.preventDefault()
+      e.stopPropagation()
+      clearDrops()
+      const to = place(e)
+      if (dragItem) {
+        const id = dragItem
+        dragItem = ''
+        act({ action: 'cue', id, index: to })
+        return
+      }
+      const from = dragFrom
+      dragFrom = -1
+      // Where it lands once taken out of its old place.
+      const lands = from < to ? to - 1 : to
+      if (lands !== from) act({ action: 'cue-move', index: from, to: lands })
+      else renderMain()
+    })
+  }
+  /** Drag a video of the break to another place in the list. */
+  function dragRow(li, i) {
+    li.addEventListener('dragstart', (e) => {
+      dragFrom = i
+      li.classList.add('dragging')
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(i))
+    })
+    li.addEventListener('dragend', () => {
+      dragFrom = -1
+      li.classList.remove('dragging')
+      clearDrops()
+      renderMain()
+    })
   }
   $('cue').onclick = () => {
     closeAsk()
     act({ action: 'cue', id: S.previewId })
   }
   $('uncue').onclick = () => act({ action: 'uncue' })
+  $('breakLoop').onchange = (e) => act({ action: 'break-loop', on: e.target.checked })
 
   // ---------- Settings for the item in Preview ----------
   let builtFor = ''
@@ -778,6 +1077,10 @@
     const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
     box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
     if (it.kind === 'lowerthird') box.append(lookSection())
+    if (it.kind === 'bars') {
+      box.append(check('Send a 1 kHz tone to the stream (−20 dBFS, the usual line-up level)', it.sound !== false, (v) => change(id, { sound: v }, true)))
+      box.append(div('hint', 'Bars and tone go out before the show, so the streaming operator and the platforms can check the picture and the sound level. The tone is heard only on the stream, not here.'))
+    }
     if (it.kind === 'video') {
       box.append(check('Send its sound to the stream', it.sound !== false, (v) => change(id, { sound: v }, true)))
       box.append(div('hint', 'The sound shows up in the streaming app as a channel named after the graphics source, with its own volume in that source’s settings.'))

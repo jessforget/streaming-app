@@ -147,15 +147,36 @@ interface Finder {
   test(url: string): Promise<TestResult>
   find(onFound: (f: FoundGfx) => void, onProgress: (p: { checked: number; total: number; nets: string[]; done?: boolean }) => void): Promise<FoundGfx[]>
   stopFind(): void
+  openGfxApp?: () => Promise<{ ok: boolean; url?: string; why?: string }>
 }
+/**
+ * Start the gfx app on this PC (one operator, two monitors), or bring its window forward.
+ * Resolves with its /live address once it answers, or a reason it didn't start.
+ */
+export async function openGfxAppHere(): Promise<{ ok: boolean; url?: string; why?: string }> {
+  const f = finder()
+  if (!f?.openGfxApp) return { ok: false, why: 'Only the desktop version can start the gfx app.' }
+  const r: { ok: boolean; url?: string; why?: string } = await f.openGfxApp().catch((e: unknown) => ({ ok: false, why: String(e) }))
+  if (!r.ok || !r.url) return r
+  // It takes a few seconds to start the first time.
+  for (let i = 0; i < 20; i++) {
+    const t = await f.test(r.url).catch(() => null)
+    if (t?.result === 'connected') return r
+    await new Promise((ok) => setTimeout(ok, 500))
+  }
+  return { ok: false, why: 'The gfx app was started but didn’t answer yet. Give it a moment, then press Find.' }
+}
+
+export const canOpenGfxApp = () => !!finder()?.openGfxApp
+
 const finder = (): Finder | null => {
   const d = (globalThis as { desktopGraphics?: Partial<Finder> }).desktopGraphics
   return d?.find && d.test && d.stopFind ? (d as Finder) : null
 }
 
 /**
- * The address of the graphics page, with Test and "Find gfx apps on the network"
- * (the desktop version looks on this PC's network and lists the gfx apps that answer).
+ * The address of the graphics page, with Test, "Open the gfx app on this PC" and "Find gfx apps"
+ * (the desktop version looks on this PC first, then on its network, and lists the gfx apps that answer).
  */
 export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: string) => void }) {
   const f = finder()
@@ -190,6 +211,18 @@ export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: stri
       .catch(() => [] as FoundGfx[])
     if (alive.current) setScan((s) => (s ? { ...s, found: found.length ? found : s.found, done: true } : s))
   }
+  const [opening, setOpening] = useState(false)
+  const openHere = async () => {
+    setOpening(true)
+    setScan(null)
+    const r = await openGfxAppHere()
+    if (!alive.current) return
+    setOpening(false)
+    if (r.ok && r.url) {
+      setUrl(r.url)
+      setTest({ url: r.url, r: { result: 'connected', name: 'this PC' } })
+    } else setTest({ url: url.trim(), r: { result: 'unreachable', why: r.why } })
+  }
   const stop = () => {
     f?.stopFind()
     setScan((s) => (s ? { ...s, done: true } : s))
@@ -214,9 +247,16 @@ export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: stri
         )}
       </div>
       {f ? (
-        <button type="button" className="accent strong gfx-find-btn" onClick={runFind} disabled={!!scan && !scan.done}>
-          Find gfx apps on the network
-        </button>
+        <div className="gfx-find-row">
+          <button type="button" className="accent strong gfx-find-btn" onClick={runFind} disabled={!!scan && !scan.done}>
+            Find gfx apps (this PC and network)
+          </button>
+          {f.openGfxApp && (
+            <button type="button" className="gfx-open-btn" onClick={openHere} disabled={opening} title="One operator, two monitors: run the gfx app on this PC too">
+              {opening ? 'Opening the gfx app…' : 'Open the gfx app on this PC'}
+            </button>
+          )}
+        </div>
       ) : (
         <small className="muted">Your gfx app shows this address. Give the gfx laptop a fixed address on the router so it never changes.</small>
       )}
@@ -227,7 +267,7 @@ export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: stri
             {!scan.done && <span className="spinner" aria-hidden="true" />}
             <strong>
               {!scan.done
-                ? `Looking on ${scan.nets.length ? scan.nets.map((n) => `${n}.x`).join(', ') : 'this network'}…`
+                ? `Looking on this PC${scan.nets.length ? ` and ${scan.nets.map((n) => `${n}.x`).join(', ')}` : ''}…`
                 : scan.found.length
                   ? `Found ${scan.found.length} gfx app${scan.found.length === 1 ? '' : 's'}`
                   : 'No gfx app found'}
@@ -245,9 +285,9 @@ export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: stri
                 <li key={x.url}>
                   <div>
                     <strong>{x.local ? 'Gfx app on this PC' : `Gfx app on ${x.name}`}</strong>
-                    <span className="muted small">{`${x.host}:${x.port} · ${x.items} item${x.items === 1 ? '' : 's'} in the rundown${x.local ? ' · for trying things out' : ''}`}</span>
+                    <span className="muted small">{`${x.host}:${x.port} · ${x.items} item${x.items === 1 ? '' : 's'} in the rundown${x.local ? ' · one operator, two monitors' : ''}`}</span>
                   </div>
-                  <button type="button" className={x.local ? '' : 'accent strong'} onClick={() => use(x)}>
+                  <button type="button" className="accent strong" onClick={() => use(x)}>
                     Use this
                   </button>
                 </li>
@@ -256,11 +296,11 @@ export function GraphicsAddress({ url, setUrl }: { url: string; setUrl: (u: stri
           )}
           {scan.done && !scan.found.length && (
             <p className="small">
-              Is the Gfx app open on the other PC? If it is, its top bar shows a <b>Let the streaming PC in</b> button when Windows Firewall is blocking it. Both PCs need to be on the same network.
+              Is the Gfx app open? On this PC, press <b>Open the gfx app on this PC</b>. On another PC, its top bar shows a <b>Let the streaming PC in</b> button when Windows Firewall is blocking it, and both PCs need to be on the same network.
             </p>
           )}
           <div className="gfx-scan-foot">
-            <span className="muted small">{scan.done ? '' : 'Takes about 10 seconds. Only this network is checked.'}</span>
+            <span className="muted small">{scan.done ? '' : 'Takes about 10 seconds. This PC first, then this network.'}</span>
             {scan.done ? (
               <button type="button" className="small" onClick={() => setScan(null)}>
                 Done

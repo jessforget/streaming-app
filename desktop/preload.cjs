@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('desktopGraphics', {
     })
   },
   stopFind: () => ipcRenderer.send('gfx:find-stop'),
+  /** Start the gfx app on this PC (or bring it forward): { ok, url?, why? }. */
+  openGfxApp: () => ipcRenderer.invoke('gfx:open-app'),
   /** A gfx app cued a commercial: { origin, take, name, url } or { origin, take, clear: true }. */
   onCue: (fn) => {
     const h = (_e, c) => fn(c)

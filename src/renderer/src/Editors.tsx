@@ -4,7 +4,7 @@ import type { AppState, AudioKind, AudioSource, InputDevice, Layer, LayerKind, P
 import { LAYER_KINDS, PLACEMENTS, PLACEMENT_LABEL, SYNC_OFFSET_RANGE, channelCount, channelName, placementOf, isOverlay, scenesOnAir, showScenes } from '../../shared/state'
 import { GRAPHICS_SIZES, type GraphicsSize } from '../../shared/state'
 import { GraphicsAddress, GraphicsCheck, GraphicsDetail } from './GraphicsParts'
-import { deviceName } from './parts'
+import { PhoneCameraSettings, PhoneFacingSwitch, deviceName } from './parts'
 import type { Run } from './useApp'
 
 export const KIND_LABEL: Record<LayerKind, string> = {
@@ -17,6 +17,7 @@ export const KIND_LABEL: Record<LayerKind, string> = {
   screen: 'Screen',
   window: 'Window',
   color: 'Color',
+  bars: 'Color bars',
   countdown: 'Countdown',
   slideshow: 'Slideshow',
   scene: 'Scene'
@@ -32,6 +33,7 @@ const KIND_HELP: Record<LayerKind, string> = {
   screen: 'Everything on one of this PC’s screens',
   window: 'One app window on this PC',
   color: 'A solid color, as a background or a box behind text',
+  bars: 'Standard color bars, with a 1 kHz line-up tone if you like: before the show, to check the picture and sound levels on the stream',
   countdown: 'Counts down to a time (like 19:30) or for some minutes after the scene goes on air',
   slideshow: 'Every picture in a folder, one after another',
   scene: 'Another scene shown inside this one, such as a logo-and-title scene used on every slide'
@@ -150,7 +152,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
       {scene.layers.length === 0 && !adding && (
         <p className="muted">
           {overlay
-            ? 'Sources here sit on top of every scene, in Preview and Live: add your Graphics (network) source here.'
+            ? 'Anything here sits on top of the scene in Live (never in Preview): graphics, an image, a window, text. Then drag its card in the Overlays row onto a scene to show it only there.'
             : 'No sources yet. Add the ATEM or HyperDeck as a video input.'}
         </p>
       )}
@@ -169,6 +171,8 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
               </label>
               <span className="layer-name">{l.name}</span>
               <LayerDetail state={state} layer={l} />
+              {l.kind === 'video' && <PhoneFacingSwitch state={state} run={run} device={l.device} />}
+              {l.kind === 'video' && <PhoneCameraSettings state={state} run={run} device={l.device} />}
               <span className="layer-tools">
                 <button
                   className="ghost icon"
@@ -213,7 +217,7 @@ export function SourceList({ state, run, scene }: { state: AppState; run: Run; s
         ))}
       </ul>
       {overlay ? (
-        scene.layers.length > 0 && <p className="hint">On top of every scene, in Preview and Live. Switching scenes doesn’t touch it. To keep it off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
+        scene.layers.length > 0 && <p className="hint">On top of the scene in Live, never in Preview. Not linked = every scene; drag a card in the Overlays row onto a scene card to show it only there. To keep the every-scene ones off one scene (like Starting soon), tick “Hide the Overlay in this scene” there.</p>
       ) : (
         <>
           <label className="check-row">
@@ -249,6 +253,10 @@ function LayerDetail({ state, layer }: { state: AppState; layer: Layer }) {
         : `${layer.minutes ?? 5} min`
       : layer.kind === 'color'
         ? layer.color
+        : layer.kind === 'bars'
+          ? layer.sound
+            ? `with tone · ${Math.round((layer.volume ?? 1) * 100)}%`
+            : 'no tone'
         : layer.kind === 'media'
           ? `${layer.url ?? ''}${layer.loop === false ? ' · plays once' : ' · loops'}${layer.sound ? ' · with sound' : ''}`
           : (layer.text ?? layer.url)
@@ -363,6 +371,19 @@ function SourceFields(props: { state: AppState; kind: LayerKind; scene: Scene; v
           Seconds per picture
           <input type="number" min={1} max={3600} value={v.seconds} onChange={(e) => set('seconds', e.target.value)} />
         </label>
+      )}
+      {kind === 'bars' && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={v.sound} onChange={(e) => set('sound', e.target.checked)} /> Play a 1 kHz tone while this scene is on air
+          </label>
+          {v.sound && (
+            <label>
+              Tone level (100% = −20 dBFS, the usual line-up level)
+              <input type="range" min={0} max={100} value={v.volume} onChange={(e) => set('volume', e.target.value)} />
+            </label>
+          )}
+        </>
       )}
       {kind === 'color' && (
         <label>
@@ -493,6 +514,8 @@ function kindFields(kind: LayerKind, v: Fields) {
       return { ...(v.url && { url: v.url }), seconds: Math.max(1, Number(v.seconds) || 5) }
     case 'color':
       return { color: v.color }
+    case 'bars':
+      return { sound: v.sound, volume: Math.min(1, Math.max(0, Number(v.volume) / 100 || 0)) }
     case 'countdown':
       return {
         text: v.text || 'Starting in {time}',
@@ -513,12 +536,14 @@ function kindFields(kind: LayerKind, v: Fields) {
   }
 }
 
-function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
+export function AddSourceForm({ state, run, scene, onDone }: { state: AppState; run: Run; scene: Scene; onDone: () => void }) {
   const [kind, setKind] = useState<LayerKind>('video')
   const [v, set] = useFields({ device: state.inputs.video[0]?.id, placement: 'full' })
   const pick = (k: LayerKind) => {
     setKind(k)
     set('placement', k === 'text' ? 'lower-third' : k === 'countdown' ? 'center' : 'full')
+    // Bars and tone: the tone is on at the usual line-up level.
+    if (k === 'bars') set('sound', true)
   }
   const needsDevice = (kind === 'video' && !v.device) || (kind === 'scene' && !v.showScene) || (kind === 'graphics' && !v.url.trim())
   const add = async () => {

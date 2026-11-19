@@ -92,6 +92,14 @@ app checks its own rules and shows **Let the streaming PC in**, which adds one
 rule letting PCs on the same network in (Windows asks to confirm).
 
 **Cue to stream (commercials).** In the gfx app, a video has **Cue to stream**.
+Cue more videos to make a **break**: the button becomes **Add to break (n)**, and
+the list under it can be reordered or trimmed until it airs. One Transition in the
+streaming app plays them in order, then goes to whatever is in the streaming
+app's Preview (a camera or any other scene; the scene before if Preview is
+empty). While the break is on air, more videos can be dragged from the rundown
+into its list (or added with the button), and the ones still to come reordered. The
+streaming app's Gfx commercial card shows "2 of 3 · time left", and a big red
+"Ends in N" in the last 10 seconds of the last video (the producer's cue).
 For a full-screen video, while the streaming app is connected, Cue to stream is
 the main button; Take becomes **Take over everything** and asks first, because
 a Taken video goes in the Overlay, on top of every scene and camera.
@@ -122,3 +130,11 @@ The show (rundown and look) is saved in the gfx app's settings folder
 Without the window (only Node.js): `node gfx-app/server.cjs --open` runs the
 same server and opens the operator page in a browser. Videos and photos can't
 be picked there, and windows can't be sent.
+
+**Color bars.** Both apps have them, for line-up before the show: the 75% bars with
+the strip and PLUGE row. In the streaming app, add a **Color bars** source to a
+scene (say a "Bars" scene); in the gfx app, **+ Add → Color bars (and tone)** and
+Take it. Each can send a 1 kHz tone at −20 dBFS (the usual line-up level) while on
+air: the streaming app's appears on the mixer as "Color bars (tone)", the gfx
+app's through its Graphics source's sound.
+

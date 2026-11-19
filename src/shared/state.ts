@@ -14,11 +14,12 @@ export type LayerKind =
   | 'graphics'
   | 'media'
   | 'color'
+  | 'bars'
   | 'countdown'
   | 'slideshow'
   | 'scene'
 
-export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
+export const LAYER_KINDS: LayerKind[] = ['video', 'graphics', 'image', 'media', 'text', 'color', 'bars', 'countdown', 'slideshow', 'scene', 'screen', 'window', 'browser']
 
 /** The sizes a Graphics (network) page can be drawn at. */
 export type GraphicsSize = '1080p' | '720p'
@@ -93,6 +94,11 @@ export interface Layer {
    */
   size?: GraphicsSize
   fps?: number
+  /**
+   * Overlay (Graphics) sources only: show only while one of these scenes is in Live
+   * (linked by dropping its graphics card on the scene card). Absent = over every scene.
+   */
+  onlyIn?: string[]
 }
 
 export interface Scene {
@@ -109,10 +115,27 @@ export interface Scene {
   hideOverlay?: boolean
   /** The scene a gfx app's "Cue to stream" fills with its commercial (made the first time, then reused). */
   commercial?: boolean
+  /** The commercial scene's sound: one channel for every video in the break, and what the mics do meanwhile. */
+  breakSound?: BreakSound
+  /** Play the break again from its first video, until someone turns this off or takes another scene. */
+  breakLoop?: boolean
 }
 
+/** Mics during a commercial break: off, 15 dB lower, or left as they are. */
+export type BreakMics = 'off' | 'duck' | 'on'
+export interface BreakSound {
+  volume: number
+  muted: boolean
+  mics: BreakMics
+}
+export const BREAK_SOUND: BreakSound = { volume: 1, muted: false, mics: 'off' }
+/** The one sound channel of a commercial break (in the mixer and its meters). */
+export const COMMERCIALS_CHANNEL = 'commercials'
+/** -15 dB, for mics while a break plays when they are set to "lower". */
+export const DUCK_GAIN = 0.178
+
 /**
- * The Overlay: sources drawn on top of every scene, in Preview and Live, like a
+ * The Overlay: sources drawn on top of the scene in Live (never in Preview), like a
  * downstream keyer on a vision mixer. Kept as a scene with this id (so its
  * sources open, play and edit like any other), but never shown as a scene card.
  */
@@ -134,13 +157,44 @@ export function ensureOverlay<T extends Pick<AppState, 'scenes' | 'overlayOn'>>(
   return state
 }
 
-/** Is the Overlay drawn over this scene? On, and the scene doesn't hide it. */
+/**
+ * Does this Overlay source show over this scene? Linked ones only over their scenes
+ * (even one that hides the Overlay); the rest over every scene that doesn't hide it.
+ */
+export function overlayLayerOver(l: Pick<Layer, 'onlyIn'>, scene: Pick<Scene, 'id' | 'hideOverlay' | 'commercial'>): boolean {
+  if (scene.commercial) return false
+  if (l.onlyIn?.length) return l.onlyIn.includes(scene.id)
+  return !scene.hideOverlay
+}
+
+/**
+ * The Overlay as drawn over this scene in Live: on, with only the sources that show
+ * over it. (Preview never shows the Overlay: graphics are only on the stream.)
+ */
 export function overlayOver(state: Pick<AppState, 'scenes' | 'overlayOn'>, sceneId: string): Scene | null {
   if (!state.overlayOn || isOverlay(sceneId)) return null
   const scene = state.scenes.find((x) => x.id === sceneId)
   const overlay = state.scenes.find(isOverlay)
-  if (!scene || scene.hideOverlay || !overlay || !overlay.layers.some((l) => l.visible)) return null
-  return overlay
+  if (!scene || !overlay) return null
+  const layers = overlay.layers.filter((l) => overlayLayerOver(l, scene))
+  if (!layers.some((l) => l.visible)) return null
+  return layers.length === overlay.layers.length ? overlay : { ...overlay, layers }
+}
+
+/**
+ * Is this source on the stream now? Shown, in a scene on air (`onAir` from scenesOnAir);
+ * an Overlay source also only over the scene in Live it shows over.
+ */
+export function layerOnAir(state: Pick<AppState, 'scenes' | 'programSceneId'>, scene: Pick<Scene, 'id'>, l: Pick<Layer, 'visible' | 'onlyIn'>, onAir: Set<string>): boolean {
+  if (!l.visible || !onAir.has(scene.id)) return false
+  if (!isOverlay(scene)) return true
+  const live = state.scenes.find((x) => x.id === state.programSceneId)
+  return !!live && overlayLayerOver(l, live)
+}
+
+/** The names of the scenes an Overlay source is linked to ("Main show, Z CAM"), or '' for every scene. */
+export function linkedNames(state: Pick<AppState, 'scenes'>, l: Pick<Layer, 'onlyIn'>): string {
+  return (l.onlyIn ?? []).map((id) => state.scenes.find((x) => x.id === id)?.name).filter(Boolean).join(', ')
 }
 
 /**
@@ -192,6 +246,10 @@ export interface InputDevice {
   channels?: number
   /** Audio devices: each input channel's name from the driver ("Ch 1", "Analogue 3"), when it gives them. */
   channelNames?: string[]
+  /** Phone cameras: which camera the phone is sending now (front = 'user', back = 'environment'). */
+  facing?: PhoneFacing
+  /** Phone cameras: the settings the phone's camera lets us change (exposure, white balance, focus...), with their values now. */
+  camera?: PhoneCamControl[]
 }
 
 /**
@@ -336,6 +394,11 @@ export interface AppState {
   /** The Overlay's ON AIR button: its sources are drawn on top of every scene (except ones that hide it). */
   overlayOn: boolean
   transition: { kind: 'cut' | 'fade'; durationMs: number }
+  /**
+   * The manual fader (T-bar): how far Live is mixed into the Preview scene, 0 to 1.
+   * Absent or 0 = Live shows its scene alone. Reaching 1 puts Preview on air. Not saved.
+   */
+  mix?: number
   audio: AudioSource[]
   stream: {
     live: boolean
@@ -355,6 +418,10 @@ export interface AppState {
   data: Record<string, DataField>
   devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[]; network: NetworkInfo }
   stats: HealthStats
+  /** Asked from the app or the remote: switch a phone to its front or back camera (by device id; seq tells a new ask). Not saved. */
+  phoneFlips?: Record<string, { facing: PhoneFacing; seq: number }>
+  /** Asked from the app or the remote: change a phone camera's settings (by device id). Not saved. */
+  phoneSets?: Record<string, { set: Record<string, PhoneCamValue>; seq: number }>
 }
 
 /** Where other computers on the network reach this PC (shown in About). Port 0 = that part is off. */
@@ -368,3 +435,30 @@ export interface NetworkInfo {
   /** Cameras that stream to the app (RTMP). */
   rtmpPort: number
 }
+/** A phone's camera: front ('user', the selfie one) or back ('environment'). */
+export type PhoneFacing = 'user' | 'environment'
+
+export type PhoneCamValue = number | boolean | 'auto' | 'manual'
+
+/** One setting of a phone's camera, as the phone describes it (only the ones that phone allows). */
+export interface PhoneCamControl {
+  /** exposure, ev, shutter, iso, wb, kelvin, focus, focusDist, zoom, torch */
+  key: string
+  label: string
+  type: 'mode' | 'range' | 'bool'
+  value: PhoneCamValue
+  /** type 'mode': auto / manual */
+  options?: ('auto' | 'manual')[]
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  /** 'log': the slider moves in ratios (shutter, ISO). */
+  scale?: 'log'
+  /** 'shutter': shown as 1/x of a second (the value is in 100-microsecond steps). */
+  fmt?: 'shutter'
+  /** Shown only while another setting has this value, e.g. ['exposure', 'manual']. */
+  show?: [string, string]
+}
+
+export const PHONE_CAM_KEYS = ['exposure', 'ev', 'shutter', 'iso', 'wb', 'kelvin', 'focus', 'focusDist', 'zoom', 'torch'] as const

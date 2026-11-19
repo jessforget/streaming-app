@@ -80,12 +80,18 @@ export function StudioBar({ studio, elsewhere, state }: { studio: Studio | null;
   const waiting = studio.waiting
   const problems: string[] = []
   for (const [id, why] of studio.compositor.problems) {
-    const name = state.inputs.video.find((d) => d.id === id)?.name ?? 'A video input'
-    problems.push(`${name}: ${why}`)
+    const dev = state.inputs.video.find((d) => d.id === id)
+    if (dev) {
+      problems.push(`${dev.name}: ${why}`)
+      continue
+    }
+    // Not among the cameras this PC sees now (unplugged, or a camera from another PC): say where it's used.
+    const uses = state.scenes.flatMap((sc) => sc.layers.filter((l) => l.device === id).map((l) => `${l.name} in ${sc.name}`))
+    problems.push(`${uses.length ? uses.join(', ') : 'A video input'}: ${why} (that camera isn’t plugged into this PC)`)
   }
   for (const [id, why] of studio.mixer.problems) {
     const layer = state.scenes.flatMap((x) => x.layers).find((l) => `mediasound-${l.id}` === id || `gfxsound-${l.id}` === id)
-    const name = state.audio.find((a) => a.id === id)?.name ?? (layer ? `${layer.name} (sound)` : 'An audio channel')
+    const name = state.audio.find((a) => a.id === id)?.name ?? (id === 'commercials' ? 'Commercials' : layer ? `${layer.name} (sound)` : 'An audio channel')
     if (!(id === 'desktop' || why.startsWith('Needs a click'))) problems.push(`${name}: ${why}`)
   }
   const soundOff = !studio.soundOn

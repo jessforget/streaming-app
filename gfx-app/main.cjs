@@ -14,6 +14,7 @@
  */
 const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } = require('electron')
 const { join } = require('node:path')
+const { readFileSync, writeFileSync } = require('node:fs')
 const { startServer } = require('./server.cjs')
 const firewall = require('./firewall.cjs')
 
@@ -52,11 +53,11 @@ async function open() {
     done({ video: source })
   })
 
-  // Fit a laptop screen: most of it, at least 1280 x 720.
-  const area = screen.getPrimaryDisplay().workAreaSize
+  // Where it was last time (the same monitor, size and place), when that monitor is still there.
+  // The first time on a PC with two monitors: the second one (the streaming app has the main one).
+  const place = windowPlace()
   win = new BrowserWindow({
-    width: Math.max(1280, Math.min(1600, area.width)),
-    height: Math.max(720, Math.min(900, area.height)),
+    ...place.bounds,
     minWidth: 1024,
     minHeight: 640,
     backgroundColor: '#0e1014',
@@ -64,11 +65,58 @@ async function open() {
     autoHideMenuBar: true,
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: false, backgroundThrottling: false }
   })
-  if (area.width <= 1600 || area.height <= 900) win.maximize()
+  if (place.maximized) win.maximize()
+  const remember = () => {
+    if (!win || win.isDestroyed() || win.isMinimized()) return
+    try {
+      writeFileSync(PLACE_FILE(), JSON.stringify({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }))
+    } catch {
+      // Not remembered; it still works.
+    }
+  }
+  let saveTimer = null
+  const later = () => {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(remember, 500)
+  }
+  win.on('move', later)
+  win.on('resize', later)
+  win.on('maximize', remember)
+  win.on('unmaximize', remember)
+  win.on('close', remember)
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.on('closed', () => app.quit())
   await win.loadURL(`${origin}/app`)
   console.log(`Gfx app running. Add to the streaming app: ${gfx.addresses().map((a) => `http://${a}:${gfx.port}/live`).join('  or  ') || `http://<this laptop>:${gfx.port}/live`}`)
+}
+
+const PLACE_FILE = () => join(app.getPath('userData'), 'window.json')
+
+/** Where to open the window: { bounds, maximized }. */
+function windowPlace() {
+  const displays = screen.getAllDisplays()
+  const fits = (b) => displays.some((d) => {
+    const a = d.workArea
+    // Most of its title bar on a monitor that is still there.
+    return b.x + 100 >= a.x && b.x + 100 <= a.x + a.width && b.y >= a.y - 10 && b.y + 30 <= a.y + a.height
+  })
+  try {
+    const saved = JSON.parse(readFileSync(PLACE_FILE(), 'utf8'))
+    const b = saved?.bounds
+    if (b && [b.x, b.y, b.width, b.height].every(Number.isFinite) && fits(b)) {
+      return { bounds: { x: b.x, y: b.y, width: Math.max(1024, b.width), height: Math.max(640, b.height) }, maximized: !!saved.maximized }
+    }
+  } catch {
+    // First time here.
+  }
+  const primary = screen.getPrimaryDisplay()
+  const other = displays.find((d) => d.id !== primary.id)
+  if (other) return { bounds: { ...other.workArea }, maximized: true }
+  // One screen (a laptop): most of it, at least 1280 x 720.
+  const a = primary.workArea
+  const width = Math.max(1280, Math.min(1600, a.width))
+  const height = Math.max(720, Math.min(900, a.height))
+  return { bounds: { x: a.x + Math.max(0, (a.width - width) / 2), y: a.y + Math.max(0, (a.height - height) / 2), width, height }, maximized: a.width <= 1600 || a.height <= 900 }
 }
 
 const fromApp = (e) => win && e.sender === win.webContents
@@ -106,6 +154,15 @@ ipcMain.handle('gfx:findWindow', async (e, id, name) => {
   const source = list.find((s) => s.id === id) ?? list.find((s) => s.name === name) ?? null
   nextCapture = source
   return source?.id ?? null
+})
+
+/** A small picture of a window or screen in the rundown (by id, or by name after it was reopened). */
+ipcMain.handle('gfx:windowThumb', async (e, id, name) => {
+  if (!fromApp(e)) return null
+  const get = (type) => desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 192, height: 108 } }).catch(() => [])
+  const list = [...(await get('window')), ...(await get('screen'))]
+  const s = list.find((x) => x.id === id) ?? list.find((x) => x.name === name)
+  return s && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null
 })
 
 /** Can the streaming PC get past Windows Firewall to this app? 'allowed', 'blocked' or 'unknown'. */

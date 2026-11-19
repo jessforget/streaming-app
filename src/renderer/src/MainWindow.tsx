@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { OVERLAY_ID, audible, isOverlay, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Scene } from '../../shared/state'
+import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, linkedNames, scenesOnAir, showScenes, type AppState, type AudioSource, type HealthStats, type Layer, type Scene } from '../../shared/state'
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
-import { AddAudioForm, AudioEditor, SceneTools, SourceList } from './Editors'
+import { AddAudioForm, AddSourceForm, AudioEditor, KIND_LABEL, SceneTools, SourceList } from './Editors'
+import { canOpenGfxApp, openGfxAppHere } from './GraphicsParts'
 import { InstallButton } from './install'
-import { HealthPill, Notice, ScenePicture } from './parts'
+import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
+import { PhoneCameraPanel } from './PhoneCameraPanel'
 import { Settings, type SettingsTab } from './Settings'
 import { About } from './About'
 import { ShowDialog, ShowMenu, useShowKeys, type ShowDialogKind } from './ShowMenu'
@@ -19,6 +21,8 @@ import { useApp, useElapsed, type Run } from './useApp'
  */
 /** The studio, for the live pictures on the scene cards (none in the mockup or on a tablet). */
 const StudioContext = createContext<Studio | null>(null)
+/** Commands, for controls on scene cards (the Gfx commercial's Loop). */
+const RunContext = createContext<Run | null>(null)
 
 export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; studioElsewhere?: boolean }) {
   const { bridge, studio = null, studioElsewhere = false } = props
@@ -26,6 +30,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   const [settings, setSettings] = useState<SettingsTab | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [showDialog, setShowDialog] = useState<ShowDialogKind | null>(null)
+  /** The Camera panel of a phone camera (from Sources, or the camera button on a scene card). */
+  const [phonePanel, setPhonePanel] = useState<string | null>(null)
   useEffect(() => studio?.onNotice(showNotice), [studio, showNotice])
   useSpaceToTransition(state, run, settings === null && !aboutOpen && showDialog === null)
   useShowKeys(state, run, setShowDialog)
@@ -41,6 +47,7 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
       />
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
+      <PhonePanelContext.Provider value={setPhonePanel}>
       <div className="workspace">
         <main className="stage">
           <Monitors state={state} run={run} studio={studio} />
@@ -68,6 +75,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
           </section>
         </aside>
       </div>
+      </PhonePanelContext.Provider>
+      {phonePanel && <PhoneCameraPanel state={state} run={run} studio={studio} device={phonePanel} onClose={() => setPhonePanel(null)} />}
       {settings && (
         <Settings
           state={state}
@@ -174,31 +183,7 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
           </div>
           {studio ? <LiveCanvas canvas={studio.compositor.preview} next /> : <ScenePicture scene={preview} state={state} next />}
         </section>
-        <div className="transition-col" role="group" aria-label="Transition">
-          <div className="segmented stacked" role="group" aria-label="Transition type">
-            {(['cut', 'fade'] as const).map((k) => (
-              <button
-                key={k}
-                className={state.transition.kind === k ? 'on' : ''}
-                aria-pressed={state.transition.kind === k}
-                onClick={() => run('transition.set', { kind: k })}
-              >
-                {k === 'cut' ? 'Cut' : `Fade ${state.transition.durationMs / 1000} s`}
-              </button>
-            ))}
-          </div>
-          <button
-            className="take"
-            onClick={() => run('scene.goLive')}
-            disabled={same}
-            title={same ? 'Preview and Live show the same scene' : `Put ${preview.name} on air (space bar)`}
-          >
-            Transition
-          </button>
-          <kbd className="key-hint" title="Press the space bar to transition">
-            Space
-          </kbd>
-        </div>
+        <TransitionColumn state={state} run={run} preview={preview} same={same} />
         <section className="monitor program" aria-label="Live">
           <div className="monitor-head">
             <span className="badge live">{state.stream.live ? 'ON AIR' : 'LIVE'}</span>
@@ -210,6 +195,161 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
           {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
         </section>
       </div>
+    </div>
+  )
+}
+
+const FADE_TIMES = [300, 500, 1000, 2000]
+const secs = (ms: number) => `${Math.round(ms / 100) / 10}`
+
+/**
+ * Between Preview and Live, like a vision mixer: Cut or Fade (and how long), the
+ * Transition button, and a manual fader (T-bar) to mix by hand.
+ */
+function TransitionColumn({ state, run, preview, same }: { state: AppState; run: Run; preview: Scene; same: boolean }) {
+  const t = state.transition
+  const [custom, setCustom] = useState<string | null>(null)
+  const setTime = (ms: number) => run('transition.set', { kind: 'fade', durationMs: Math.max(100, Math.min(5000, Math.round(ms))) })
+  return (
+    <div className="transition-col" role="group" aria-label="Transition">
+      <div className="segmented stacked" role="group" aria-label="Transition type">
+        {(['cut', 'fade'] as const).map((k) => (
+          <button key={k} className={t.kind === k ? 'on' : ''} aria-pressed={t.kind === k} onClick={() => run('transition.set', { kind: k })}>
+            {k === 'cut' ? 'Cut' : `Fade ${secs(t.durationMs)} s`}
+          </button>
+        ))}
+      </div>
+      {t.kind === 'fade' && (
+        <div className="fade-times" role="group" aria-label="Fade time">
+          {FADE_TIMES.map((ms) => (
+            <button key={ms} className={`small ${t.durationMs === ms ? 'on' : ''}`} aria-pressed={t.durationMs === ms} onClick={() => setTime(ms)} title={`Fade in ${secs(ms)} seconds`}>
+              {secs(ms)}
+            </button>
+          ))}
+          <label className="fade-custom" title="Any time up to 5 seconds">
+            <input
+              type="number"
+              min={0.1}
+              max={5}
+              step={0.1}
+              aria-label="Fade time in seconds"
+              value={custom ?? secs(t.durationMs)}
+              onChange={(e) => setCustom(e.target.value)}
+              onBlur={() => {
+                const v = Number(custom)
+                if (custom !== null && Number.isFinite(v) && v > 0) setTime(v * 1000)
+                setCustom(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') {
+                  setCustom(null)
+                  ;(e.target as HTMLInputElement).blur()
+                }
+              }}
+            />
+            s
+          </label>
+        </div>
+      )}
+      <button className="take" onClick={() => run('scene.goLive')} disabled={same} title={same ? 'Preview and Live show the same scene' : `Put ${preview.name} on air (space bar)`}>
+        Transition
+      </button>
+      <kbd className="key-hint" title="Press the space bar to transition">
+        Space
+      </kbd>
+      <TBar state={state} run={run} disabled={same} />
+    </div>
+  )
+}
+
+/**
+ * The manual fader (T-bar): drag it from one end to the other to mix Live into the
+ * Preview scene by hand. Let go halfway and Live stays mixed. At the far end, Preview
+ * is on air, and the bar stays there: the next pull goes back the other way.
+ */
+function TBar({ state, run, disabled }: { state: AppState; run: Run; disabled: boolean }) {
+  const track = useRef<HTMLDivElement>(null)
+  // Which end the bar rests at: the mix grows as it moves away from it.
+  const [restTop, setRestTop] = useState(true)
+  const [held, setHeld] = useState<number | null>(null)
+  const done = useRef(false)
+  const sendAt = useRef(0)
+  const pending = useRef<number | null>(null)
+  const mix = state.mix ?? 0
+  const level = held ?? mix
+  const pos = restTop ? level : 1 - level
+  const send = (v: number, now = false) => {
+    pending.current = v
+    const go = () => {
+      if (pending.current === null) return
+      const x = pending.current
+      pending.current = null
+      sendAt.current = performance.now()
+      void run('transition.mix', { level: x })
+    }
+    if (now || performance.now() - sendAt.current > 40) go()
+    else window.setTimeout(go, 40)
+  }
+  const levelAt = (clientY: number) => {
+    const r = track.current!.getBoundingClientRect()
+    const p = Math.min(1, Math.max(0, (clientY - r.top) / r.height))
+    return restTop ? p : 1 - p
+  }
+  const move = (v: number) => {
+    if (done.current) return
+    if (v >= 0.995) {
+      // The end: Preview goes on air; the bar now rests at this end.
+      done.current = true
+      setHeld(null)
+      send(1, true)
+      setRestTop((x) => !x)
+      return
+    }
+    setHeld(v)
+    send(v)
+  }
+  return (
+    <div
+      ref={track}
+      className={`tbar ${disabled ? 'disabled' : ''} ${level > 0 ? 'mixing' : ''}`}
+      role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-label="Manual fader"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(level * 100)}
+      aria-disabled={disabled}
+      title={disabled ? 'Preview and Live show the same scene' : 'Drag to mix Live into Preview by hand. At the end, Preview is on air.'}
+      onPointerDown={(e) => {
+        if (disabled || e.button !== 0) return
+        // No text selection or native drag: those would cancel the pull.
+        e.preventDefault()
+        window.getSelection()?.removeAllRanges()
+        e.currentTarget.focus()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        done.current = false
+        move(levelAt(e.clientY))
+      }}
+      onPointerMove={(e) => {
+        if (disabled || !e.currentTarget.hasPointerCapture(e.pointerId)) return
+        move(levelAt(e.clientY))
+      }}
+      onPointerUp={() => setHeld(null)}
+      onPointerCancel={() => setHeld(null)}
+      onKeyDown={(e) => {
+        if (disabled) return
+        const step = e.key === 'ArrowDown' ? 0.1 : e.key === 'ArrowUp' ? -0.1 : 0
+        if (!step) return
+        e.preventDefault()
+        done.current = false
+        move(Math.max(0, Math.min(1, level + (restTop ? step : -step))))
+        setHeld(null)
+      }}
+    >
+      <div className="tbar-fill" style={restTop ? { top: 0, height: `${pos * 100}%` } : { bottom: 0, height: `${(1 - pos) * 100}%` }} />
+      <div className="tbar-handle" style={{ top: `${pos * 100}%` }} />
+      {level > 0 && <span className="tbar-pct">{Math.round(level * 100)}%</span>}
     </div>
   )
 }
@@ -422,6 +562,7 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
   const studio = useContext(StudioContext)
   return (
     <>
+      <LinkedTabs scene={scene} state={state} />
       {studio ? <SceneThumb studio={studio} sceneId={scene.id} /> : <ScenePicture scene={scene} state={state} />}
       <span className="scene-name">
         <span>{scene.name}</span>
@@ -430,46 +571,335 @@ function SceneCardBody({ scene, state, live, next }: { scene: Scene; state: AppS
       </span>
       <SceneSounds scene={scene} state={state} studio={studio} />
       {studio && <MediaClock scene={scene} studio={studio} live={live} />}
+      {scene.commercial && !scene.layers.some((l) => l.kind === 'media') && <span className="media-clock empty">Nothing cued · cue videos from the gfx app</span>}
+      {scene.commercial && scene.layers.some((l) => l.kind === 'media') && <LoopToggle scene={scene} />}
     </>
+  )
+}
+
+/** The graphics linked to this scene, as tabs on top of its card (they move with it). ✕ unlinks one. */
+function LinkedTabs({ scene, state }: { scene: Scene; state: AppState }) {
+  const run = useContext(RunContext)
+  const linked = (state.scenes.find(isOverlay)?.layers ?? []).filter((l) => l.onlyIn?.includes(scene.id))
+  if (!linked.length) return null
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  return (
+    <span className="gfx-tabs">
+      {linked.map((l) => (
+        <span key={l.id} className={`gfx-tab ${l.visible ? '' : 'off'}`} title={`${l.name} shows only while ${scene.name} is in Live`}>
+          <span aria-hidden="true">🔗</span>
+          <span className="gfx-tab-name">{l.name}</span>
+          {run && (
+            <span
+              role="button"
+              tabIndex={0}
+              className="gfx-tab-x"
+              aria-label={`Unlink ${l.name} from ${scene.name}`}
+              title={`Unlink: ${l.name} goes back to the Overlays row`}
+              onDoubleClick={stop}
+              onClick={(e) => {
+                stop(e)
+                run('overlay.link', { layerId: l.id, sceneId: scene.id, on: false })
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  stop(e)
+                  run('overlay.link', { layerId: l.id, sceneId: scene.id, on: false })
+                }
+              }}
+            >
+              ✕
+            </span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/**
+ * Overlays: the Overlay's sources (graphics, images, windows, text, anything) as cards. Drag one onto a scene card to link it:
+ * then it shows only while that scene is in Live. Not linked = over every scene.
+ */
+function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: RefObject<HTMLElement | null> }) {
+  const overlay = state.scenes.find(isOverlay)
+  const layers = overlay?.layers ?? []
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number; dx: number; dy: number; w: number; h: number; target: string | null } | null>(null)
+  const start = useRef<{ id: string; x: number; y: number; pointer: number; rect: DOMRect } | null>(null)
+  const moved = useRef(false)
+  const latest = useRef(drag)
+  latest.current = drag
+  // The scene card under the pointer (in "In this show"), if graphics can go there.
+  const targetAt = (x: number, y: number): string | null => {
+    for (const el of document.elementsFromPoint(x, y)) {
+      const card = (el as HTMLElement).closest<HTMLElement>('[data-scene-id]')
+      if (card && grid.current?.contains(card)) return card.dataset.commercial ? null : card.dataset.sceneId ?? null
+    }
+    return null
+  }
+  const follow = (e: PointerEvent | ReactPointerEvent) => {
+    const s = start.current
+    if (!s || s.pointer !== e.pointerId) return
+    if (!moved.current) {
+      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 8) return
+      moved.current = true
+    }
+    setDrag({ id: s.id, x: e.clientX, y: e.clientY, dx: s.x - s.rect.left, dy: s.y - s.rect.top, w: s.rect.width, h: s.rect.height, target: targetAt(e.clientX, e.clientY) })
+  }
+  const finish = () => {
+    const s = start.current
+    start.current = null
+    const d = latest.current
+    setDrag(null)
+    if (!s || !moved.current || !d?.target) return
+    const layer = layers.find((l) => l.id === s.id)
+    if (layer && !layer.onlyIn?.includes(d.target)) void run('overlay.link', { layerId: s.id, sceneId: d.target, on: true })
+  }
+  useEffect(() => {
+    const up = () => finish()
+    const move = (e: PointerEvent) => follow(e)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointermove', move)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointermove', move)
+    }
+  })
+  // Light up the scene card it would be linked to.
+  useEffect(() => {
+    const g = grid.current
+    if (!g) return
+    const dragged = drag ? layers.find((l) => l.id === drag.id) : undefined
+    for (const card of g.querySelectorAll<HTMLElement>('[data-scene-id]')) {
+      const on = !!dragged && card.dataset.sceneId === drag?.target
+      card.classList.toggle('gfx-drop', on)
+      if (on) {
+        const name = state.scenes.find((x) => x.id === card.dataset.sceneId)?.name ?? ''
+        card.dataset.dropLabel = dragged?.onlyIn?.includes(card.dataset.sceneId ?? '') ? `Already on ${name}` : `Drop: only over ${name}`
+      }
+    }
+    g.classList.toggle('gfx-dragging', !!dragged)
+  })
+  // "+ Add overlay": the add form right here, under the cards; the new one appears as a card.
+  const [adding, setAdding] = useState(false)
+  const dragged = drag ? layers.find((l) => l.id === drag.id) : undefined
+  return (
+    <section className="gfx-row" aria-label="Overlays">
+      <div className="section-head">
+        <h2>Overlays</h2>
+        <span className="muted small">Anything on top: graphics, images, windows, text. Drag one onto a scene to show it only there; not linked = every scene. Overlays show in Live only, never in Preview.</span>
+      </div>
+      <div className="gfx-cards">
+        {layers.map((l) => (
+          <GfxCard
+            key={l.id}
+            layer={l}
+            state={state}
+            className={dragged?.id === l.id ? 'dragging' : ''}
+            onPointerDown={(e) => {
+              if (e.button !== 0) return
+              start.current = { id: l.id, x: e.clientX, y: e.clientY, pointer: e.pointerId, rect: e.currentTarget.getBoundingClientRect() }
+              moved.current = false
+            }}
+            onClickCapture={(e) => {
+              if (moved.current) {
+                e.stopPropagation()
+                e.preventDefault()
+                moved.current = false
+              }
+            }}
+          />
+        ))}
+        <button className="gfx-add" onClick={() => setAdding(!adding)} aria-expanded={adding} title="Add an overlay: graphics, an image, a window, text…">
+          {adding ? 'Close' : '+ Add overlay'}
+        </button>
+        {canOpenGfxApp() && <OpenGfxButton />}
+      </div>
+      {adding && (
+        <div className="gfx-add-form panel">
+          <AddSourceForm state={state} run={run} scene={overlay ?? { id: OVERLAY_ID, name: 'Overlay', layers: [] }} onDone={() => setAdding(false)} />
+        </div>
+      )}
+      {dragged && drag && (
+        <div className="gfx-card floating" style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w }} aria-hidden="true">
+          <GfxCardBody layer={dragged} state={state} />
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** Start the gfx app on this PC (or bring its window forward): one operator, two monitors. */
+function OpenGfxButton() {
+  const [state, setState] = useState<{ busy: boolean; note?: string }>({ busy: false })
+  return (
+    <span className="gfx-open">
+      <button
+        className="gfx-add"
+        disabled={state.busy}
+        title="Start the gfx app on this PC (it opens on the second monitor), or bring its window forward. It can also be started on its own."
+        onClick={async () => {
+          setState({ busy: true })
+          const r = await openGfxAppHere()
+          setState({ busy: false, note: r.ok ? 'Gfx app is open' : r.why })
+          window.setTimeout(() => setState((s) => (s.busy ? s : { busy: false })), 6000)
+        }}
+      >
+        {state.busy ? 'Opening…' : '▶ Open gfx app'}
+      </button>
+      {state.note && <span className="muted small gfx-open-note">{state.note}</span>}
+    </span>
+  )
+}
+
+function GfxCard(props: {
+  layer: Layer
+  state: AppState
+  className: string
+  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void
+  onClickCapture: (e: ReactMouseEvent) => void
+}) {
+  const { layer, state, className, onPointerDown, onClickCapture } = props
+  return (
+    <div
+      className={`gfx-card ${layer.onlyIn?.length ? 'linked' : ''} ${layer.visible ? '' : 'off'} ${className}`}
+      data-layer-id={layer.id}
+      title="Drag onto a scene card to show it only while that scene is in Live"
+      onPointerDown={onPointerDown}
+      onClickCapture={onClickCapture}
+    >
+      <GfxCardBody layer={layer} state={state} />
+    </div>
+  )
+}
+
+function GfxCardBody({ layer, state }: { layer: Layer; state: AppState }) {
+  const names = linkedNames(state, layer)
+  return (
+    <>
+      <span className="gfx-card-name">{layer.name}</span>
+      <span className="gfx-card-kind muted small">{KIND_LABEL[layer.kind]}</span>
+      <span className={`gfx-card-where small ${names ? 'linked' : ''}`}>
+        {!layer.visible ? 'Hidden (switched off in the Overlay panel)' : names ? `🔗 Only on ${names}` : 'Every scene'}
+      </span>
+    </>
+  )
+}
+
+/** Loop the break: play it again from the first video until this is turned off (then it ends after this round). */
+function LoopToggle({ scene }: { scene: Scene }) {
+  const run = useContext(RunContext)
+  if (!run) return null
+  const on = !!scene.breakLoop
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  return (
+    // Inside the scene card (itself a button): a span that acts as a button.
+    <span
+      role="button"
+      tabIndex={0}
+      className={`loop-toggle ${on ? 'on' : ''}`}
+      aria-pressed={on}
+      title={on ? 'Looping: turn off to end the break after this round (with the countdown)' : 'Play the break again from the first video until this is turned off'}
+      onPointerDown={stop}
+      onDoubleClick={stop}
+      onClick={(e) => {
+        stop(e)
+        run('cue.loop', { on: !on })
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          stop(e)
+          run('cue.loop', { on: !on })
+        }
+      }}
+    >
+      ↻ {on ? 'Looping' : 'Loop'}
+    </span>
   )
 }
 
 const clockText = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
 /**
- * A scene with a video that plays once (like the Gfx commercial): its length, and while it
- * is on air, the time left. In the last 10 seconds it turns into a big red countdown, so the
- * operator knows the scene is about to go back.
+ * A scene with a video that plays once (like the Gfx commercial): its length, and while it is on
+ * air, the time left. A commercial break (several videos, played in order) shows which one plays
+ * and the time left in the whole break. In the last 10 seconds of the last video it turns into a
+ * big red countdown, so the producer can tell the show is about to start again.
  */
 function MediaClock({ scene, studio, live }: { scene: Scene; studio: Studio; live: boolean }) {
-  const media = scene.layers.find((l) => l.kind === 'media' && l.visible && l.loop === false && l.url)
-  const url = media?.url ?? ''
-  const [t, setT] = useState<{ pos: number; dur: number } | null>(null)
+  const once = scene.layers.filter((l) => l.kind === 'media' && l.loop === false && !!l.url)
+  // A break: every video in it, in play order; otherwise the one shown.
+  const list = scene.commercial ? once : once.filter((l) => l.visible).slice(0, 1)
+  const urls = list.map((l) => l.url ?? '')
+  const at = Math.max(0, list.findIndex((l) => l.visible))
+  const key = urls.join('|')
+  const [t, setT] = useState<{ pos: number; durs: number[] } | null>(null)
   useEffect(() => {
-    if (!url) return setT(null)
+    if (!key) return setT(null)
+    const all = key.split('|')
     const tick = () => {
-      const el = studio.compositor.mediaElement(url)
-      const dur = el && Number.isFinite(el.duration) ? el.duration : 0
-      setT((old) => {
-        const pos = el?.currentTime ?? 0
-        return old && old.dur === dur && Math.abs(old.pos - pos) < 0.05 ? old : { pos, dur }
+      const durs = all.map((u) => {
+        const d = studio.compositor.mediaElement(u)?.duration
+        return d && Number.isFinite(d) ? d : 0
       })
+      const pos = studio.compositor.mediaElement(all[at])?.currentTime ?? 0
+      setT((old) => (old && old.durs.join() === durs.join() && Math.abs(old.pos - pos) < 0.05 ? old : { pos, durs }))
     }
     tick()
     const timer = window.setInterval(tick, 200)
     return () => window.clearInterval(timer)
-  }, [url, studio])
-  if (!media || !t || !t.dur) return null
-  const left = Math.max(0, t.dur - t.pos)
-  if (!live) return <span className="media-clock">Length {clockText(t.dur)}</span>
-  const ending = left <= 10
+  }, [key, at, studio])
+  if (!list.length || !t || !t.durs[at]) return null
+  const n = list.length
+  const total = t.durs.reduce((a, b) => a + b, 0)
+  const looping = !!scene.commercial && !!scene.breakLoop
+  if (!live) return <span className="media-clock">{n > 1 ? `${n} commercials · ${clockText(total)}` : `Length ${clockText(t.durs[0])}`}{looping ? ' · loops' : ''}</span>
+  const leftHere = Math.max(0, t.durs[at] - t.pos)
+  const leftAll = leftHere + t.durs.slice(at + 1).reduce((a, b) => a + b, 0)
+  const last = at === n - 1
+  // A looping break doesn't end: no countdown until Loop is turned off.
+  const ending = last && leftHere <= 10 && !looping
+  const done = t.durs.slice(0, at).reduce((a, b) => a + b, 0) + t.pos
   return (
-    <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(left)} seconds left`}>
-      <span className="media-clock-text">{ending ? <>Ends in <b>{Math.ceil(left)}</b></> : <>{clockText(Math.ceil(left))} left</>}</span>
-      <span className="media-clock-bar">
-        <span style={{ width: `${Math.min(100, (100 * t.pos) / t.dur)}%` }} />
+    <span className={`media-clock on ${ending ? 'ending' : ''}`} role="timer" aria-label={`${Math.ceil(leftAll)} seconds left`}>
+      <span className="media-clock-text">
+        {ending ? (
+          <>
+            Ends in <b>{Math.ceil(leftHere)}</b>
+          </>
+        ) : looping ? (
+          <>{n > 1 ? `Looping · ${at + 1} of ${n}` : `Looping · ${clockText(Math.ceil(leftHere))}`}</>
+        ) : n > 1 ? (
+          <>
+            {at + 1} of {n} · {clockText(Math.ceil(leftAll))} left
+          </>
+        ) : (
+          <>{clockText(Math.ceil(leftHere))} left</>
+        )}
       </span>
+      <span className="media-clock-bar">
+        <span style={{ width: `${total ? Math.min(100, (100 * done) / total) : 0}%` }} />
+      </span>
+      {scene.commercial && (
+        <span className="media-clock-sound" title="The break’s sound on the stream (the Commercials channel in Sound)">
+          <SpeakerIcon />
+          <span className="hmeter">
+            <LiveMeter studio={studio} id={COMMERCIALS_CHANNEL} horizontal />
+          </span>
+        </span>
+      )}
     </span>
+  )
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    </svg>
   )
 }
 
@@ -496,7 +926,8 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
     next: s.id === state.previewSceneId && s.id !== state.programSceneId
   })
   return (
-    <>
+    <RunContext.Provider value={run}>
+      <GraphicsRow state={state} run={run} grid={grid} />
       <section className="scenes" aria-label="In this show">
         <div className="section-head">
           <h2>In this show</h2>
@@ -512,7 +943,8 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
                 key={s.id}
                 data-scene-index={i}
                 data-scene-id={s.id}
-                className={`scene-card ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
+                data-commercial={s.commercial ? '1' : undefined}
+                className={`scene-card ${s.id && (state.scenes.find(isOverlay)?.layers ?? []).some((l) => l.onlyIn?.includes(s.id)) ? 'has-gfx' : ''} ${live ? 'tally-live' : ''} ${next ? 'tally-next' : ''} ${dragged?.id === s.id ? 'dragging' : ''}`}
                 aria-pressed={next}
                 title="Drag to change the order"
                 {...props(s.id)}
@@ -550,7 +982,7 @@ function SceneStrip({ state, run }: { state: AppState; run: Run }) {
         dropping={!!dragged && !!drag?.toLibrary}
         dropBlocked={!!dragged && dragged.id === state.programSceneId}
       />
-    </>
+    </RunContext.Provider>
   )
 }
 
@@ -761,6 +1193,13 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const edited = state.audio.find((a) => a.id === editing)
+  // Sound follows the scene: the one picked (in Preview), and only its channels, unless "Show all".
+  const [showAll, setShowAll] = useState(false)
+  const focus = state.scenes.find((s) => s.id === state.previewSceneId && !isOverlay(s))
+  // Another scene picked: show its sound (not every channel, which hides the scene's own picker).
+  useEffect(() => setShowAll(false), [focus?.id])
+  const heard = focus ? state.audio.filter((a) => audible(a, new Set([focus.id]))) : state.audio
+  const shown = showAll || !focus ? state.audio : focus.commercial ? [] : heard
   return (
     <section className="panel" aria-label="Sound">
       <div className="panel-head">
@@ -772,6 +1211,7 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
           <button className="ghost small" onClick={() => run('audio.muteAll')}>
             Mute all
           </button>
+          {studio && <ListenButton studio={studio} />}
           {!adding && (
             <button className="small" onClick={() => setAdding(true)}>
               + Add
@@ -780,13 +1220,322 @@ function SoundPanel(props: { state: AppState; stats: HealthStats | null; run: Ru
         </span>
       </div>
       {adding && <AddAudioForm state={state} run={run} onDone={() => setAdding(false)} />}
+      {studio && <StreamMeter studio={studio} />}
+      {focus && !showAll && <SceneSoundPicker scene={focus} state={state} run={run} heard={heard} />}
       <div className="strips">
-        {state.audio.map((a) => (
-          <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} />
+        {shown.map((a) => (
+          <Strip key={a.id} a={a} state={state} level={stats?.audioLevels[a.id] ?? 0} studio={studio} run={run} onEdit={() => setEditing(a.id)} inScene={focus && !showAll ? focus : undefined} />
         ))}
+        {!showAll && focus && !focus.commercial && shown.length === 0 && (
+          <p className="muted small sound-none">No sound in {focus.name}. Pick one above, or + Add a channel.</p>
+        )}
+        {showAll && shown.length === 0 && <p className="muted small sound-none">No sound channels yet. + Add one, or pick a scene’s sound.</p>}
+        {focus?.commercial && <BreakStrip state={state} level={stats?.audioLevels[COMMERCIALS_CHANNEL] ?? 0} studio={studio} run={run} />}
       </div>
+      {focus && (
+        <button className="ghost small sound-all" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? `Back to ${focus.name}’s sound` : `Show all sound channels (${state.audio.length})`}
+        </button>
+      )}
       {edited && <AudioEditor key={edited.id} state={state} run={run} source={edited} onDone={() => setEditing(null)} />}
     </section>
+  )
+}
+
+/**
+ * The sound of the scene in Preview: by default the one that comes with its
+ * camera (ATEM audio with the ATEM's picture, the Z CAM's own sound); pick
+ * another, or add more.
+ */
+function SceneSoundPicker({ scene, state, run, heard }: { scene: Scene; state: AppState; run: Run; heard: AudioSource[] }) {
+  const cam = scene.layers.find((l) => l.kind === 'video' && l.device && l.visible) ?? scene.layers.find((l) => l.kind === 'video' && l.device)
+  const pictureSrc = cam ? state.audio.find((a) => a.kind === 'video' && a.device === cam.device) : undefined
+  const camName = cam ? (state.inputs.video.find((d) => d.id === cam.device)?.name ?? cam.name) : ''
+  if (scene.commercial) {
+    return (
+      <div className="scene-sound-pick">
+        <span className="small">
+          Sound for <b>{scene.name}</b> <em className="tag next">PREVIEW</em>
+        </span>
+        <span className="small muted">Only the commercials’ sound (below). Every other channel is off while it’s live.</span>
+      </div>
+    )
+  }
+  const value = heard.length === 0 ? '' : heard.length > 1 ? '__several' : heard[0] === pictureSrc ? 'picture' : heard[0].id
+  const others = state.audio.filter((a) => !heard.includes(a))
+  return (
+    <div className="scene-sound-pick">
+      <span className="small">
+        Sound for <b>{scene.name}</b> <em className="tag next">PREVIEW</em>
+      </span>
+      <label className="small">
+        Sound for this scene
+        <select
+          value={value}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v !== '__several') run('scene.setSound', { sceneId: scene.id, sourceId: v === '' ? null : v })
+          }}
+        >
+          {cam && <option value="picture">With the picture: {pictureSrc?.name ?? `${camName} sound`}</option>}
+          {state.audio
+            .filter((a) => a !== pictureSrc)
+            .map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          {heard.length > 1 && <option value="__several">Several ({heard.length}): pick one to keep only it</option>}
+          <option value="">No sound</option>
+        </select>
+      </label>
+      {(others.length > 0 || (cam && !pictureSrc)) && (
+        <label className="small">
+          <select
+            value=""
+            aria-label="Add sound to this scene"
+            onChange={(e) => e.target.value && run('scene.addSound', { sceneId: scene.id, sourceId: e.target.value })}
+          >
+            <option value="">+ Add sound to this scene</option>
+            {cam && !pictureSrc && <option value="picture">{camName} sound (with the picture)</option>}
+            {others.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Commercials channel: one fader for every video in a gfx commercial break,
+ * and what the mics do while a break is on air.
+ */
+function BreakStrip(props: { state: AppState; level: number; studio: Studio | null; run: Run }) {
+  const { state, level, studio, run } = props
+  const scene = state.scenes.find((s) => s.commercial)
+  if (!scene) return null
+  const bs = { ...BREAK_SOUND, ...scene.breakSound }
+  const media = scene.layers.filter((l) => l.kind === 'media')
+  const at = media.findIndex((l) => l.visible)
+  const onAir = state.programSceneId === scene.id && media.length > 0
+  const now = !media.length ? 'Nothing cued' : onAir ? `Now: ${media[Math.max(0, at)].name}${media.length > 1 ? ` (${at + 1} of ${media.length})` : ''}` : `${media.length} cued · plays with the Gfx commercial scene`
+  return (
+    <div className={`strip break-strip ${bs.muted ? 'muted' : ''} ${onAir ? '' : 'off-air'}`}>
+      <div className="strip-head">
+        <strong>Commercials</strong>
+        {onAir && <em className="tag live">ON AIR</em>}
+        {studio && media.length > 0 && <SoloButton studio={studio} id={COMMERCIALS_CHANNEL} name="Commercials" />}
+        <button className={`small mute ${bs.muted ? 'danger' : ''}`} aria-pressed={bs.muted} onClick={() => run('cue.sound', { muted: !bs.muted })}>
+          {bs.muted ? 'Muted' : 'Mute'}
+        </button>
+      </div>
+      <span className="small muted">{now} · one fader for every video in the break</span>
+      <div className="strip-level">
+        <div className="hmeter">{studio ? <LiveMeter studio={studio} id={COMMERCIALS_CHANNEL} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>
+        <input type="range" min={0} max={100} value={Math.round(bs.volume * 100)} aria-label="Commercials volume" onChange={(e) => run('cue.sound', { volume: Number(e.target.value) / 100 })} />
+      </div>
+      <span className={`small ${onAir ? 'warn-text' : 'muted'}`}>Only the videos’ sound: every other channel is off while the break is live.</span>
+    </div>
+  )
+}
+
+const LISTEN_KEY = 'listen-output-v1'
+
+/**
+ * Listen: hear everything that goes out to the stream on headphones or
+ * speakers of this PC, at its own volume. It never changes the stream.
+ * Off each time the app starts (speakers near a live mic would echo).
+ */
+function ListenButton({ studio }: { studio: Studio }) {
+  const [m, setM] = useState(studio.mixer.monitor)
+  const [open, setOpen] = useState(false)
+  const [outs, setOuts] = useState<MediaDeviceInfo[]>([])
+  const [error, setError] = useState('')
+  const [solo, setSolo] = useState(studio.mixer.solo)
+  useEffect(
+    () =>
+      studio.mixer.onMonitor(() => {
+        setM({ ...studio.mixer.monitor })
+        setSolo(studio.mixer.solo)
+      }),
+    [studio]
+  )
+  useEffect(() => {
+    // The output and volume picked last time (not whether it was on).
+    try {
+      const saved = JSON.parse(localStorage.getItem(LISTEN_KEY) ?? 'null') as { device?: string; volume?: number } | null
+      if (saved && !studio.mixer.monitor.on) {
+        studio.mixer.monitor = { ...studio.mixer.monitor, device: saved.device ?? '', volume: saved.volume ?? 0.8 }
+        setM(studio.mixer.monitor)
+      }
+    } catch {
+      // no saved choice
+    }
+    const list = () =>
+      void navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((d) => setOuts(d.filter((x) => x.kind === 'audiooutput' && x.deviceId !== 'default' && x.deviceId !== 'communications')))
+        .catch(() => {})
+    list()
+    navigator.mediaDevices?.addEventListener('devicechange', list)
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', list)
+  }, [studio])
+  const change = async (p: Partial<typeof m>) => {
+    setError('')
+    try {
+      await studio.mixer.setMonitor(p)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+    setM({ ...studio.mixer.monitor })
+    try {
+      localStorage.setItem(LISTEN_KEY, JSON.stringify({ device: studio.mixer.monitor.device, volume: studio.mixer.monitor.volume }))
+    } catch {
+      // not kept
+    }
+  }
+  const name = outs.find((o) => o.deviceId === m.device)?.label || 'Windows default output'
+  // The box opens on top of everything, kept inside the window (the side panel is narrow and scrolls, so it would be cut off).
+  const anchor = useRef<HTMLSpanElement>(null)
+  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const r = anchor.current?.getBoundingClientRect()
+      if (!r) return
+      const w = Math.min(300, window.innerWidth - 16)
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8))
+      setAt({ left, top: r.bottom + 6, maxHeight: Math.max(160, window.innerHeight - r.bottom - 14) })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open])
+  return (
+    <span className="listen" ref={anchor}>
+      <button
+        className={`small ${m.on ? 'listen-on' : 'ghost'}`}
+        aria-pressed={m.on}
+        title="Hear everything that goes out to the stream, on headphones or speakers of this PC"
+        onClick={() => {
+          if (!m.on) setOpen(true)
+          else void studio.mixer.setSolo(null)
+          void change({ on: !m.on })
+        }}
+      >
+        <HeadphonesIcon /> {m.on ? (solo ? 'Listening (solo)' : 'Listening') : 'Listen'}
+      </button>
+      <button className="ghost small icon" aria-label="Listen settings" aria-expanded={open} onClick={() => setOpen(!open)}>
+        ▾
+      </button>
+      {open && (
+        <div className="listen-pop" role="group" aria-label="Listen to the stream" style={at ? { position: 'fixed', left: at.left, top: at.top, right: 'auto', maxHeight: at.maxHeight, overflowY: 'auto' } : undefined}>
+          <strong>Listen to the stream</strong>
+          <span className="small muted">Everything that goes out, a little behind the room. Use headphones near a live mic, or it echoes.</span>
+          <label className="small">
+            Hear it on
+            <select value={m.device} onChange={(e) => void change({ device: e.target.value })}>
+              <option value="">Windows default output</option>
+              {outs.map((o) => (
+                <option key={o.deviceId} value={o.deviceId}>
+                  {o.label || 'An output'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="small">
+            Listen volume (the stream doesn’t change)
+            <input type="range" min={0} max={100} value={Math.round(m.volume * 100)} onChange={(e) => void change({ volume: Number(e.target.value) / 100 })} />
+          </label>
+          <span className="small muted">{m.on ? `On: ${name}` : 'Off'}{m.on && solo ? ' · one channel alone (press its headphones again for the whole stream)' : ''}</span>
+          {error && <span className="small warn-text">Could not play on that output: {error}</span>}
+          <button className="small" onClick={() => setOpen(false)}>
+            Done
+          </button>
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** Hear this channel alone in the headphones (press again for the whole stream). */
+function SoloButton({ studio, id, name }: { studio: Studio; id: string; name: string }) {
+  const [on, setOn] = useState(studio.mixer.solo === id && studio.mixer.monitor.on)
+  useEffect(() => {
+    const sync = () => setOn(studio.mixer.solo === id && studio.mixer.monitor.on)
+    sync()
+    return studio.mixer.onMonitor(sync)
+  }, [studio, id])
+  return (
+    <button
+      className={`ghost icon solo ${on ? 'on' : ''}`}
+      aria-pressed={on}
+      aria-label={`Listen to ${name} alone`}
+      title={on ? 'Listening to this alone · press for the whole stream' : 'Listen to this alone in your headphones (even before it is on air)'}
+      onClick={() => void studio.mixer.setSolo(on ? null : id).catch(() => {})}
+    >
+      <HeadphonesIcon />
+    </button>
+  )
+}
+
+/** Left and right of what goes out to the stream, with a red mark when it gets too loud (near 0 dB). */
+function StreamMeter({ studio }: { studio: Studio }) {
+  const bars = [useRef<HTMLDivElement>(null), useRef<HTMLDivElement>(null)]
+  const clip = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    let frame = 0
+    const shown = [0, 0]
+    let loudUntil = 0
+    const loop = () => {
+      const lv = studio.mixer.streamLevels()
+      lv.forEach((v, i) => {
+        shown[i] = v > shown[i] ? v : shown[i] * 0.9
+        const el = bars[i].current
+        if (el) el.style.width = `${Math.round(Math.sqrt(shown[i]) * 100)}%`
+      })
+      if (Math.max(...lv) >= 0.89) loudUntil = performance.now() + 2000
+      if (clip.current) clip.current.hidden = performance.now() > loudUntil
+      frame = requestAnimationFrame(loop)
+    }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio])
+  return (
+    <div className="stream-meter" title="What goes out to the stream, left and right">
+      <span className="small muted">Stream</span>
+      <div className="stream-meter-bars">
+        {['L', 'R'].map((side, i) => (
+          <div key={side} className="stream-meter-row">
+            <span className="small muted">{side}</span>
+            <div className="hmeter">
+              <div ref={bars[i]} className="meter" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <span ref={clip} className="tag live" hidden>
+        TOO LOUD
+      </span>
+    </div>
+  )
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+      <path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z" />
+    </svg>
   )
 }
 
@@ -846,8 +1595,8 @@ function SceneSounds({ scene, state, studio }: { scene: Scene; state: AppState; 
   )
 }
 
-function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void }) {
-  const { a, state, level, studio, run, onEdit } = props
+function Strip(props: { a: AudioSource; state: AppState; level: number; studio: Studio | null; run: Run; onEdit: () => void; inScene?: Scene }) {
+  const { a, state, level, studio, run, onEdit, inScene } = props
   const { from, chs, unplugged } = soundFrom(a, state)
   // Sound follows the scene: heard only while one of its scenes is on air.
   const onAir = audible(a, scenesOnAir(state))
@@ -860,21 +1609,37 @@ function Strip(props: { a: AudioSource; state: AppState; level: number; studio: 
         <strong>{a.name}</strong>
         {onAir && a.scenes && <em className="tag live" title="Its scene is on air">ON AIR</em>}
         {a.syncOffsetMs > 0 && <span className="muted small">+{a.syncOffsetMs} ms</span>}
+        {studio && <SoloButton studio={studio} id={a.id} name={a.name} />}
         <span className="strip-tools">
           <button className="ghost icon" aria-label={`Edit ${a.name}`} title="Name, device, inputs, sync offset" onClick={onEdit}>
             ✎
           </button>
-          <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
-            ✕
-          </button>
+          {inScene ? (
+            <button className="ghost icon" aria-label={`Take ${a.name} out of ${inScene.name}`} title={`Take out of ${inScene.name} (the channel stays for other scenes)`} onClick={() => run('scene.removeSound', { sceneId: inScene.id, sourceId: a.id })}>
+              ✕
+            </button>
+          ) : (
+            <button className="ghost icon" aria-label={`Remove ${a.name}`} title="Remove channel" onClick={() => run('audio.remove', { sourceId: a.id })}>
+              ✕
+            </button>
+          )}
         </span>
         <button className={`small mute ${a.muted ? 'danger' : ''}`} aria-pressed={a.muted} onClick={() => run('audio.setMuted', { sourceId: a.id, muted: !a.muted })}>
           {a.muted ? 'Muted' : 'Mute'}
         </button>
       </div>
       <span className={`small ${unplugged ? 'warn-text' : 'muted'}`}>{[from, chs].filter(Boolean).join(' · ')}</span>
-      <span className="small muted" title="Change in ✎">
+      <span className="small muted strip-where" title="Change in ✎">
         Plays in: {where || 'no scene'}
+        {!a.scenes && inScene && !inScene.commercial && (
+          <button
+            className="ghost small"
+            title={`Play ${a.name} only in ${inScene.name}, so it stays off in every other scene`}
+            onClick={() => run('audio.update', { sourceId: a.id, scenes: [inScene.id] })}
+          >
+            Only in {inScene.name}
+          </button>
+        )}
       </span>
       <div className="strip-level">
         <div className="hmeter">{studio ? <LiveMeter studio={studio} id={a.id} horizontal /> : <div className="meter" style={{ width: `${Math.round(level * 100)}%` }} />}</div>

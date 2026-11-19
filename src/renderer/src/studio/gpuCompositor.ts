@@ -9,6 +9,7 @@
  */
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
 import { boxFor, Compositor } from './compositor'
 import { videoBox, type GraphicsFeed } from './graphics'
 
@@ -155,6 +156,12 @@ export class GpuCompositor extends Compositor {
       this.collect(ops, program, s, w, h, 0, identity, null, fadeAlpha)
       this.collectOverlay(ops, program, s, w, h, fadeAlpha)
     }
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, identity, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     this.render(enc, this.ctx.program, w, h, ops)
     if (withPreview) {
       const pw = this.preview.width
@@ -162,8 +169,8 @@ export class GpuCompositor extends Compositor {
       const pops: Op[] = []
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
       if (preview) {
+        // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
         this.collect(pops, preview, s, pw, ph, 0, identity, null, 1)
-        this.collectOverlay(pops, preview, s, pw, ph, 1)
       }
       this.render(enc, this.ctx.preview, pw, ph, pops)
     }
@@ -185,6 +192,11 @@ export class GpuCompositor extends Compositor {
     const ops: Op[] = []
     this.collect(ops, program, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, 1)
     this.collectOverlay(ops, program, s, w, h, 1)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      this.collect(ops, mixing.scene, s, w, h, 0, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, mixing.level)
+      this.collectOverlay(ops, mixing.scene, s, w, h, mixing.level)
+    }
     const bpr = Math.ceil((w * 4) / 256) * 256
     const buf = this.device.createBuffer({ size: bpr * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
     const enc = this.device.createCommandEncoder()
@@ -212,7 +224,7 @@ export class GpuCompositor extends Compositor {
     return out
   }
 
-  /** The Overlay's draws, on top of this scene, when it is on and the scene doesn't hide it. */
+  /** The draws of the Overlay sources that show over this scene in Live, on top of it. */
   private collectOverlay(ops: Op[], scene: Scene, s: AppState, w: number, h: number, alpha: number) {
     const overlay = overlayOver(s, scene.id)
     if (overlay) this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)
@@ -232,6 +244,9 @@ export class GpuCompositor extends Compositor {
         if (texture) ops.push({ kind: 'tex', rect: map({ x: 0, y: 0, w, h }), clip, alpha, texture })
       } else if (l.kind === 'color') {
         ops.push({ kind: 'solid', rect: map(boxFor(placementOf(l), w, h)), clip, alpha, color: parseColor(l.color ?? '#1e3a8a') })
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) ops.push({ kind: 'solid', rect: map(r), clip, alpha, color: [r.rgb[0] / 255, r.rgb[1] / 255, r.rgb[2] / 255, 1] })
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue

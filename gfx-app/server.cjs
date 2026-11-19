@@ -32,7 +32,7 @@ const ABOUT = (() => {
   }
 })()
 
-const KINDS = ['lowerthird', 'video', 'photos', 'window']
+const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars']
 const STYLES = ['classic', 'block', 'minimal', 'news']
 const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'custom']
 const POSITIONS = ['left', 'center', 'right']
@@ -97,7 +97,7 @@ const numOf = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, 
 /** One rundown item from what was sent, over what it was (or a fresh one). Paths are checked by the caller. */
 function cleanItem(p, was) {
   const kind = was ? was.kind : pickOf(p.kind, KINDS, null)
-  if (!kind) throw new Error('kind must be lowerthird, video, photos or window')
+  if (!kind) throw new Error('kind must be lowerthird, video, photos, window or bars')
   const base = was ?? { id: '', kind, playOnLive: true }
   const item = { ...base }
   if (p.name !== undefined) item.name = text(p.name, 80)
@@ -125,13 +125,19 @@ function cleanItem(p, was) {
     item.end ??= 'loop'
     item.shows ??= 'full'
   }
+  if (kind === 'bars') {
+    // Color bars, with a 1 kHz line-up tone sent to the stream (on unless turned off).
+    if (p.sound !== undefined) item.sound = p.sound !== false
+    item.sound ??= true
+    item.shows = 'full'
+  }
   if (kind === 'window') {
     if (p.sourceId !== undefined) item.sourceId = text(p.sourceId, 200)
     if (p.windowName !== undefined) item.windowName = text(p.windowName, 200)
     if (p.shows !== undefined) item.shows = pickOf(p.shows, SHOWS, item.shows ?? 'full')
     item.shows ??= 'full'
   }
-  if (!item.name) item.name = kind === 'lowerthird' ? 'Lower third' : kind === 'video' ? 'Video' : kind === 'photos' ? 'Photos' : 'Window'
+  if (!item.name) item.name = { lowerthird: 'Lower third', video: 'Video', photos: 'Photos', window: 'Window', bars: 'Color bars' }[kind]
   return item
 }
 
@@ -145,6 +151,17 @@ function startServer(opts = {}) {
   const dataDir = opts.dataDir ?? __dirname
   const SAVED = join(dataDir, 'gfx-show.json')
   const log = opts.log ?? ((s) => console.log(s))
+
+  /** The rundown is grouped by kind, in this order: lower thirds, videos, photos and slideshows, windows, color bars. */
+  const GROUPS = ['lowerthird', 'video', 'photos', 'window', 'bars']
+  const groupOf = (i) => {
+    const n = GROUPS.indexOf(i?.kind)
+    return n < 0 ? GROUPS.length : n
+  }
+  const sortByGroup = (items) => {
+    const order = new Map(items.map((x, n) => [x, n]))
+    items.sort((a, b) => groupOf(a) - groupOf(b) || order.get(a) - order.get(b))
+  }
 
   /** The show: the rundown, the lower thirds' look, Preview and On air. */
   let show = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
@@ -167,6 +184,8 @@ function startServer(opts = {}) {
       const n = Number(/^item-(\d+)$/.exec(it.id)?.[1])
       if (n >= nextId) nextId = n + 1
     }
+    // Grouped by kind, keeping the order within each group (rundowns saved before groups existed too).
+    sortByGroup(show.items)
     show.look = cleanLook(saved.look ?? {}, DEFAULT_LOOK)
     show.previewId = show.items.some((i) => i.id === saved.previewId) ? saved.previewId : show.items[0]?.id ?? null
   } catch {
@@ -179,6 +198,8 @@ function startServer(opts = {}) {
   /** The streaming app's graphics pages that are connected, and whether the stream has them live. */
   const streamPages = new Set()
   let streamLive = false
+  /** '' = the stream shows the graphics over every scene; else the scenes they are linked to ("Main show"). */
+  let streamOnly = ''
   /** Pages listening for changes, and operator pages (they answer window-capture requests). */
   const listeners = new Set()
   const operators = new Set()
@@ -188,11 +209,28 @@ function startServer(opts = {}) {
   let hideTimer = null
   let take = 0
   /**
-   * A video cued to the stream as a commercial: the streaming app copies it, puts a Commercial scene
-   * in its Preview, and says how it goes: copying, cued, onair (with pos/dur), done, or failed.
+   * A commercial break cued to the stream: one or more videos ({ id, name }), played in order after one
+   * Transition. The streaming app copies them, puts its Gfx commercial scene in Preview, and says how it
+   * goes: copying, cued, onair (at = which one, pos/dur = its time), done, or failed. Each change to the
+   * list is a new take, so the streaming app cues the whole break afresh.
    */
   let cue = null
   let cueTake = 0
+  /** Loop the break (also switched in the streaming app); seq counts the switches made here. */
+  let breakLoop = false
+  let loopSeq = Math.floor(Date.now() / 1000) // never the same as before a restart
+  let loopSetAt = 0
+  /** The first place in the break that can still change: on air, the ones after the video playing. */
+  const firstFree = () => (cue?.status === 'onair' ? (cue.at ?? 0) + 1 : 0)
+  /**
+   * The break's list changed: a new take, which the streaming app picks up. Before it airs it is cued
+   * afresh; on air it stays on air (pending until the streaming app has the new list), and the take
+   * it plays (liveTake) still reports how it goes meanwhile.
+   */
+  function changeBreak(items) {
+    if (cue?.status === 'onair') cue = { ...cue, items, take: ++cueTake, pending: true, liveTake: cue.liveTake ?? cue.take }
+    else cue = { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' }
+  }
   /** The streaming app's Live picture (JPEG), sent a few times a second, for the On air screen. */
   let program = null
   let programAt = 0
@@ -233,7 +271,8 @@ function startServer(opts = {}) {
     previewId: show.previewId,
     onAir: show.onAir,
     cue,
-    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, picture: hasPicture() }
+    breakLoop: { on: breakLoop, seq: loopSeq },
+    stream: { connected: streamPages.size > 0, live: streamPages.size > 0 && streamLive, only: streamPages.size > 0 ? streamOnly : '', picture: hasPicture() }
   })
   const send = (res, msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`)
   const broadcast = () => {
@@ -275,8 +314,15 @@ function startServer(opts = {}) {
       if (!it.paths.length) throw new Error('Pick some photos (jpg, png, webp)')
       if (!p.name) it.name = it.paths.length === 1 ? basename(it.paths[0], extname(it.paths[0])) : basename(dirname(it.paths[0])) || 'Photos'
     }
-    const at = show.items.findIndex((i) => i.id === show.previewId)
-    show.items.splice(at >= 0 ? at + 1 : show.items.length, 0, it)
+    // Into its group: after the selected item when that is one of the same kind, else at the end of the group.
+    const sel = show.items.findIndex((i) => i.id === show.previewId)
+    const g = groupOf(it)
+    let at = sel >= 0 && groupOf(show.items[sel]) === g ? sel + 1 : -1
+    if (at < 0) {
+      at = show.items.findIndex((i) => groupOf(i) > g)
+      if (at < 0) at = show.items.length
+    }
+    show.items.splice(at, 0, it)
     if (!show.previewId) show.previewId = it.id
     return it
   }
@@ -309,16 +355,53 @@ function startServer(opts = {}) {
         return
       }
       case 'cue': {
-        // Cue a video to the stream as a commercial (one at a time: a new one replaces the last).
+        // Add a video to the commercial break (a new break once the last one has played). While the
+        // break is on air, it joins the end (or a place after the one playing): the break gets longer.
         const it = item(body.id ?? show.previewId)
         if (!it || it.kind !== 'video') throw new Error('Only videos can be cued as a commercial')
         if (!it.path || !exists(it.path)) throw new Error('That video is not on this laptop any more')
-        cue = { id: it.id, take: ++cueTake, name: it.name, status: streamPages.size ? 'sent' : 'waiting' }
-        return
+        const open = cue && !['done', 'failed'].includes(cue.status)
+        const items = open ? [...cue.items] : []
+        if (items.some((x) => x.id === it.id)) throw new Error(`${it.name} is already in the break`)
+        if (items.length >= 20) throw new Error('A break holds 20 videos at most')
+        const first = firstFree()
+        const at = Number.isInteger(body.index) ? Math.min(items.length, Math.max(first, body.index)) : items.length
+        items.splice(at, 0, { id: it.id, name: it.name })
+        changeBreak(items)
+        return cue.items.length
       }
       case 'uncue': {
-        if (cue && (cue.status === 'onair')) throw new Error('It’s on air now: it ends by itself')
-        cue = null
+        // Take one video out of the break (index), or the whole break (not once it is on air).
+        const open = cue && !['done', 'failed'].includes(cue.status)
+        if (!Number.isInteger(body.index) || !open) {
+          if (cue?.status === 'onair') throw new Error('The break is on air now: it ends by itself')
+          cue = null
+          return
+        }
+        if (body.index < firstFree()) throw new Error('That one has played or is playing now')
+        const items = cue.items.filter((_, i) => i !== body.index)
+        if (items.length) changeBreak(items)
+        else cue = null
+        return
+      }
+      case 'break-loop': {
+        // Play the break again from its first video until this is turned off (then it ends after this round).
+        breakLoop = body.on === true
+        loopSeq++
+        loopSetAt = Date.now()
+        return breakLoop
+      }
+      case 'cue-move': {
+        // Play one video of the break earlier or later (on air: only among those still to come).
+        if (!cue || ['done', 'failed'].includes(cue.status)) throw new Error('Nothing to move')
+        // One step (up or down), or straight to a place (to: dragged in the list).
+        const from = Number(body.index)
+        const to = Number.isInteger(body.to) ? body.to : from + (body.up ? -1 : 1)
+        if (!cue.items[from] || !cue.items[to] || from === to) return
+        if (Math.min(from, to) < firstFree()) throw new Error('That one has played or is playing now')
+        const items = [...cue.items]
+        items.splice(to, 0, ...items.splice(from, 1))
+        changeBreak(items)
         return
       }
       case 'hide': {
@@ -361,6 +444,11 @@ function startServer(opts = {}) {
         if (at < 0) return
         show.items.splice(at, 1)
         if (show.onAir?.id === body.id) show.onAir = null
+        // A removed video leaves a break that has not played yet.
+        if (cue && cue.items.some((x) => x.id === body.id) && !['onair', 'done', 'failed'].includes(cue.status)) {
+          const items = cue.items.filter((x) => x.id !== body.id)
+          cue = items.length ? { items, take: ++cueTake, status: streamPages.size ? 'sent' : 'waiting' } : null
+        }
         if (show.previewId === body.id) show.previewId = show.items[Math.min(at, show.items.length - 1)]?.id ?? null
         return
       }
@@ -368,6 +456,8 @@ function startServer(opts = {}) {
         const at = show.items.findIndex((i) => i.id === body.id)
         const to = at + (body.up ? -1 : 1)
         if (at < 0 || to < 0 || to >= show.items.length) return
+        // Items move within their group (lower thirds stay with lower thirds...).
+        if (groupOf(show.items[to]) !== groupOf(show.items[at])) return
         show.items.splice(to, 0, ...show.items.splice(at, 1))
         return
       }
@@ -518,6 +608,7 @@ function startServer(opts = {}) {
       if (req.method === 'POST' && path === '/api/stream') {
         const body = await readBody(req)
         streamLive = body.live === true
+        streamOnly = typeof body.only === 'string' ? body.only.slice(0, 300) : ''
         broadcast()
         return json(res, 200, { ok: true })
       }
@@ -542,8 +633,34 @@ function startServer(opts = {}) {
       if (req.method === 'POST' && path === '/api/cue') {
         const body = await readBody(req)
         const STATUSES = ['copying', 'cued', 'onair', 'done', 'failed', 'cleared']
-        if (cue && body.take === cue.take && STATUSES.includes(body.status)) {
-          cue = { ...cue, status: body.status, pos: Number(body.pos) || 0, dur: Number(body.dur) || 0, error: body.error ? text(body.error, 200) : undefined }
+        // Loop switched in the streaming app (not just an older report, right after it was switched here).
+        if (typeof body.loop === 'boolean' && body.loop !== breakLoop && Date.now() - loopSetAt > 2000) {
+          breakLoop = body.loop
+          broadcast()
+        }
+        // From the take asked for, or (while a longer break is on its way) the take on air now.
+        if (cue && (body.take === cue.take || body.take === cue.liveTake) && STATUSES.includes(body.status)) {
+          const at = Math.max(0, Math.min(cue.items.length - 1, Math.floor(Number(body.at) || 0)))
+          const latest = body.take === cue.take
+          // A longer break that could not be taken in: it stays as it plays.
+          if (latest && body.status === 'failed' && cue.status === 'onair') {
+            cue = { ...cue, pending: false, error: body.error ? text(body.error, 200) : 'could not add it' }
+            broadcast()
+            return json(res, 200, { ok: true })
+          }
+          cue = {
+            ...cue,
+            status: body.status,
+            at,
+            pos: Number(body.pos) || 0,
+            dur: Number(body.dur) || 0,
+            left: Number(body.left) || 0,
+            // The break's sound on the stream, 0 to 1 (the On air bar's meter).
+            level: Math.max(0, Math.min(1, Number(body.level) || 0)),
+            error: body.error ? text(body.error, 200) : undefined,
+            pending: latest ? false : cue.pending,
+            liveTake: body.status === 'onair' ? (latest ? body.take : cue.liveTake ?? body.take) : cue.liveTake
+          }
           if (body.status === 'cleared') cue = null
           broadcast()
         }

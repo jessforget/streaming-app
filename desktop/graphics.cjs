@@ -17,7 +17,8 @@
  * animation, or start its video, at that moment:
  *
  *   window.streamerLive                 true while on the stream
- *   'streamer:live' event on window     event.detail.live = true / false
+ *   window.streamerOnly                 '' = over every scene, or the scenes it is linked to ("Main show")
+ *   'streamer:live' event on window     event.detail.live = true / false, event.detail.only as above
  *
  * Sound: the page itself plays nothing out loud. It can send its sound (a
  * video's) to the mixer with window.streamerAudio.connect(offerSdp), a WebRTC
@@ -76,6 +77,7 @@ class GraphicsFeed {
     this.send = send
     this.status = 'loading'
     this.live = !!opts.live
+    this.only = opts.only || ''
     this.misses = 0
     this.closed = false
     this.loaded = false
@@ -105,6 +107,10 @@ class GraphicsFeed {
     wc.setFrameRate(opts.fps)
     wc.setWindowOpenHandler(() => ({ action: 'deny' }))
     wc.on('paint', (_e, dirty, image) => this.paint(dirty, image))
+    // A new page (the gfx app restarted, or the page reloaded) has handed nothing over yet: stop a video
+    // the old page left playing. If it is still on air, the new page hands it over again.
+    // (did-navigate comes before the new page's scripts run.)
+    wc.on('did-navigate', () => this.send('gfx:video', { id: this.id, take: '*', stop: true }))
     wc.on('did-finish-load', () => {
       this.loaded = true
       this.misses = 0
@@ -158,17 +164,19 @@ class GraphicsFeed {
   }
 
   /** On the stream now, or not. The page hears it at once (and again after each load). */
-  setLive(live) {
-    if (this.live === live) return
+  setLive(live, only = '') {
+    if (this.live === live && this.only === only) return
     this.live = live
+    this.only = only
     if (this.loaded) this.tellLive()
   }
 
   tellLive() {
     if (this.closed || this.win.isDestroyed()) return
     const live = this.live ? 'true' : 'false'
+    const only = JSON.stringify(this.only)
     this.win.webContents
-      .executeJavaScript(`window.streamerLive = ${live}; window.dispatchEvent(new CustomEvent('streamer:live', { detail: { live: ${live} } })); 0`)
+      .executeJavaScript(`window.streamerLive = ${live}; window.streamerOnly = ${only}; window.dispatchEvent(new CustomEvent('streamer:live', { detail: { live: ${live}, only: ${only} } })); 0`)
       .catch(() => {})
   }
 
@@ -231,13 +239,14 @@ function setupGraphics(ipcMain, target) {
       width: clamp(p.width, 320, 3840, 1920),
       height: clamp(p.height, 180, 2160, 1080),
       fps: clamp(p.fps, 1, 60, 30),
-      live: p.live === true
+      live: p.live === true,
+      only: typeof p.only === 'string' ? p.only.slice(0, 300) : ''
     }
     const have = feeds.get(p.id)
     if (have) {
       const o = have.opts
       if (o.url === opts.url && o.width === opts.width && o.height === opts.height && o.fps === opts.fps) {
-        have.setLive(opts.live)
+        have.setLive(opts.live, opts.only)
         // Same page again (the main window reloaded, or it went on or off the stream): send its status and a whole picture.
         send('gfx:status', { id: p.id, status: have.status })
         if (!have.win.isDestroyed()) have.win.webContents.invalidate()

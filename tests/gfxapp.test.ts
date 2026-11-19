@@ -75,14 +75,31 @@ describe('gfx app server', () => {
     expect((await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'pics', 'notes.txt') } })).error).toMatch(/video file/)
   })
 
+  it('keeps the rundown grouped by kind: lower thirds, videos, photos, windows, color bars', async () => {
+    await doit({ action: 'add', item: { kind: 'bars', name: 'Bars' } })
+    await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'clip.mp4') } })
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'Second', title: 'T' } })
+    await doit({ action: 'add', item: { kind: 'photos', paths: [join(dir, 'pics')] } })
+    await doit({ action: 'add', item: { kind: 'lowerthird', name: 'Third', title: 'T' } })
+    const s = await state()
+    expect(s.items.map((i) => i.kind)).toEqual(['lowerthird', 'lowerthird', 'lowerthird', 'video', 'photos', 'bars'])
+    // Moving stays inside the group.
+    const video = s.items.find((i) => i.kind === 'video')!
+    await doit({ action: 'move', id: video.id, up: true })
+    expect((await state()).items.map((i) => i.kind)).toEqual(['lowerthird', 'lowerthird', 'lowerthird', 'video', 'photos', 'bars'])
+  })
+
   it('knows when the streaming app has the graphics live', async () => {
     const ctl = new AbortController()
     await fetch(`${base}/events?role=stream`, { signal: ctl.signal })
     await fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live: true }) })
-    expect((await state()).stream).toEqual({ connected: true, live: true, picture: false })
+    expect((await state()).stream).toEqual({ connected: true, live: true, only: '', picture: false })
+    // Linked to one scene: the gfx app shows which.
+    await fetch(`${base}/api/stream`, { method: 'POST', body: JSON.stringify({ live: false, only: 'Main show' }) })
+    expect((await state()).stream).toEqual({ connected: true, live: false, only: 'Main show', picture: false })
     ctl.abort()
     await new Promise((r) => setTimeout(r, 100))
-    expect((await state()).stream).toEqual({ connected: false, live: false, picture: false })
+    expect((await state()).stream).toEqual({ connected: false, live: false, only: '', picture: false })
   })
 
   it('cues a video to the stream and follows how it goes', async () => {
@@ -90,16 +107,42 @@ describe('gfx app server', () => {
     const v = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad.mp4') } })
     expect((await doit({ action: 'cue', id: 'item-1' })).error).toMatch(/Only videos/)
     await doit({ action: 'cue', id: v.result })
-    let s = (await state()) as State & { cue: { take: number; status: string; name: string } }
-    expect(s.cue).toMatchObject({ id: v.result, take: 1, name: 'ad', status: 'waiting' })
-    const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
-    await tell({ take: 1, status: 'onair', pos: 3, dur: 30 })
+    let s = (await state()) as State & { cue: { take: number; status: string; items: { id: string; name: string }[] } }
+    expect(s.cue).toMatchObject({ items: [{ id: v.result, name: 'ad' }], take: 1, status: 'waiting' })
+    // A second video joins the break (a new take); the same one twice is refused; order can change.
+    writeFileSync(join(dir, 'ad2.mp4'), Buffer.alloc(100))
+    const v2 = await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'ad2.mp4') } })
+    expect((await doit({ action: 'cue', id: v.result })).error).toMatch(/already in the break/)
+    expect((await doit({ action: 'cue', id: v2.result })).result).toBe(2)
+    await doit({ action: 'cue-move', index: 1, up: true })
     s = (await state()) as typeof s
-    expect(s.cue).toMatchObject({ status: 'onair', pos: 3, dur: 30 })
+    expect(s.cue).toMatchObject({ take: 3, items: [{ id: v2.result }, { id: v.result }] })
+    await doit({ action: 'cue-move', index: 0, to: 1 }) // dragged: back where it was
+    expect(((await state()) as typeof s).cue.items.map((x) => x.id)).toEqual([v.result, v2.result])
+    await doit({ action: 'cue-move', index: 1, to: 0 })
+    await doit({ action: 'uncue', index: 0 })
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ take: 6, items: [{ id: v.result }] })
+    const tell = (b: object) => fetch(`${base}/api/cue`, { method: 'POST', body: JSON.stringify(b) })
+    await tell({ take: 6, status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ status: 'onair', at: 0, pos: 3, dur: 30, left: 27 })
     expect((await doit({ action: 'uncue' })).error).toMatch(/on air/)
     await tell({ take: 99, status: 'done' }) // an old cue: ignored
     expect(((await state()) as typeof s).cue.status).toBe('onair')
-    await tell({ take: 1, status: 'done' })
+    // On air, a video joins the end of the break: a new take, still on air, pending until the streaming app has it.
+    await doit({ action: 'cue', id: v2.result, index: 0 }) // (not before the one playing)
+    s = (await state()) as typeof s
+    expect(s.cue).toMatchObject({ take: 7, status: 'onair', pending: true, liveTake: 6, items: [{ id: v.result }, { id: v2.result }] })
+    expect((await doit({ action: 'uncue', index: 0 })).error).toMatch(/playing/)
+    await tell({ take: 6, status: 'onair', at: 0, pos: 4, dur: 30 }) // the take on air still reports
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 7, pending: true, pos: 4 })
+    await tell({ take: 7, status: 'onair', at: 0, pos: 5, dur: 30 }) // the streaming app has the longer break
+    expect(((await state()) as typeof s).cue).toMatchObject({ pending: false, liveTake: 7 })
+    await tell({ take: 7, status: 'done' })
+    // After a break has played, cueing starts a new one.
+    await doit({ action: 'cue', id: v2.result })
+    expect(((await state()) as typeof s).cue).toMatchObject({ take: 8, items: [{ id: v2.result }] })
     await doit({ action: 'uncue' })
     expect(((await state()) as typeof s).cue).toBeNull()
   })

@@ -6,6 +6,7 @@
 import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
+import { barRects } from '../../../shared/bars'
 import { graphicsFeeds, videoBox } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
@@ -95,7 +96,9 @@ export class Compositor {
     this.state = state
     if (before && state.programSceneId !== this.shownProgram) {
       const old = before.scenes.find((s) => s.id === this.shownProgram)
-      if (old && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
+      // After the manual fader, the new scene was already mixed in: no fade on top.
+      const faded = (before.mix ?? 0) > 0
+      if (old && !faded && state.transition.kind === 'fade' && state.transition.durationMs > 0) {
         this.fadeFrom = { scene: old, start: performance.now(), ms: state.transition.durationMs }
       }
     }
@@ -111,18 +114,25 @@ export class Compositor {
     }
     // Scenes that just went on air: start their countdowns, and play their one-shot videos from the top.
     const onAir = scenesOnAir(state)
-    for (const id of onAir) {
-      if (this.onAir.has(id)) continue
-      this.liveAt.set(id, Date.now())
-      for (const l of state.scenes.find((x) => x.id === id)?.layers ?? []) {
-        const el = l.kind === 'media' && l.url && l.loop === false ? this.videos.get(`media:${l.url}`)?.el : undefined
-        if (el) {
-          clearTimeout(this.rewind.get(el))
-          el.currentTime = 0
-          void el.play().catch(() => {})
-        }
+    for (const id of onAir) if (!this.onAir.has(id)) this.liveAt.set(id, Date.now())
+    // A one-shot video that just came on air (its scene went live, or it was shown in a live scene,
+    // like the next video of a commercial break): play it from the top.
+    const liveOnce = new Set<string>()
+    for (const sc of state.scenes) {
+      if (!onAir.has(sc.id)) continue
+      for (const l of sc.layers) if (l.kind === 'media' && l.url && l.loop === false && l.visible) liveOnce.add(l.url)
+    }
+    for (const url of liveOnce) {
+      if (this.liveOnce.has(url)) continue
+      const el = this.videos.get(`media:${url}`)?.el
+      if (el) {
+        clearTimeout(this.rewind.get(el))
+        this.rewind.delete(el)
+        el.currentTime = 0
+        void el.play().catch(() => {})
       }
     }
+    this.liveOnce = liveOnce
     this.onAir = onAir
     // One-shot videos no longer on air: once the fade is over, stop and wait on the first frame for next time.
     const fadeMs = state.transition.kind === 'fade' ? state.transition.durationMs : 0
@@ -145,6 +155,8 @@ export class Compositor {
 
   /** Waiting to stop a one-shot video that left the air (after the fade). */
   private rewind = new Map<HTMLVideoElement, number>()
+  /** One-shot videos on air now (shown in a live scene), by file. */
+  private liveOnce = new Set<string>()
   /** A one-shot video reached its end (set by the studio: it may go back to the scene before). */
   onMediaEnded: (url: string) => void = () => {}
 
@@ -293,14 +305,29 @@ export class Compositor {
       }
     }
     if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height)
+    // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
+    const mixing = this.mixing(s)
+    if (mixing) {
+      pctx.globalAlpha = mixing.level
+      this.drawWithOverlay(pctx, mixing.scene, s, this.program.width, this.program.height)
+    }
     pctx.globalAlpha = 1
     if (withPreview) {
       const preview = s.scenes.find((x) => x.id === s.previewSceneId)
       const vctx = this.preview.getContext('2d')!
       vctx.fillStyle = '#000'
       vctx.fillRect(0, 0, this.preview.width, this.preview.height)
-      if (preview) this.drawWithOverlay(vctx, preview, s, this.preview.width, this.preview.height)
+      // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
+      if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
     }
+  }
+
+  /** The manual fader's mix: the Preview scene and how much of it is in Live, or null. */
+  protected mixing(s: AppState): { scene: Scene; level: number } | null {
+    const level = s.mix ?? 0
+    if (level <= 0 || s.previewSceneId === s.programSceneId) return null
+    const scene = s.scenes.find((x) => x.id === s.previewSceneId)
+    return scene ? { scene, level: Math.min(1, level) } : null
   }
 
   /**
@@ -323,7 +350,6 @@ export class Compositor {
     return true
   }
 
-  /** A scene, and the Overlay on top of it when it is on and the scene doesn't hide it. */
   /** A small copy of Live, with the Overlay (drawn on the 2D canvas, so it works with either compositor). */
   drawLive(canvas: HTMLCanvasElement): boolean {
     const s = this.state
@@ -337,10 +363,17 @@ export class Compositor {
     ctx.save()
     ctx.scale(canvas.width / w, canvas.height / h)
     this.drawWithOverlay(ctx, scene, s, w, h)
+    const mixing = this.mixing(s)
+    if (mixing) {
+      ctx.globalAlpha = mixing.level
+      this.drawWithOverlay(ctx, mixing.scene, s, w, h)
+      ctx.globalAlpha = 1
+    }
     ctx.restore()
     return true
   }
 
+  /** A scene in Live, and the Overlay sources that show over it on top. */
   private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
     this.drawScene(ctx, scene, s, w, h)
     const overlay = overlayOver(s, scene.id)
@@ -364,6 +397,12 @@ export class Compositor {
         const b = boxFor(placementOf(l), w, h)
         ctx.fillStyle = l.color ?? '#1e3a8a'
         ctx.fillRect(b.x, b.y, b.w, b.h)
+      } else if (l.kind === 'bars') {
+        const b = boxFor(placementOf(l), w, h)
+        for (const r of barRects(b.x, b.y, b.w, b.h)) {
+          ctx.fillStyle = `rgb(${r.rgb.join(',')})`
+          ctx.fillRect(r.x, r.y, r.w, r.h)
+        }
       } else if (l.kind === 'scene') {
         const inner = s.scenes.find((x) => x.id === l.sceneId)
         if (!inner || depth >= 3) continue
