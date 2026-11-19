@@ -156,6 +156,15 @@ ipcMain.handle('gfx:findWindow', async (e, id, name) => {
   return source?.id ?? null
 })
 
+/** A small picture of a window or screen in the rundown (by id, or by name after it was reopened). */
+ipcMain.handle('gfx:windowThumb', async (e, id, name) => {
+  if (!fromApp(e)) return null
+  const get = (type) => desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 192, height: 108 } }).catch(() => [])
+  const list = [...(await get('window')), ...(await get('screen'))]
+  const s = list.find((x) => x.id === id) ?? list.find((x) => x.name === name)
+  return s && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null
+})
+
 /** Can the streaming PC get past Windows Firewall to this app? 'allowed', 'blocked' or 'unknown'. */
 ipcMain.handle('gfx:firewall', (e) => (fromApp(e) ? firewall.check() : 'unknown'))
 /** Let PCs on this network in (Windows asks the person to confirm). */

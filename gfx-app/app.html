@@ -38,7 +38,7 @@
   .addr { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .addr b { color: var(--text); font-weight: 600; user-select: all; }
 
-  .cols { display: grid; grid-template-columns: 280px minmax(0, 1fr) 320px; min-height: 0; }
+  .cols { display: grid; grid-template-columns: 340px minmax(0, 1fr) 320px; min-height: 0; }
   aside, main { min-height: 0; overflow: auto; }
   h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 
@@ -52,13 +52,16 @@
   .menu button { border: 0; background: transparent; text-align: left; min-height: 34px; border-radius: 6px; }
   .menu button:hover { background: var(--card); }
   ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-  .item { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
+  .item { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; user-select: none; }
   .item.preview { background: #16223a; border-color: var(--accent-strong); }
   .item.onair { background: #2a1618; border-color: var(--live); }
-  .thumb { height: 30px; border-radius: 4px; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
-  .thumb.lowerthird { background: #20242c; }
-  .thumb.lowerthird::before { content: ''; position: absolute; left: 5px; bottom: 9px; width: 28px; height: 6px; background: #f2f2f2; }
-  .thumb.lowerthird::after { content: ''; position: absolute; left: 5px; bottom: 5px; width: 32px; height: 4px; background: var(--accent); }
+  .thumb { height: 54px; border-radius: 4px; background-color: #0b0c0f; position: relative; overflow: hidden; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: #fff; }
+  .thumb.lowerthird { background: #20242c; place-items: end start; }
+  .thumb .lt { margin: 0 0 7px 5px; max-width: 86px; display: grid; text-align: left; line-height: 1.15; }
+  .thumb .lt b { padding: 1px 4px; font-size: 8px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb .lt i { padding: 1px 4px; font-size: 6.5px; font-style: normal; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thumb video, .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb .badge { position: absolute; right: 3px; bottom: 3px; padding: 0 4px; border-radius: 3px; background: rgba(0,0,0,.65); font-size: 9px; }
   .thumb.video { background: linear-gradient(135deg, #3d5a80, #98c1d9); }
   .thumb.photos { background: linear-gradient(135deg, #7a5f52, #e0b48a); }
   .thumb.window { background: #4b5563; }
@@ -304,6 +307,81 @@
     if (i.kind === 'bars') return `Color bars · ${i.sound !== false ? 'with 1 kHz tone' : 'no tone'}`
     return `Window · ${i.windowName || 'pick one'}`
   }
+  /**
+   * A small picture of what the item shows: a frame of the video, the first photo, the lower third's
+   * words in its look, the window as it is now. Kept between renders (the list redraws often).
+   */
+  const thumbs = new Map()
+  function thumbFor(i) {
+    const look = S.look || {}
+    const key = `${i.id}|${i.kind}|${i.kind === 'video' ? `${i.file}|${i.ok}` : ''}|${i.kind === 'photos' ? (i.files || []).join('/') : ''}|${i.kind === 'lowerthird' ? `${i.name}|${i.title}|${look.accent}|${look.box}|${look.text}` : ''}|${i.kind === 'window' ? i.sourceId : ''}`
+    const had = thumbs.get(i.id)
+    if (had && had.key === key) return had.el
+    const el = document.createElement('span')
+    el.className = `thumb ${i.kind}`
+    if (i.kind === 'video') {
+      if (i.ok) {
+        const v = document.createElement('video')
+        v.muted = true
+        v.preload = 'metadata'
+        v.playsInline = true
+        // A frame a second in (the very first is often black).
+        v.src = `/media/${i.id}#t=1`
+        el.append(v)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = i.ok ? '▶' : 'missing'
+      el.append(b)
+    } else if (i.kind === 'photos') {
+      if (i.count) {
+        const img = document.createElement('img')
+        img.alt = ''
+        img.loading = 'lazy'
+        img.src = `/media/${i.id}/0`
+        el.append(img)
+      }
+      const b = document.createElement('span')
+      b.className = 'badge'
+      b.textContent = String(i.count || 0)
+      el.append(b)
+    } else if (i.kind === 'lowerthird') {
+      const lt = document.createElement('span')
+      lt.className = 'lt'
+      const n = document.createElement('b')
+      n.textContent = i.name || ' '
+      n.style.background = look.box || '#f2f2f2'
+      n.style.color = look.text || '#111'
+      const t = document.createElement('i')
+      t.textContent = i.title || ' '
+      t.style.background = look.accent || '#2563d9'
+      t.style.color = '#fff'
+      lt.append(n, t)
+      el.append(lt)
+    } else if (i.kind === 'window') {
+      el.textContent = '▢'
+      windowThumb(i, el)
+    }
+    thumbs.set(i.id, { key, el })
+    return el
+  }
+  /** The window's picture as it is now (only in the gfx app window), refreshed every few seconds. */
+  function windowThumb(i, el) {
+    if (!window.gfxDesktop?.windowThumb) return
+    const img = document.createElement('img')
+    img.alt = ''
+    const load = async () => {
+      if (!el.isConnected && thumbs.get(i.id)?.el !== el) return
+      const url = await window.gfxDesktop.windowThumb(i.sourceId, i.name).catch(() => null)
+      if (url) {
+        img.src = url
+        if (!img.isConnected) el.append(img)
+      }
+      if (thumbs.get(i.id)?.el === el) setTimeout(load, 5000)
+    }
+    load()
+  }
+
   function renderItems() {
     const ul = $('items')
     ul.textContent = ''
@@ -330,10 +408,7 @@
       const preview = S.previewId === i.id
       li.className = `item ${onAir ? 'onair' : preview ? 'preview' : ''}`
       li.tabIndex = 0
-      const thumb = document.createElement('span')
-      thumb.className = `thumb ${i.kind}`
-      if (i.kind === 'video') thumb.textContent = '▶'
-      if (i.kind === 'window') thumb.textContent = '▢'
+      const thumb = thumbFor(i)
       const txt = document.createElement('span')
       txt.style.minWidth = '0'
       const nm = document.createElement('div')
