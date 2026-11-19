@@ -860,3 +860,13 @@ button.menubar-item:hover:not(:disabled), button.menubar-item.open { background:
 .menu button.check-item > span { display: inline-flex; align-items: center; gap: 0; }
 .menu button.check-item .tick { display: inline-block; width: 18px; margin-left: -4px; color: var(--good); font-weight: 700; }
 .menu button.check-item small { padding-left: 14px; }
+
+/* Color controls for the picture that goes out (Live monitor's Color button). */
+.color-ctl .color-on { background: var(--accent); color: #0b1020; border-color: transparent; }
+.color-pop { gap: 10px; }
+.color-pop > strong { font-size: 15px; }
+.color-row-head { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+.color-val { font-weight: 400; color: var(--muted, #9aa3b2); font-variant-numeric: tabular-nums; }
+.color-val.on { color: var(--accent); }
+.color-ends { display: flex; justify-content: space-between; font-size: 11px; }
+.color-foot { display: flex; justify-content: space-between; gap: 8px; }

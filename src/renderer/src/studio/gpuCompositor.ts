@@ -10,20 +10,32 @@
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { barRects } from '../../../shared/bars'
+import { gradeMath, isNeutral } from '../../../shared/color'
 import { boxFor, Compositor } from './compositor'
 import { videoBox, type GraphicsFeed } from './graphics'
 
 type Rect = { x: number; y: number; w: number; h: number }
 /** Maps a scene's own w×h picture into the canvas being drawn (for a scene inside a scene). */
 type Transform = { ox: number; oy: number; sx: number; sy: number }
-type Op =
+/** plain = drawn in its own colours, never colour-corrected (the Overlay: graphics keep their brand colours). */
+type Op = (
   | { kind: 'solid'; rect: Rect; clip: Rect | null; alpha: number; color: [number, number, number, number] }
   | { kind: 'tex'; rect: Rect; clip: Rect | null; alpha: number; texture: GPUTexture }
   | { kind: 'ext'; rect: Rect; clip: Rect | null; alpha: number; video: HTMLVideoElement }
+) & { plain?: boolean }
 
 const COMMON = /* wgsl */ `
-struct U { rect: vec4f, size: vec4f, color: vec4f, misc: vec4f };
+struct U { rect: vec4f, size: vec4f, color: vec4f, misc: vec4f, gain: vec4f, look: vec4f };
 @group(0) @binding(0) var<uniform> u: U;
+// Colour controls (exposure x white balance gain, contrast round mid-grey, saturation); look.z = 0 leaves the colour as it is.
+fn grade(c: vec3f) -> vec3f {
+  if (u.look.z < 0.5) { return c; }
+  var g = c * u.gain.rgb;
+  g = (g - vec3f(0.5)) * u.look.x + vec3f(0.5);
+  let y = dot(g, vec3f(0.2126, 0.7152, 0.0722));
+  g = vec3f(y) + (g - vec3f(y)) * u.look.y;
+  return clamp(g, vec3f(0.0), vec3f(1.0));
+}
 struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> O {
   var c = array<vec2f, 6>(vec2f(0, 0), vec2f(1, 0), vec2f(0, 1), vec2f(0, 1), vec2f(1, 0), vec2f(1, 1));
@@ -35,15 +47,17 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   return o;
 }`
 const SOLID = `${COMMON}
-@fragment fn fs(i: O) -> @location(0) vec4f { return vec4f(u.color.rgb, u.color.a * u.misc.x); }`
+@fragment fn fs(i: O) -> @location(0) vec4f { return vec4f(grade(u.color.rgb), u.color.a * u.misc.x); }`
 const TEX = `${COMMON}
 @group(0) @binding(1) var smp: sampler;
 @group(0) @binding(2) var tex: texture_2d<f32>;
-@fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSample(tex, smp, i.uv); return vec4f(c.rgb, c.a * u.misc.x); }`
+@fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSample(tex, smp, i.uv); return vec4f(grade(c.rgb), c.a * u.misc.x); }`
 const EXT = `${COMMON}
 @group(0) @binding(1) var smp: sampler;
 @group(0) @binding(2) var ext: texture_external;
-@fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSampleBaseClampToEdge(ext, smp, i.uv); return vec4f(c.rgb, u.misc.x); }`
+@fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSampleBaseClampToEdge(ext, smp, i.uv); return vec4f(grade(c.rgb), u.misc.x); }`
+
+const NO_GRADE = [1, 1, 1, 0, 1, 1, 0, 0]
 
 /** CSS colour (as the 2D canvas understands it) → 0..1 RGBA. */
 const colorCache = new Map<string, [number, number, number, number]>()
@@ -227,7 +241,10 @@ export class GpuCompositor extends Compositor {
   /** The draws of the Overlay sources that show over this scene in Live, on top of it. */
   private collectOverlay(ops: Op[], scene: Scene, s: AppState, w: number, h: number, alpha: number) {
     const overlay = overlayOver(s, scene.id)
-    if (overlay) this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)
+    if (!overlay) return
+    const from = ops.length
+    this.collect(ops, overlay, s, w, h, 1, { ox: 0, oy: 0, sx: 1, sy: 1 }, null, alpha)
+    for (let i = from; i < ops.length; i++) ops[i].plain = true
   }
 
   /** The draws for one scene, back to front, in the canvas's pixels. */
@@ -293,6 +310,8 @@ export class GpuCompositor extends Compositor {
 
   private render(enc: GPUCommandEncoder, target: GPUCanvasContext | GPUTexture, w: number, h: number, ops: Op[]) {
     const texture = 'getCurrentTexture' in target ? target.getCurrentTexture() : target
+    const g = this.state?.color
+    const look = isNeutral(g) ? null : gradeMath(g!)
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: texture.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }]
     })
@@ -322,7 +341,8 @@ export class GpuCompositor extends Compositor {
           kind = 'tex'
         }
       } else if (op.kind === 'tex') resource = { binding: 2, resource: op.texture.createView() }
-      const buf = this.uniform([op.rect.x, op.rect.y, op.rect.w, op.rect.h, w, h, 0, 0, ...(op.kind === 'solid' ? op.color : [1, 1, 1, 1]), op.alpha, 0, 0, 0])
+      const graded = look && !op.plain ? [...look.gain, 0, look.contrast, look.saturation, 1, 0] : NO_GRADE
+      const buf = this.uniform([op.rect.x, op.rect.y, op.rect.w, op.rect.h, w, h, 0, 0, ...(op.kind === 'solid' ? op.color : [1, 1, 1, 1]), op.alpha, 0, 0, 0, ...graded])
       const pipe = this.pipes[kind]
       const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: buf } }]
       if (resource) entries.push({ binding: 1, resource: this.sampler }, resource)
@@ -338,7 +358,7 @@ export class GpuCompositor extends Compositor {
   private uniform(values: number[]): GPUBuffer {
     let buf = this.uniforms[this.used]
     if (!buf) {
-      buf = this.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
+      buf = this.device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST })
       this.uniforms.push(buf)
     }
     this.used++

@@ -20,6 +20,7 @@ import {
 import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene, PHONE_CAM_KEYS, type PhoneCamControl, type PhoneCamValue } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
+import { GRADE_KEYS, GRADE_LIMITS, cleanGrade, isNeutral } from '../shared/color'
 import { Emitter } from './emitter'
 import { IDLE_STATS, freshSetup } from './defaults'
 import type { DeviceAdmin, Engine, KeyStore, ShowStore, StreamTarget } from './ports'
@@ -228,6 +229,22 @@ export class Controller extends Emitter<Events> {
         }
         this.s.previewSceneId = previous
         await this.engine.setPreviewScene(previous)
+        return this.changed()
+      }
+      case 'color.set': {
+        const next = { ...cleanGrade(this.s.color) }
+        for (const k of GRADE_KEYS) {
+          if (P[k] === undefined) continue
+          const [lo, hi] = GRADE_LIMITS[k]
+          next[k] = num(P, k, lo, hi)
+        }
+        const g = cleanGrade(next)
+        if (isNeutral(g)) delete this.s.color
+        else this.s.color = g
+        return this.changed()
+      }
+      case 'color.reset': {
+        delete this.s.color
         return this.changed()
       }
       case 'layer.setVisible': {

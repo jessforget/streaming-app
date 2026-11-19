@@ -8,6 +8,7 @@
  *
  * See docs/PROTOCOL.md for the human-readable version.
  */
+import type { ColorGrade } from './color'
 import type { AppState, AudioKind, HealthStats, InputDevice, LayerKind, Placement } from './state'
 
 export const PROTOCOL_VERSION = 1
@@ -43,6 +44,10 @@ export interface CommandMap {
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
   /** The manual fader: mix Live into Preview, 0 to 1. At 1, Preview goes on air (what was live goes to Preview). */
   'transition.mix': { level: number }
+  /** Colour of the picture that goes out: only the controls given change. Exposure -2..2 stops, the others -100..100, 0 = as it comes in. */
+  'color.set': Partial<ColorGrade>
+  /** Colour back to as it comes in. */
+  'color.reset': Record<string, never>
   'layer.setVisible': { sceneId: string; layerId: string; visible: boolean }
   /** The Overlay's ON AIR button: its sources on top of every scene, or off. Its sources use sceneId "overlay". */
   'overlay.set': { on: boolean }
@@ -212,6 +217,8 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.goLive': 'operate',
   'transition.set': 'operate',
   'transition.mix': 'operate',
+  'color.set': 'operate',
+  'color.reset': 'operate',
   'layer.setVisible': 'operate',
   'overlay.set': 'operate',
   'audio.setVolume': 'operate',

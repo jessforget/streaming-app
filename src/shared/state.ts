@@ -1,4 +1,5 @@
 import type { DataValue, Role } from './protocol'
+import type { ColorGrade } from './color'
 
 /**
  * Source types, like OBS's. 'video' is a capture device: the ATEM Mini over
@@ -400,6 +401,8 @@ export interface AppState {
   /** The Overlay's ON AIR button: its sources are drawn on top of every scene (except ones that hide it). */
   overlayOn: boolean
   transition: { kind: 'cut' | 'fade'; durationMs: number }
+  /** Colour controls for the picture that goes out (exposure, white balance, contrast, saturation). Absent = as it comes in. */
+  color?: ColorGrade
   /**
    * The manual fader (T-bar): how far Live is mixed into the Preview scene, 0 to 1.
    * Absent or 0 = Live shows its scene alone. Reaching 1 puts Preview on air. Not saved.

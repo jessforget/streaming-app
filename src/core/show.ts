@@ -5,6 +5,7 @@
  * stay in this PC's own key file.
  */
 import { CommandError, type DataValue } from '../shared/protocol'
+import { cleanGrade, isNeutral, type ColorGrade } from '../shared/color'
 import { ensureOverlay, showScenes, type AppState, type AudioSource, type InputDevice, type Scene } from '../shared/state'
 
 export const SHOW_FORMAT = 'streaming-app-show'
@@ -18,6 +19,8 @@ export interface ShowFile {
   savedAt: number
   scenes: Scene[]
   transition: AppState['transition']
+  /** Colour controls for the picture that goes out. Absent = as it comes in. */
+  color?: ColorGrade
   audio: AudioSource[]
   quality: AppState['stream']['quality']
   frameRate: AppState['stream']['frameRate']
@@ -57,6 +60,7 @@ export function showFromState(s: AppState, name: string, savedAt: number): ShowF
     savedAt,
     scenes,
     transition: { ...s.transition },
+    ...(isNeutral(s.color) ? {} : { color: cleanGrade(s.color) }),
     audio: s.audio.map((a) => {
       const copy: AudioSource = { ...a, level: 0 }
       if (copy.scenes) copy.scenes = copy.scenes.filter((id) => ids.has(id))
@@ -79,7 +83,7 @@ export function showFromState(s: AppState, name: string, savedAt: number): ShowF
  */
 export function showFingerprint(s: AppState): string {
   const show = showFromState(s, '', 0)
-  return JSON.stringify([show.scenes, show.transition, show.audio, show.quality, show.frameRate, show.destinations, show.recordFolder, show.recordFormat])
+  return JSON.stringify([show.scenes, show.transition, show.color ?? null, show.audio, show.quality, show.frameRate, show.destinations, show.recordFolder, show.recordFormat])
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -106,6 +110,7 @@ export function readShow(raw: unknown): ShowFile {
     savedAt: typeof raw.savedAt === 'number' ? raw.savedAt : 0,
     scenes: raw.scenes as Scene[],
     transition: isObj(raw.transition) && (raw.transition.kind === 'cut' || raw.transition.kind === 'fade') ? (raw.transition as AppState['transition']) : { kind: 'fade', durationMs: 500 },
+    ...(isNeutral(cleanGrade(raw.color)) ? {} : { color: cleanGrade(raw.color) }),
     audio: raw.audio as AudioSource[],
     quality: raw.quality === 'low' || raw.quality === 'medium' || raw.quality === 'high' ? raw.quality : 'low',
     frameRate: raw.frameRate === 'pal' || raw.frameRate === 'ntsc' ? raw.frameRate : 'auto',
@@ -143,6 +148,8 @@ export function applyShow(s: AppState, show: ShowFile, now: number): void {
   s.previewSceneId = first.id
   s.programSceneId = first.id
   s.transition = { ...show.transition }
+  if (isNeutral(show.color)) delete s.color
+  else s.color = cleanGrade(show.color)
   s.audio = structuredClone(show.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, volume: a.volume ?? 1, muted: !!a.muted, level: 0 }))
   s.stream.quality = show.quality
   s.stream.frameRate = show.frameRate

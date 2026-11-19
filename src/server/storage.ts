@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, wri
 import { dirname, join } from 'node:path'
 import type { AppState } from '../shared/state'
 import { ensureOverlay, showScenes } from '../shared/state'
+import { cleanGrade, isNeutral } from '../shared/color'
 import { defaultState } from '../core/defaults'
 import type { KeyStore, ShowStore } from '../core/ports'
 import { isShowFileName } from '../core/show'
@@ -27,7 +28,7 @@ function writeJson(file: string, value: unknown, mode = 0o644) {
 }
 
 /** The parts of the state worth keeping between sessions. */
-type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'> & {
+type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio' | 'color'> & {
   quality: AppState['stream']['quality']
   frameRate?: AppState['stream']['frameRate']
   destinations: AppState['stream']['destinations']
@@ -65,6 +66,7 @@ export class SetupFile {
       // Always on: there is no Overlay button any more (scenes can hide it).
       overlayOn: true,
       transition: saved.transition ?? base.transition,
+      ...(isNeutral(saved.color) ? {} : { color: cleanGrade(saved.color) }),
       inputs: saved.inputs ?? base.inputs,
       audio: (saved.audio ?? base.audio).map((a) => ({ ...a, syncOffsetMs: a.syncOffsetMs ?? 0, level: 0 })),
       stream: {
@@ -92,6 +94,7 @@ export class SetupFile {
       scenes: s.scenes,
       overlayOn: s.overlayOn,
       transition: s.transition,
+      ...(isNeutral(s.color) ? {} : { color: s.color }),
       audio: s.audio.map((a) => ({ ...a, level: 0 })),
       quality: s.stream.quality,
       frameRate: s.stream.frameRate,

@@ -9,6 +9,7 @@ import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
 import { Settings, type SettingsTab } from './Settings'
 import { About } from './About'
+import { ColorButton } from './ColorPanel'
 import { MenuBar, ProjectName, ShowDialog, useShowKeys, type ShowDialogKind } from './ShowMenu'
 import type { Studio } from './studio/studio'
 import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
@@ -186,6 +187,7 @@ function Monitors({ state, run, studio }: { state: AppState; run: Run; studio: S
             <span className="muted small push">
               {state.stream.live ? `Live ${liveFor} on ${onCount} platform${onCount === 1 ? '' : 's'}` : 'Not streaming'}
             </span>
+            <ColorButton state={state} run={run} />
           </div>
           {studio ? <LiveCanvas canvas={studio.compositor.program} live /> : <ScenePicture scene={program} state={state} live />}
         </section>

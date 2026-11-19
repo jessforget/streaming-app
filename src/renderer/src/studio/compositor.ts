@@ -7,6 +7,7 @@ import { presetFor } from '../../../shared/presets'
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, scenesOnAir, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { barRects } from '../../../shared/bars'
+import { gradeMath, isNeutral, type ColorGrade } from '../../../shared/color'
 import { graphicsFeeds, videoBox } from './graphics'
 import { NET_PREFIX } from './netcams'
 import { PHONE_PREFIX } from './phones'
@@ -17,6 +18,17 @@ const linked = (id: string) => id.startsWith(PHONE_PREFIX) || id.startsWith(NET_
 /** A phone's tracks belong to its connection; stopping them would end the phone's camera for good. */
 const stopTracks = (id: string, stream?: MediaStream) => {
   if (!linked(id)) stream?.getTracks().forEach((t) => t.stop())
+}
+
+/**
+ * The colour controls as a 2D canvas filter (this fallback is used only when the
+ * graphics card can't draw): exposure, contrast and saturation. White balance
+ * needs the graphics card.
+ */
+function gradeFilter(g: ColorGrade | undefined): string {
+  if (isNeutral(g)) return 'none'
+  const m = gradeMath(g!)
+  return `brightness(${Math.pow(2, g!.exposure)}) contrast(${m.contrast}) saturate(${m.saturation})`
 }
 
 type Drawable = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
@@ -300,16 +312,16 @@ export class Compositor {
       const t = (performance.now() - this.fadeFrom.start) / this.fadeFrom.ms
       if (t >= 1) this.fadeFrom = null
       else {
-        this.drawWithOverlay(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height)
+        this.drawWithOverlay(pctx, this.fadeFrom.scene, s, this.program.width, this.program.height, true)
         pctx.globalAlpha = t
       }
     }
-    if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height)
+    if (program) this.drawWithOverlay(pctx, program, s, this.program.width, this.program.height, true)
     // The manual fader: the Preview scene mixed in on top, as far as the bar is pulled.
     const mixing = this.mixing(s)
     if (mixing) {
       pctx.globalAlpha = mixing.level
-      this.drawWithOverlay(pctx, mixing.scene, s, this.program.width, this.program.height)
+      this.drawWithOverlay(pctx, mixing.scene, s, this.program.width, this.program.height, true)
     }
     pctx.globalAlpha = 1
     if (withPreview) {
@@ -318,7 +330,9 @@ export class Compositor {
       vctx.fillStyle = '#000'
       vctx.fillRect(0, 0, this.preview.width, this.preview.height)
       // Preview shows the scene alone: graphics (the Overlay) are only ever on Live.
+      vctx.filter = gradeFilter(s.color)
       if (preview) this.drawScene(vctx, preview, s, this.preview.width, this.preview.height)
+      vctx.filter = 'none'
     }
   }
 
@@ -374,8 +388,10 @@ export class Compositor {
   }
 
   /** A scene in Live, and the Overlay sources that show over it on top. */
-  private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number) {
+  private drawWithOverlay(ctx: CanvasRenderingContext2D, scene: Scene, s: AppState, w: number, h: number, graded = false) {
+    if (graded) ctx.filter = gradeFilter(s.color)
     this.drawScene(ctx, scene, s, w, h)
+    ctx.filter = 'none'
     const overlay = overlayOver(s, scene.id)
     if (overlay) this.drawScene(ctx, overlay, s, w, h, 1)
   }
