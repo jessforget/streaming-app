@@ -3,7 +3,7 @@ import { BREAK_SOUND, COMMERCIALS_CHANNEL, OVERLAY_ID, audible, isOverlay, linke
 import { PLATFORMS, QUALITY_PRESETS } from '../../shared/presets'
 import type { Bridge } from './bridge/bridge'
 import { AddAudioForm, AddSourceForm, AudioEditor, KIND_LABEL, SceneTools, SourceList } from './Editors'
-import { canOpenGfxApp, openGfxAppHere } from './GraphicsParts'
+import { canOpenGfxApp, openGfxAppHere, shortAddress } from './GraphicsParts'
 import { InstallButton } from './install'
 import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
@@ -706,7 +706,7 @@ function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: Re
         <button className="gfx-add" onClick={() => setAdding(!adding)} aria-expanded={adding} title="Add an overlay: graphics, an image, a window, text…">
           {adding ? 'Close' : '+ Add overlay'}
         </button>
-        {canOpenGfxApp() && <OpenGfxButton />}
+        {canOpenGfxApp() && <OpenGfxButton state={state} run={run} />}
       </div>
       {adding && (
         <div className="gfx-add-form panel">
@@ -723,27 +723,56 @@ function GraphicsRow({ state, run, grid }: { state: AppState; run: Run; grid: Re
 }
 
 /** Start the gfx app on this PC (or bring its window forward): one operator, two monitors. */
-function OpenGfxButton() {
-  const [state, setState] = useState<{ busy: boolean; note?: string }>({ busy: false })
+function OpenGfxButton({ state, run }: { state: AppState; run: Run }) {
+  const [st, setSt] = useState<{ busy: boolean; note?: string; switchTo?: { layerId: string; url: string; from: string } }>({ busy: false })
   return (
     <span className="gfx-open">
       <button
         className="gfx-add"
-        disabled={state.busy}
+        disabled={st.busy}
         title="Start the gfx app on this PC (it opens on the second monitor), or bring its window forward. It can also be started on its own."
         onClick={async () => {
-          setState({ busy: true })
+          setSt({ busy: true })
           const r = await openGfxAppHere()
-          setState({ busy: false, note: r.ok ? 'Gfx app is open' : r.why })
-          window.setTimeout(() => setState((s) => (s.busy ? s : { busy: false })), 6000)
+          if (!r.ok || !r.url) return setSt({ busy: false, note: r.why })
+          // What this PC's gfx app puts on air only reaches the stream through a Graphics overlay showing it.
+          const graphics = (state.scenes.find(isOverlay)?.layers ?? []).filter((l) => l.kind === 'graphics')
+          if (graphics.some((l) => isThisPc(l.url))) return setSt({ busy: false, note: 'Gfx app is open' })
+          if (!graphics.length) {
+            const ok = await run('layer.add', { sceneId: OVERLAY_ID, kind: 'graphics', name: 'Gfx app', url: r.url, size: '1080p', fps: 0 })
+            return setSt({ busy: false, note: ok ? 'Gfx app is open, and its graphics are now in the Overlay' : 'Gfx app is open' })
+          }
+          const l = graphics.find((x) => x.visible) ?? graphics[0]
+          setSt({ busy: false, switchTo: { layerId: l.id, url: r.url, from: shortAddress(l.url ?? '').split('/')[0] || 'another address' } })
         }}
       >
-        {state.busy ? 'Opening…' : '▶ Open gfx app'}
+        {st.busy ? 'Opening…' : '▶ Open gfx app'}
       </button>
-      {state.note && <span className="muted small gfx-open-note">{state.note}</span>}
+      {st.note && <span className="muted small gfx-open-note">{st.note}</span>}
+      {st.switchTo && (
+        <span className="gfx-open-switch" role="alert">
+          <span className="small">
+            Gfx app is open on this PC, but your Graphics overlay still shows the gfx app at <b>{st.switchTo.from}</b>, so what you add and take here won’t reach the stream.
+          </span>
+          <button
+            className="primary"
+            onClick={async () => {
+              const t = st.switchTo!
+              const ok = await run('layer.update', { sceneId: OVERLAY_ID, layerId: t.layerId, url: t.url })
+              setSt({ busy: false, note: ok ? 'Graphics now shows the gfx app on this PC' : undefined })
+            }}
+          >
+            Use this PC’s gfx app
+          </button>
+          <button onClick={() => setSt({ busy: false })}>Keep {st.switchTo.from}</button>
+        </span>
+      )}
     </span>
   )
 }
+
+/** A graphics address on this PC itself. */
+const isThisPc = (url?: string) => /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test((url ?? '').trim())
 
 function GfxCard(props: {
   layer: Layer
@@ -771,7 +800,10 @@ function GfxCardBody({ layer, state }: { layer: Layer; state: AppState }) {
   return (
     <>
       <span className="gfx-card-name">{layer.name}</span>
-      <span className="gfx-card-kind muted small">{KIND_LABEL[layer.kind]}</span>
+      <span className="gfx-card-kind muted small">
+        {KIND_LABEL[layer.kind]}
+        {layer.kind === 'graphics' && layer.url ? ` · ${isThisPc(layer.url) ? 'this PC' : shortAddress(layer.url).split('/')[0]}` : ''}
+      </span>
       <span className={`gfx-card-where small ${names ? 'linked' : ''}`}>
         {!layer.visible ? 'Hidden (switched off in the Overlay panel)' : names ? `🔗 Only on ${names}` : 'Every scene'}
       </span>
