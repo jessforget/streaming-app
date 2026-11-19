@@ -11,7 +11,7 @@
  * same server and show the same page, with no rewrite.
  */
 import { homedir } from 'node:os'
-import { appendFileSync, existsSync } from 'node:fs'
+import { appendFileSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { Controller, errorText } from '../core/controller'
 import { freshSetup } from '../core/defaults'
@@ -36,11 +36,22 @@ function dataDir() {
   return join(homedir(), '.streaming-app')
 }
 
-/** Saved shows: Documents\Streaming App Shows on Windows, easy to find and copy to another PC. */
+/** Saved projects: Documents\Streaming App Projects on Windows, easy to find and copy to another PC. */
 function showsFolder(dir: string): ShowFolder {
   if (process.env.STREAMING_APP_SHOWS) return new ShowFolder(process.env.STREAMING_APP_SHOWS)
   if (process.platform === 'win32' || existsSync(join(homedir(), 'Documents'))) {
-    return new ShowFolder(join(homedir(), 'Documents', 'Streaming App Shows'), process.platform === 'win32' ? 'Documents\\Streaming App Shows' : '~/Documents/Streaming App Shows')
+    const docs = join(homedir(), 'Documents')
+    const dir = join(docs, 'Streaming App Projects')
+    // Projects saved before the File menu were in "Streaming App Shows": move them over once.
+    const old = join(docs, 'Streaming App Shows')
+    if (existsSync(old) && !existsSync(dir)) {
+      try {
+        renameSync(old, dir)
+      } catch {
+        return new ShowFolder(old, process.platform === 'win32' ? 'Documents\\Streaming App Shows' : '~/Documents/Streaming App Shows')
+      }
+    }
+    return new ShowFolder(dir, process.platform === 'win32' ? 'Documents\\Streaming App Projects' : '~/Documents/Streaming App Projects')
   }
   return new ShowFolder(join(dir, 'shows'))
 }

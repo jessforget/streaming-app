@@ -1,7 +1,8 @@
 /**
- * The show menu, top left of the main window: the show's name, whether it is
- * saved, and Save / Save as / Open / New, so each show can keep its own
- * standard layout. Settings and About are at the right of the top bar.
+ * The File menu, like any program: New, Open, recent projects, Save, Save as,
+ * and project files to take to another PC. A project keeps a show's standard
+ * layout (scenes, sources, sound, overlays, live data, platforms), so the same
+ * setup can be used again for repeat work. Help holds About.
  */
 import { useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/state'
@@ -26,22 +27,47 @@ function savedWhen(at: number): string {
   return `${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' })} ${time}`
 }
 
-/** Save the show now: to its own file, or ask for a name the first time. */
+/** Save the project now: to its own file, or ask for a name the first time. */
 export function saveShow(state: AppState, run: Run, ask: (k: ShowDialogKind) => void) {
   if (state.show.file) void run('show.save', {})
   else ask('saveAs')
 }
 
-export function ShowMenu(props: { state: AppState; run: Run; bridge: Bridge; open: (k: ShowDialogKind) => void; openAbout: () => void; notice: (m: string) => void }) {
-  const { state, run, bridge, open, openAbout, notice } = props
-  const [menu, setMenu] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
+/** The project's name in the top bar, and whether it is saved. */
+export function ProjectName({ state }: { state: AppState }) {
+  const status = state.show.changed ? 'Changes not saved' : state.show.file ? `Saved ${savedWhen(state.show.savedAt ?? 0)}`.trim() : 'Not saved yet'
+  return (
+    <div className="project-name">
+      <strong title={state.show.file ? `Project file: ${state.show.file}` : undefined}>{state.setupName}</strong>
+      <span className={`show-status ${state.show.changed ? 'unsaved' : ''}`}>
+        {state.show.changed && <span className="dot" aria-hidden="true" />}
+        {status}
+      </span>
+      {state.engine.mode === 'simulated' && (
+        <span className="pill practice" title={state.engine.note}>
+          Practice mode
+        </span>
+      )}
+    </div>
+  )
+}
+
+type MenuName = 'file' | 'help'
+
+/** The menu bar along the top of the window: File and Help. */
+export function MenuBar(props: { state: AppState; run: Run; bridge: Bridge; open: (k: ShowDialogKind) => void; openAbout: () => void; openSettings: () => void; notice: (m: string) => void }) {
+  const { state, run, bridge, open, openAbout, openSettings, notice } = props
+  const [menu, setMenu] = useState<MenuName | null>(null)
+  const [recent, setRecent] = useState<ShowRow[]>([])
+  const bar = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const busy = state.stream.live || state.recording.active
+  const busyTitle = busy ? 'Stop streaming and recording first' : undefined
+
   useEffect(() => {
     if (!menu) return
-    const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setMenu(false)
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false)
+    const away = (e: MouseEvent) => !bar.current?.contains(e.target as Node) && setMenu(null)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(null)
     window.addEventListener('mousedown', away)
     window.addEventListener('keydown', esc)
     return () => {
@@ -49,18 +75,29 @@ export function ShowMenu(props: { state: AppState; run: Run; bridge: Bridge; ope
       window.removeEventListener('keydown', esc)
     }
   }, [menu])
+  useEffect(() => {
+    if (menu !== 'file') return
+    void bridge.command('show.list', {}).then((r) => {
+      if (r.ok) setRecent((r.data as { shows: ShowRow[] }).shows.filter((s) => s.file !== state.show.file).slice(0, 5))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu])
 
   const pick = (fn: () => void) => () => {
-    setMenu(false)
+    setMenu(null)
     fn()
+  }
+  const openRecent = (file: string) => {
+    if (state.show.changed) open('open')
+    else void run('show.open', { file })
   }
   const download = async () => {
     const r = await bridge.command('show.export', {})
-    if (!r.ok) return notice(r.error ?? 'Could not make the show file')
+    if (!r.ok) return notice(r.error ?? 'Could not make the project file')
     const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `${state.setupName.replace(/[<>:"/\\|?*]/g, ' ').trim() || 'Show'}.show.json`
+    a.download = `${state.setupName.replace(/[<>:"/\\|?*]/g, ' ').trim() || 'Project'}.show.json`
     document.body.append(a)
     a.click()
     a.remove()
@@ -72,61 +109,79 @@ export function ShowMenu(props: { state: AppState; run: Run; bridge: Bridge; ope
     try {
       show = JSON.parse(await f.text())
     } catch {
-      return notice('That file isn’t a show file (it can’t be read).')
+      return notice('That file isn’t a project file (it can’t be read).')
     }
     const ok = await run('show.import', { show })
-    if (ok) notice(`Opened ${f.name}. It is kept with your other shows now.`)
+    if (ok) notice(`Opened ${f.name}. It is kept with your other projects now.`)
   }
+  const head = (name: MenuName, label: string) => (
+    <button
+      className={`menubar-item ${menu === name ? 'open' : ''}`}
+      aria-haspopup="menu"
+      aria-expanded={menu === name}
+      onClick={() => setMenu(menu === name ? null : name)}
+      onMouseEnter={() => menu && menu !== name && setMenu(name)}
+    >
+      {label}
+    </button>
+  )
 
-  const status = state.show.changed ? 'Changes not saved' : state.show.file ? `Saved ${savedWhen(state.show.savedAt ?? 0)}`.trim() : 'Not saved yet'
   return (
-    <div className="show-menu" ref={box}>
-      <button className={`show-button ${menu ? 'open' : ''}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="Save, open or start a show">
-        <span className="show-label">
-          <strong>{state.setupName}</strong>
-          <span className={`show-status ${state.show.changed ? 'unsaved' : ''}`}>
-            {state.show.changed && <span className="dot" aria-hidden="true" />}
-            {status}
-          </span>
-        </span>
-        <span className="chev" aria-hidden="true">
-          ▾
-        </span>
-      </button>
-      {state.engine.mode === 'simulated' && (
-        <span className="pill practice" title={state.engine.note}>
-          Practice mode
-        </span>
-      )}
-      {menu && (
-        <div className="menu" role="menu">
-          <button role="menuitem" onClick={pick(() => saveShow(state, run, open))}>
-            Save show<kbd>Ctrl+S</kbd>
-          </button>
-          <button role="menuitem" onClick={pick(() => open('saveAs'))}>
-            Save as a new show…
-          </button>
-          <button role="menuitem" onClick={pick(() => open('open'))} disabled={busy} title={busy ? 'Stop streaming and recording first' : undefined}>
-            Open show…<kbd>Ctrl+O</kbd>
-          </button>
-          <button role="menuitem" onClick={pick(() => open('new'))} disabled={busy} title={busy ? 'Stop streaming and recording first' : undefined}>
-            New show…
-          </button>
-          <hr />
-          <button role="menuitem" onClick={pick(() => void download())}>
-            Download show file
-            <small>To take it to another PC</small>
-          </button>
-          <button role="menuitem" onClick={pick(() => fileInput.current?.click())} disabled={busy}>
-            Open a show file…
-            <small>From another PC or a USB stick</small>
-          </button>
-          <hr />
-          <button role="menuitem" onClick={pick(openAbout)}>
-            About
-          </button>
-        </div>
-      )}
+    <div className="menubar" ref={bar} role="menubar">
+      <div className="menubar-slot">
+        {head('file', 'File')}
+        {menu === 'file' && (
+          <div className="menu" role="menu" aria-label="File">
+            <button role="menuitem" onClick={pick(() => open('new'))} disabled={busy} title={busyTitle}>
+              New project…
+            </button>
+            <button role="menuitem" onClick={pick(() => open('open'))} disabled={busy} title={busyTitle}>
+              Open project…<kbd>Ctrl+O</kbd>
+            </button>
+            {recent.length > 0 && (
+              <>
+                <span className="menu-label">Recent projects</span>
+                {recent.map((r) => (
+                  <button key={r.file} role="menuitem" className="recent" onClick={pick(() => openRecent(r.file))} disabled={busy} title={busyTitle}>
+                    {r.name}
+                    <small>saved {savedWhen(r.savedAt)}</small>
+                  </button>
+                ))}
+              </>
+            )}
+            <hr />
+            <button role="menuitem" onClick={pick(() => saveShow(state, run, open))}>
+              Save project<kbd>Ctrl+S</kbd>
+            </button>
+            <button role="menuitem" onClick={pick(() => open('saveAs'))}>
+              Save project as…<kbd>Ctrl+Shift+S</kbd>
+            </button>
+            <hr />
+            <button role="menuitem" onClick={pick(() => fileInput.current?.click())} disabled={busy} title={busyTitle}>
+              Import project file…
+              <small>From another PC or a USB stick</small>
+            </button>
+            <button role="menuitem" onClick={pick(() => void download())}>
+              Export project file…
+              <small>To take it to another PC</small>
+            </button>
+            <hr />
+            <button role="menuitem" onClick={pick(openSettings)}>
+              Settings…
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="menubar-slot">
+        {head('help', 'Help')}
+        {menu === 'help' && (
+          <div className="menu" role="menu" aria-label="Help">
+            <button role="menuitem" onClick={pick(openAbout)}>
+              About Streaming App
+            </button>
+          </div>
+        )}
+      </div>
       <input
         ref={fileInput}
         type="file"
@@ -184,7 +239,7 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
     void go(() => run('show.open', { file: selected }))
   }
 
-  const title = kind === 'open' ? 'Open show' : kind === 'saveAs' ? 'Save as a new show' : 'New show'
+  const title = kind === 'open' ? 'Open project' : kind === 'saveAs' ? 'Save project as' : 'New project'
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal shows" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
@@ -203,7 +258,7 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
           )}
           {kind !== 'open' && (
             <label className="field">
-              <span>Show name</span>
+              <span>Project name</span>
               <input
                 autoFocus
                 value={name}
@@ -214,21 +269,21 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
               />
             </label>
           )}
-          {kind === 'saveAs' && taken && <p className="warn-text small">A show called {taken.name} is already saved. Saving replaces it.</p>}
+          {kind === 'saveAs' && taken && <p className="warn-text small">A project called {taken.name} is already saved. Saving replaces it.</p>}
 
           {kind === 'open' && (
             <>
               {error && <p className="warn-text">{error}</p>}
-              {rows === null && !error && <p className="muted">Looking for saved shows…</p>}
+              {rows === null && !error && <p className="muted">Looking for saved projects…</p>}
               {rows?.length === 0 && (
                 <div className="empty-shows">
-                  <strong>No saved shows yet</strong>
-                  <p className="muted small">Set up the scenes, sources and sound for a show, then choose Save show in the show menu (or press Ctrl+S).</p>
-                  <button onClick={() => onKind('saveAs')}>Save this show now</button>
+                  <strong>No saved projects yet</strong>
+                  <p className="muted small">Set up the scenes, sources and sound for a show, then choose File, Save project (or press Ctrl+S).</p>
+                  <button onClick={() => onKind('saveAs')}>Save this project now</button>
                 </div>
               )}
               {!!rows?.length && (
-                <ul className="show-list" role="listbox" aria-label="Saved shows">
+                <ul className="show-list" role="listbox" aria-label="Saved projects">
                   {rows.map((r) => (
                     <li key={r.file}>
                       <button
@@ -292,7 +347,7 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
               )}
             </>
           )}
-          {folder && <p className="muted small">Shows are saved in {folder}.</p>}
+          {folder && <p className="muted small">Projects are saved in {folder}.</p>}
         </div>
         <footer className="modal-foot">
           {kind === 'open' ? (
@@ -318,7 +373,7 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
             )}
             {kind === 'new' && (
               <button className="primary" disabled={!name.trim() || working} onClick={() => void go(() => run('show.new', { name: name.trim() }))}>
-                Start new show
+                Start new project
               </button>
             )}
           </div>
@@ -328,17 +383,22 @@ export function ShowDialog(props: { kind: ShowDialogKind; state: AppState; run: 
   )
 }
 
-/** Ctrl+S saves, Ctrl+O opens: like any other program. */
+/** Ctrl+S saves, Ctrl+Shift+S saves as, Ctrl+O opens: like any other program. */
 export function useShowKeys(state: AppState | null, run: Run, open: (k: ShowDialogKind) => void) {
   const latest = useRef({ state, run, open })
   latest.current = { state, run, open }
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
       const k = e.key.toLowerCase()
       const { state: s, run: go, open: ask } = latest.current
       if (!s) return
-      if (k === 's') {
+      if (k === 's' && e.shiftKey) {
+        e.preventDefault()
+        ask('saveAs')
+      } else if (e.shiftKey) {
+        return
+      } else if (k === 's') {
         e.preventDefault()
         saveShow(s, go, ask)
       } else if (k === 'o') {

@@ -9,7 +9,7 @@ import { HealthPill, Notice, PhonePanelContext, ScenePicture } from './parts'
 import { PhoneCameraPanel } from './PhoneCameraPanel'
 import { Settings, type SettingsTab } from './Settings'
 import { About } from './About'
-import { ShowDialog, ShowMenu, useShowKeys, type ShowDialogKind } from './ShowMenu'
+import { MenuBar, ProjectName, ShowDialog, useShowKeys, type ShowDialogKind } from './ShowMenu'
 import type { Studio } from './studio/studio'
 import { LiveCanvas, LiveMeter, SceneThumb, StudioBar } from './studio/StudioParts'
 import { useApp, useElapsed, type Run } from './useApp'
@@ -38,13 +38,8 @@ export function MainWindow(props: { bridge: Bridge; studio?: Studio | null; stud
   if (!state) return <div className="loading">Starting…</div>
   return (
     <div className="app">
-      <TopBar
-        state={state}
-        stats={stats}
-        run={run}
-        openSettings={setSettings}
-        showMenu={<ShowMenu state={state} run={run} bridge={bridge} open={setShowDialog} openAbout={() => setAboutOpen(true)} notice={showNotice} />}
-      />
+      <MenuBar state={state} run={run} bridge={bridge} open={setShowDialog} openAbout={() => setAboutOpen(true)} openSettings={() => setSettings('golive')} notice={showNotice} />
+      <TopBar state={state} stats={stats} run={run} openSettings={setSettings} showMenu={<ProjectName state={state} />} />
       <Notice text={notice} onClose={clearNotice} />
       <StudioBar studio={studio} elsewhere={studioElsewhere} state={state} />
       <PhonePanelContext.Provider value={setPhonePanel}>

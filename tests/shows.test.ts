@@ -87,7 +87,7 @@ describe('show files', () => {
     expect(b.c.state.show.file).toBe('My show.show.json')
     await b.c.run('local', 'show.import', { show: file })
     expect(b.c.state.show.file).toBe('My show (2).show.json')
-    await expect(b.c.run('local', 'show.import', { show: { hello: 1 } })).rejects.toThrow('isn’t a show file')
+    await expect(b.c.run('local', 'show.import', { show: { hello: 1 } })).rejects.toThrow('isn’t a project file')
   })
 
   it('leaves the gfx commercial scene out of the show', async () => {

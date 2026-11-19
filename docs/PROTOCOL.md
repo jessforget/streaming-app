@@ -103,7 +103,7 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `audio.remove` | `{ "sourceId" }` |
 | `inputs.refresh` | none (look for capture and audio devices again) |
 
-Shows (streaming PC only). A show file keeps a show's standard layout: scenes, the Overlay, sources, the sound mixer, live data fields, which platforms are on, quality and the recording folder. Never the stream keys. On a PC they are saved as `<name>.show.json` in Documents\Streaming App Shows. `state.show` = `{ "file", "savedAt", "changed" }` (`changed`: the layout has changes not saved yet; live data values don't count).
+Projects (File menu; streaming PC only). A project file keeps a show's standard layout: scenes, the Overlay, sources, the sound mixer, live data fields, which platforms are on, quality and the recording folder. Never the stream keys. On a PC they are saved as `<name>.show.json` in Documents\Streaming App Projects. `state.show` = `{ "file", "savedAt", "changed" }` (`changed`: the layout has changes not saved yet; live data values don't count).
 
 | Action | Params |
 | --- | --- |

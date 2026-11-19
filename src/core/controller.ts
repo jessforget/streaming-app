@@ -694,7 +694,7 @@ export class Controller extends Emitter<Events> {
         try {
           store.write(file, showFromState(this.s, showName, at))
         } catch (e) {
-          throw new CommandError(`Could not save the show: ${errorText(e)}`)
+          throw new CommandError(`Could not save the project: ${errorText(e)}`)
         }
         this.s.setupName = showName
         this.markSaved(file, at)
@@ -703,12 +703,12 @@ export class Controller extends Emitter<Events> {
       }
       case 'show.open': {
         const file = P.file
-        if (!isShowFileName(file)) throw new CommandError('Pick a show from the list')
+        if (!isShowFileName(file)) throw new CommandError('Pick a project from the list')
         let raw: unknown
         try {
           raw = this.showStore().read(file)
         } catch (e) {
-          throw new CommandError(`Could not open the show: ${errorText(e)}`)
+          throw new CommandError(`Could not open the project: ${errorText(e)}`)
         }
         const show = readShow(raw)
         await this.loadShow(() => applyShow(this.s, show, this.now()))
@@ -728,7 +728,7 @@ export class Controller extends Emitter<Events> {
         try {
           store.write(file, showFromState(this.s, this.s.setupName, at))
         } catch (e) {
-          throw new CommandError(`The show is open, but could not be kept in the shows folder: ${errorText(e)}`)
+          throw new CommandError(`The project is open, but could not be kept in the projects folder: ${errorText(e)}`)
         }
         this.markSaved(file, at)
         this.changed()
@@ -751,11 +751,11 @@ export class Controller extends Emitter<Events> {
       }
       case 'show.delete': {
         const file = P.file
-        if (!isShowFileName(file)) throw new CommandError('Pick a show from the list')
+        if (!isShowFileName(file)) throw new CommandError('Pick a project from the list')
         try {
           this.showStore().remove(file)
         } catch (e) {
-          throw new CommandError(`Could not delete the show: ${errorText(e)}`)
+          throw new CommandError(`Could not delete the project: ${errorText(e)}`)
         }
         if (this.s.show.file === file) {
           this.s.show = { file: null, savedAt: null, changed: true }
@@ -1271,7 +1271,7 @@ export class Controller extends Emitter<Events> {
   }
 
   private showStore(): ShowStore {
-    if (!this.shows) throw new CommandError('Saving shows isn’t available here')
+    if (!this.shows) throw new CommandError('Saving projects isn’t available here')
     return this.shows
   }
 
@@ -1285,7 +1285,7 @@ export class Controller extends Emitter<Events> {
    * picture on air would change all at once.
    */
   private async loadShow(apply: () => void) {
-    if (this.s.stream.live || this.s.recording.active) throw new CommandError('Stop streaming and recording first, then open the show.')
+    if (this.s.stream.live || this.s.recording.active) throw new CommandError('Stop streaming and recording first, then open the project.')
     const before = this.s.scenes.map((x) => x.id)
     apply()
     this.cueBack = ''

@@ -86,9 +86,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 
 /** Check a show file read from disk or loaded from another PC. Throws a plain-words error. */
 export function readShow(raw: unknown): ShowFile {
-  const bad = (why: string) => new CommandError(`This isn’t a show file the app can open (${why}).`)
+  const bad = (why: string) => new CommandError(`This isn’t a project file the app can open (${why}).`)
   if (!isObj(raw) || raw.format !== SHOW_FORMAT) throw bad('it was not saved by this app')
-  if (typeof raw.version !== 'number' || raw.version > SHOW_VERSION) throw new CommandError('This show was saved by a newer version of the app. Update the app to open it.')
+  if (typeof raw.version !== 'number' || raw.version > SHOW_VERSION) throw new CommandError('This project was saved by a newer version of the app. Update the app to open it.')
   if (!Array.isArray(raw.scenes) || !raw.scenes.every((x) => isObj(x) && typeof x.id === 'string' && typeof x.name === 'string' && Array.isArray(x.layers))) throw bad('its scenes are damaged')
   if (!showScenes(raw.scenes as Scene[]).length) throw bad('it has no scenes')
   if (!Array.isArray(raw.audio) || !raw.audio.every((a) => isObj(a) && typeof a.id === 'string' && typeof a.kind === 'string')) throw bad('its sound mixer is damaged')
