@@ -93,3 +93,35 @@ export class MemoryKeyStore implements KeyStore {
     return this.keys.has(id)
   }
 }
+
+/** Saved shows (show files in a folder on this PC). `file` is a plain file name in that folder. */
+export interface ShowStore {
+  /** Where the show files are, in words for the person ("Documents\Streaming App Shows"). */
+  readonly folder: string
+  list(): { file: string; name: string; savedAt: number; scenes: number }[]
+  read(file: string): unknown
+  write(file: string, show: unknown): void
+  remove(file: string): void
+}
+
+/** Shows kept in memory: practice mode, the mockup and tests. */
+export class MemoryShowStore implements ShowStore {
+  readonly folder = 'this practice session (not saved to disk)'
+  private files = new Map<string, unknown>()
+  list() {
+    return [...this.files].map(([file, v]) => {
+      const show = v as { name?: string; savedAt?: number; scenes?: { id: string }[] }
+      return { file, name: show.name ?? file, savedAt: show.savedAt ?? 0, scenes: (show.scenes ?? []).filter((x) => x.id !== 'overlay').length }
+    })
+  }
+  read(file: string) {
+    if (!this.files.has(file)) throw new Error('That show file is gone')
+    return structuredClone(this.files.get(file))
+  }
+  write(file: string, show: unknown) {
+    this.files.set(file, structuredClone(show))
+  }
+  remove(file: string) {
+    this.files.delete(file)
+  }
+}

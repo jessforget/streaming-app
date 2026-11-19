@@ -23,6 +23,15 @@ const { createReadStream, readFileSync, writeFileSync, statSync, readdirSync, mk
 const { join, extname, basename, dirname } = require('node:path')
 const os = require('node:os')
 
+/** Name, version, revision date, developer and copyright (shared with the streaming app). */
+const ABOUT = (() => {
+  try {
+    return { ...JSON.parse(readFileSync(join(__dirname, '..', 'about.json'), 'utf8')), name: 'Gfx App' }
+  } catch {
+    return { name: 'Gfx App', version: '', revisionDate: '', developer: 'Jess Limot', copyright: '' }
+  }
+})()
+
 const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars']
 const STYLES = ['classic', 'block', 'minimal', 'news']
 const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'custom']
@@ -533,11 +542,13 @@ function startServer(opts = {}) {
     return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
   }
 
-  const lanAddresses = () =>
-    Object.values(os.networkInterfaces())
-      .flat()
-      .filter((a) => a && a.family === 'IPv4' && !a.internal)
-      .map((a) => a.address)
+  // Adapters made by other programs (WSL, VirtualBox, VMware...): other computers can't reach these, so they go last.
+  const VIRTUAL = /vethernet|virtual|vmware|vbox|docker|hyper-v|wsl|loopback|tailscale|zerotier|vpn/i
+  const namedAddresses = () =>
+    Object.entries(os.networkInterfaces())
+      .flatMap(([name, list]) => (list ?? []).filter((a) => a.family === 'IPv4' && !a.internal).map((a) => ({ name, ip: a.address })))
+      .sort((a, b) => Number(VIRTUAL.test(a.name)) - Number(VIRTUAL.test(b.name)))
+  const lanAddresses = () => namedAddresses().map((a) => a.ip)
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x')
@@ -559,7 +570,9 @@ function startServer(opts = {}) {
           items: show.items.length,
           port: server.address().port,
           addresses: lanAddresses(),
-          local: isLocal(req)
+          named: namedAddresses(),
+          local: isLocal(req),
+          about: ABOUT
         })
       }
       if (req.method === 'GET' && path === '/events') {

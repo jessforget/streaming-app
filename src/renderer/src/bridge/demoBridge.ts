@@ -6,7 +6,7 @@
  */
 import { Controller, errorText } from '../../../core/controller'
 import { defaultState } from '../../../core/defaults'
-import { MemoryKeyStore, type DeviceAdmin } from '../../../core/ports'
+import { MemoryKeyStore, MemoryShowStore, type DeviceAdmin } from '../../../core/ports'
 import { SimEngine } from '../../../core/sim'
 import { CommandError, type Action, type Caller, type CommandMap, type Role } from '../../../shared/protocol'
 import type { AppState, HealthStats, PairedDevice } from '../../../shared/state'
@@ -56,7 +56,7 @@ export class DemoApp {
       { id: 'host-mic', name: 'L-12 Ch 1 Host', kind: 'device', device: 'zoom-l12', channels: [1], syncOffsetMs: 80, volume: 0.8, muted: false, level: 0 },
       { id: 'guest-mic', name: 'L-12 Ch 2 Guest', kind: 'device', device: 'zoom-l12', channels: [2], syncOffsetMs: 80, volume: 0.75, muted: false, level: 0 }
     )
-    this.controller = new Controller({ engine: new SimEngine(), keys, initial })
+    this.controller = new Controller({ engine: new SimEngine(), keys, initial, shows: new MemoryShowStore() })
     this.devices = new DemoDevices(() =>
       this.controller.updateDevices({
         pairingOpen: this.devices.open,
@@ -69,7 +69,8 @@ export class DemoApp {
       pairingOpen: true,
       pairingCode: this.devices.code,
       controlUrl: 'http://192.168.1.20:7420',
-      list: this.devices.list
+      list: this.devices.list,
+      network: { addresses: [{ name: 'Wi-Fi', ip: '192.168.1.20' }], controlPort: 7420, phonePort: 7421, rtmpPort: 1935 }
     })
   }
 

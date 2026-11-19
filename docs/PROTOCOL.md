@@ -103,6 +103,19 @@ Changing the setup (scenes, sources, audio channels) is for the streaming PC onl
 | `audio.remove` | `{ "sourceId" }` |
 | `inputs.refresh` | none (look for capture and audio devices again) |
 
+Projects (File menu; streaming PC only). A project file keeps a show's standard layout: scenes, the Overlay, sources, the sound mixer, live data fields, which platforms are on, quality and the recording folder. Never the stream keys. On a PC they are saved as `<name>.show.json` in Documents\Streaming App Projects. `state.show` = `{ "file", "savedAt", "changed" }` (`changed`: the layout has changes not saved yet; live data values don't count).
+
+| Action | Params |
+| --- | --- |
+| `show.list` | none → `{ "folder", "shows": [{ "file", "name", "savedAt", "scenes" }] }`, newest first |
+| `show.save` | `{}` saves to the show's own file; `{ "name" }` saves a new show under that name (Save as) → `{ "file", "name" }` |
+| `show.open` | `{ "file" }` (not while streaming or recording). Devices the show used are found again by name if their ids differ on this PC. |
+| `show.new` | `{ "name" }`: the standard scenes and sound; platforms, quality and recording folder stay |
+| `show.delete` | `{ "file" }` |
+| `show.export` | none → the show file (to take to another PC) |
+| `show.import` | `{ "show": <show file> }`: opens it and keeps it in the shows folder |
+| `show.setAutosave` | `{ "on": true \| false }`: save the open project to its file by itself 3 s after each change and when the app closes (on by default; `state.show.autosave`) |
+
 `device` ids come from `state.inputs.video` and `state.inputs.audio`. Each audio device has its real name, its `driver` (`wasapi` or `asio`), and when known its `channels` count and `channelNames`. The list updates by itself when a device is plugged in or unplugged.
 
 ## 5. Data fields (companion app)

@@ -383,7 +383,16 @@ export type FpsFamily = 'pal' | 'ntsc'
 export type FrameRateChoice = 'auto' | FpsFamily
 
 export interface AppState {
+  /** The show's name (top left of the main window). */
   setupName: string
+  /** The show file it was opened from or saved to (in the shows folder), and whether there are changes not saved yet. */
+  show: {
+    file: string | null
+    savedAt: number | null
+    changed: boolean
+    /** Save the project to its file by itself a moment after each change (File menu, on by default). */
+    autosave?: boolean
+  }
   engine: EngineInfo
   scenes: Scene[]
   previewSceneId: string
@@ -413,7 +422,7 @@ export interface AppState {
   /** Devices the PC can see, for the source and audio pickers. */
   inputs: { video: InputDevice[]; audio: InputDevice[] }
   data: Record<string, DataField>
-  devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[] }
+  devices: { pairingOpen: boolean; pairingCode: string; controlUrl: string; list: PairedDevice[]; network: NetworkInfo }
   stats: HealthStats
   /** Asked from the app or the remote: switch a phone to its front or back camera (by device id; seq tells a new ask). Not saved. */
   phoneFlips?: Record<string, { facing: PhoneFacing; seq: number }>
@@ -421,6 +430,17 @@ export interface AppState {
   phoneSets?: Record<string, { set: Record<string, PhoneCamValue>; seq: number }>
 }
 
+/** Where other computers on the network reach this PC (shown in About). Port 0 = that part is off. */
+export interface NetworkInfo {
+  /** This PC's addresses, with the network adapter's name ("Wi-Fi", "Ethernet"). */
+  addresses: { name: string; ip: string }[]
+  /** Main window, tablet remote, companion app and stream deck. */
+  controlPort: number
+  /** Phone cameras (HTTPS). */
+  phonePort: number
+  /** Cameras that stream to the app (RTMP). */
+  rtmpPort: number
+}
 /** A phone's camera: front ('user', the selfie one) or back ('environment'). */
 export type PhoneFacing = 'user' | 'environment'
 

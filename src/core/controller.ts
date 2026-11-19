@@ -21,14 +21,17 @@ import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, i
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { Emitter } from './emitter'
-import { IDLE_STATS } from './defaults'
-import type { DeviceAdmin, Engine, KeyStore, StreamTarget } from './ports'
+import { IDLE_STATS, freshSetup } from './defaults'
+import type { DeviceAdmin, Engine, KeyStore, ShowStore, StreamTarget } from './ports'
+import { applyShow, isShowFileName, readShow, showFileName, showFingerprint, showFromState } from './show'
 
 export interface ControllerOptions {
   engine: Engine
   keys: KeyStore
   initial: AppState
   devices?: DeviceAdmin
+  /** Saved shows. Without it, Save show and Open show say they aren't available. */
+  shows?: ShowStore
   now?: () => number
 }
 
@@ -42,6 +45,9 @@ export class Controller extends Emitter<Events> {
   private readonly engine: Engine
   private readonly keys: KeyStore
   private devices?: DeviceAdmin
+  private readonly shows?: ShowStore
+  /** The layout as last saved or opened, to tell when there are changes not saved yet. */
+  private savedPrint = ''
   private readonly now: () => number
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private deviceTimer: ReturnType<typeof setInterval> | null = null
@@ -54,12 +60,16 @@ export class Controller extends Emitter<Events> {
     this.engine = opts.engine
     this.keys = opts.keys
     this.devices = opts.devices
+    this.shows = opts.shows
     this.now = opts.now ?? (() => Date.now())
     this.s = ensureOverlay(structuredClone(opts.initial))
     for (const d of this.s.stream.destinations) {
       d.hasKey = this.keys.has(d.id)
       d.keyEnd = keyEnd(this.keys.get(d.id))
     }
+    this.s.show ??= { file: null, savedAt: null, changed: false }
+    this.s.show.autosave ??= true
+    if (!this.s.show.changed) this.savedPrint = showFingerprint(this.s)
     // The engine says when an output stops on its own (connection lost, the studio page closed).
     this.engine.onNotice = (message) => this.emit('error', message)
     this.engine.onOutputStopped = (kind, reason) => {
@@ -95,6 +105,8 @@ export class Controller extends Emitter<Events> {
    */
   async start(options: { statsIntervalMs?: number; devicePollMs?: number } = {}) {
     await this.engine.init(this.s)
+    // Changes left unsaved last time (the app was closed too soon) go to the project file.
+    this.scheduleAutosave()
     await this.refreshAllTexts()
     await this.refreshInputs()
     const ms = options.statsIntervalMs ?? 1000
@@ -104,6 +116,10 @@ export class Controller extends Emitter<Events> {
   }
 
   async stop() {
+    // Anything not saved yet goes to the project file before closing.
+    if (this.autosaveTimer) clearTimeout(this.autosaveTimer)
+    this.autosaveTimer = null
+    this.autosaveNow()
     if (this.statsTimer) clearInterval(this.statsTimer)
     if (this.deviceTimer) clearInterval(this.deviceTimer)
     this.statsTimer = null
@@ -670,6 +686,97 @@ export class Controller extends Emitter<Events> {
         await this.refreshInputs()
         return this.changed()
 
+      case 'show.list': {
+        const store = this.showStore()
+        const shows = store.list().sort((a, b) => b.savedAt - a.savedAt)
+        return { folder: store.folder, shows }
+      }
+      case 'show.save': {
+        const store = this.showStore()
+        // Save: the show's own file. Save as (a name): a new file with that name.
+        const asName = P.name === undefined ? '' : name(P, 'name')
+        const showName = asName || this.s.setupName
+        const file = asName || !this.s.show.file ? showFileName(showName) : this.s.show.file
+        const at = this.now()
+        try {
+          store.write(file, showFromState(this.s, showName, at))
+        } catch (e) {
+          throw new CommandError(`Could not save the project: ${errorText(e)}`)
+        }
+        this.s.setupName = showName
+        this.markSaved(file, at)
+        this.changed()
+        return { file, name: showName }
+      }
+      case 'show.open': {
+        const file = P.file
+        if (!isShowFileName(file)) throw new CommandError('Pick a project from the list')
+        let raw: unknown
+        try {
+          raw = this.showStore().read(file)
+        } catch (e) {
+          throw new CommandError(`Could not open the project: ${errorText(e)}`)
+        }
+        const show = readShow(raw)
+        await this.loadShow(() => applyShow(this.s, show, this.now()))
+        this.markSaved(file, show.savedAt || null)
+        this.changed()
+        return { file, name: this.s.setupName }
+      }
+      case 'show.import': {
+        // A show file from another PC (or a USB stick): opened, and kept in the shows folder.
+        const show = readShow(P.show)
+        const store = this.showStore()
+        const taken = new Set(store.list().map((x) => x.file))
+        let file = showFileName(show.name)
+        for (let i = 2; taken.has(file); i++) file = showFileName(`${show.name} (${i})`)
+        await this.loadShow(() => applyShow(this.s, show, this.now()))
+        const at = this.now()
+        try {
+          store.write(file, showFromState(this.s, this.s.setupName, at))
+        } catch (e) {
+          throw new CommandError(`The project is open, but could not be kept in the projects folder: ${errorText(e)}`)
+        }
+        this.markSaved(file, at)
+        this.changed()
+        return { file, name: this.s.setupName }
+      }
+      case 'show.new': {
+        // A fresh layout. This PC's platforms, quality and recording folder carry over.
+        const showName = name(P, 'name')
+        const fresh = freshSetup()
+        fresh.inputs = this.s.inputs
+        fresh.stream = { ...this.s.stream, destinations: this.s.stream.destinations.map((d) => ({ ...d, enabled: false })) }
+        fresh.recording = { ...this.s.recording }
+        const show = showFromState(fresh, showName, 0)
+        await this.loadShow(() => applyShow(this.s, show, this.now()))
+        this.s.data = {}
+        this.s.show = { file: null, savedAt: null, changed: true, autosave: this.s.show.autosave ?? true }
+        this.savedPrint = ''
+        this.changed()
+        return { name: showName }
+      }
+      case 'show.delete': {
+        const file = P.file
+        if (!isShowFileName(file)) throw new CommandError('Pick a project from the list')
+        try {
+          this.showStore().remove(file)
+        } catch (e) {
+          throw new CommandError(`Could not delete the project: ${errorText(e)}`)
+        }
+        if (this.s.show.file === file) {
+          this.s.show = { file: null, savedAt: null, changed: true, autosave: this.s.show.autosave ?? true }
+          this.savedPrint = ''
+        }
+        return this.changed()
+      }
+      case 'show.setAutosave': {
+        this.s.show.autosave = bool(P, 'on')
+        return this.changed()
+      }
+      case 'show.export':
+        return showFromState(this.s, this.s.setupName, this.now())
+
       case 'devices.setPairingOpen':
         this.deviceAdmin().setPairingOpen(bool(P, 'open'))
         return null
@@ -1144,8 +1251,40 @@ export class Controller extends Emitter<Events> {
   }
 
   private changed(): AppState {
+    if (!this.s.show.changed && showFingerprint(this.s) !== this.savedPrint) this.s.show.changed = true
     this.emit('state', this.s)
+    this.scheduleAutosave()
     return this.s
+  }
+
+  private autosaveTimer: ReturnType<typeof setTimeout> | null = null
+  /** How long after the last change the project saves itself. */
+  static AUTOSAVE_MS = 3000
+
+  /** A project with a file saves itself a moment after the last change (unless autosave is off). */
+  private scheduleAutosave() {
+    const show = this.s.show
+    if (!this.shows || !show.file || !show.changed || show.autosave === false || this.autosaveTimer) return
+    this.autosaveTimer = setTimeout(() => {
+      this.autosaveTimer = null
+      this.autosaveNow()
+    }, Controller.AUTOSAVE_MS)
+    this.autosaveTimer.unref?.()
+  }
+
+  /** Save the open project to its file now, if it has changes. Used by autosave (and tests). */
+  autosaveNow() {
+    const show = this.s.show
+    if (!this.shows || !show.file || !show.changed || show.autosave === false) return
+    const at = this.now()
+    try {
+      this.shows.write(show.file, showFromState(this.s, this.s.setupName, at))
+    } catch (e) {
+      this.emit('error', `Could not save the project by itself: ${errorText(e)}. Use File, Save project as to save it somewhere else.`)
+      return
+    }
+    this.markSaved(show.file, at)
+    this.emit('state', this.s)
   }
 
   /** A scene, or the Overlay (its sources are edited like a scene's). */
@@ -1171,6 +1310,34 @@ export class Controller extends Emitter<Events> {
     const src = this.s.audio.find((x) => x.id === id)
     if (!src) throw new CommandError(`No audio source with id ${id}`)
     return src
+  }
+
+  private showStore(): ShowStore {
+    if (!this.shows) throw new CommandError('Saving projects isn’t available here')
+    return this.shows
+  }
+
+  private markSaved(file: string, savedAt: number | null) {
+    this.s.show = { file, savedAt, changed: false, autosave: this.s.show.autosave ?? true }
+    this.savedPrint = showFingerprint(this.s)
+  }
+
+  /**
+   * Swap in another show's layout. Not while streaming or recording: the
+   * picture on air would change all at once.
+   */
+  private async loadShow(apply: () => void) {
+    if (this.s.stream.live || this.s.recording.active) throw new CommandError('Stop streaming and recording first, then open the project.')
+    const before = this.s.scenes.map((x) => x.id)
+    apply()
+    this.cueBack = ''
+    for (const id of before) if (!this.s.scenes.some((x) => x.id === id)) await this.engine.removeScene(id)
+    for (const scene of this.s.scenes) await this.engine.setScene(scene)
+    await this.engine.setAudioSources(this.s.audio)
+    await this.engine.setProgramScene(this.s.programSceneId, { kind: 'cut', durationMs: 0 })
+    await this.engine.setPreviewScene(this.s.previewSceneId)
+    this.refreshFamily()
+    await this.refreshAllTexts()
   }
 
   private deviceAdmin(): DeviceAdmin {
