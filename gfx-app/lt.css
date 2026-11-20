@@ -1,0 +1,183 @@
+/*
+ * Lower-third styles: used by the graphics page (/live) and the gfx app's style picker.
+ * Sizes are in cqw (1cqw = 1% of the picture's width: 19.2 px on a 1920 x 1080 picture), so the
+ * same lower third looks the same on the stream and in a small preview.
+ *
+ * Set on the .ltstage (or any parent):  --font --name-size --title-size --accent --box --text --sp --width
+ * The lower third is a .place (left / center / right) holding one .l3. Adding .on to the .place
+ * animates it in; taking .on away animates it out.
+ */
+.ltstage { position: absolute; inset: 0; overflow: hidden; container-type: inline-size; pointer-events: none;
+  --font: Inter; --name-size: 2.7cqw; --title-size: 1.56cqw; --accent: #2563d9; --box: #f2f2f2; --text: #111111; --sp: 1;
+  --d: calc(0.55s * var(--sp)); }
+.place { position: absolute; bottom: 6.25cqw; }
+.place.left { left: 5cqw; }
+.place.right { right: 5cqw; }
+.place.center { left: 50%; transform: translateX(-50%); }
+.l3 { font-family: var(--font), 'Segoe UI', system-ui, sans-serif; color: var(--text); line-height: 1.15; box-sizing: border-box; }
+.l3 * { box-sizing: border-box; transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+.l3 .name { font-size: var(--name-size); font-weight: 700; white-space: nowrap; }
+.l3 .title { font-size: var(--title-size); font-weight: 500; white-space: nowrap; }
+.place.right .l3 { margin-left: auto; }
+.place.center .l3 { text-align: center; }
+
+/* ---------- The four original styles: In and out by the Animation setting (slide, fade, wipe) ---------- */
+.place.old .l3 { width: var(--width, auto); transition: transform calc(0.6s * var(--sp)) cubic-bezier(0.2, 0.8, 0.2, 1), opacity calc(0.5s * var(--sp)) ease, clip-path calc(0.6s * var(--sp)) cubic-bezier(0.2, 0.8, 0.2, 1); }
+.still .l3, .still .l3 * { transition: none !important; animation-duration: 0s !important; animation-delay: 0s !important; }
+.anim-slide .l3 { transform: translateX(-140%); }
+.place.right.anim-slide .l3 { transform: translateX(140%); }
+.place.center.anim-slide .l3 { transform: translateY(160%); }
+.anim-fade .l3 { opacity: 0; }
+.anim-wipe .l3 { clip-path: inset(0 100% 0 0); }
+.place.old.on .l3 { transform: none !important; opacity: 1 !important; clip-path: inset(0 0 0 0) !important; }
+
+/* 1. Classic: name bar over a colour title bar. */
+.classic .l3 { display: inline-flex; flex-direction: column; text-align: left; }
+.classic .name { display: inline-block; min-width: 100%; background: var(--box); color: var(--text); padding: 0.27em 0.7em; border-radius: 0.52cqw 0.52cqw 0 0; }
+.classic .title { background: var(--accent); color: #fff; padding: 0.33em 1.2em; border-radius: 0 0 0.52cqw 0.52cqw; }
+.classic .l3[style*='width'] .name { min-width: 0; }
+
+/* 2. Bold block: a box with a colour stripe, name in capitals. */
+.block .l3 { display: inline-flex; background: color-mix(in srgb, var(--box) 90%, transparent); border-left: 0.73cqw solid var(--accent); padding: 0.3em 0.9em 0.35em 0.6em; font-size: var(--name-size); text-align: left; }
+.block .inner { display: flex; flex-direction: column; gap: 0.1cqw; }
+.block .name { font-weight: 800; text-transform: uppercase; letter-spacing: 0.01em; }
+.block .title { color: color-mix(in srgb, var(--text) 80%, transparent); }
+
+/* 3. Minimal: words only, a soft shadow and a thin colour line. */
+.minimal .l3 { display: inline-flex; flex-direction: column; gap: 0.52cqw; text-shadow: 0 0.1cqw 0.52cqw rgba(0, 0, 0, 0.75); }
+.minimal .line { width: 5cqw; height: 0.26cqw; background: var(--accent); box-shadow: 0 0.05cqw 0.3cqw rgba(0, 0, 0, 0.5); }
+.minimal .l3[style*='width'] .line { width: 100%; }
+.minimal .title { opacity: 0.92; }
+.place.center.minimal .l3 { align-items: center; }
+
+/* 4. News strip: a band across the bottom with a LIVE tag. */
+.place.news { left: 0; right: 0; transform: none; }
+.news .l3 { display: flex; height: calc(var(--name-size) * 1.7); width: var(--width, 100%); text-align: left; }
+.place.news.right .l3 { margin-left: auto; }
+.place.news.center .l3 { margin: 0 auto; }
+.news .tag { background: var(--accent); color: #fff; font-weight: 800; font-size: calc(var(--name-size) * 0.55); letter-spacing: 0.08em; display: flex; align-items: center; padding: 0 0.9em 0 3em; }
+.place.news.right .tag, .place.news.center .tag { padding-left: 0.9em; }
+.news .band { flex: 1; background: color-mix(in srgb, var(--box) 95%, transparent); display: flex; align-items: center; gap: 0.7em; padding: 0 1em; min-width: 0; font-size: var(--name-size); }
+.news .divider { width: 0.1cqw; height: 50%; background: color-mix(in srgb, var(--text) 30%, transparent); }
+.news .title { color: color-mix(in srgb, var(--text) 80%, transparent); overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- The new styles: each animates in its own way ---------- */
+.place.new .l3 { width: var(--width, auto); }
+
+/* 5. Wipe reveal: a colour block sweeps across and uncovers the text. */
+.s-reveal .l3 { display: inline-grid; gap: 0.4cqw; justify-items: start; text-align: left; }
+.place.center.s-reveal .l3 { justify-items: center; }
+.place.right.s-reveal .l3 { justify-items: end; }
+.s-reveal .w { position: relative; }
+.s-reveal .w::after { content: ''; position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: left; }
+.s-reveal .name { display: block; background: var(--box); padding: 0.2em 0.55em; }
+.s-reveal .title { display: block; background: var(--accent); color: #fff; padding: 0.3em 0.8em; }
+.s-reveal .name, .s-reveal .title { opacity: 0; transition: opacity calc(var(--d) * 0.6); }
+.s-reveal.on .w::after { animation: lt-sweep calc(var(--d) * 2) forwards; }
+.s-reveal.on .w + .w::after { animation-delay: calc(var(--d) * 0.35); }
+.s-reveal.on .name { animation: lt-show 0s var(--d) forwards; }
+.s-reveal.on .title { animation: lt-show 0s calc(var(--d) * 1.35) forwards; }
+@keyframes lt-sweep { 0% { transform: scaleX(0); transform-origin: left; } 49.9% { transform: scaleX(1); transform-origin: left; } 50% { transform: scaleX(1); transform-origin: right; } 100% { transform: scaleX(0); transform-origin: right; } }
+@keyframes lt-show { to { opacity: 1; } }
+
+/* 6. Split: name from the left, title from the right. */
+.s-split .l3 { display: inline-grid; justify-items: start; text-align: left; }
+.s-split .name { background: var(--accent); color: #fff; padding: 0.2em 0.6em; transform: translateX(-120cqw); transition: transform var(--d); }
+.s-split .title { background: var(--box); padding: 0.3em 1em; margin-left: 3cqw; transform: translateX(120cqw); transition: transform var(--d); }
+.s-split.on .name, .s-split.on .title { transform: none; }
+.s-split.on .title { transition-delay: calc(var(--d) * 0.3); }
+
+/* 7. Glass: a frosted see-through panel that rises in. */
+.s-glass .l3 { display: inline-grid; gap: 0.35cqw; padding: 1.1cqw 1.8cqw; border-radius: 1cqw; background: rgba(255, 255, 255, 0.14); border: 0.1cqw solid rgba(255, 255, 255, 0.28); backdrop-filter: blur(1cqw) saturate(1.3);
+  opacity: 0; transform: translateY(2.5cqw) scale(0.97); transition: opacity var(--d), transform var(--d); }
+.s-glass .title { color: color-mix(in srgb, var(--accent) 45%, var(--text)); }
+.s-glass.on .l3 { opacity: 1; transform: none; }
+
+/* 8. Angled sport: slanted bars in capitals. */
+.s-angled .l3 { display: inline-grid; justify-items: start; font-style: italic; text-transform: uppercase; text-align: left; }
+.s-angled .name, .s-angled .title { transform: skewX(-14deg); clip-path: inset(0 100% 0 0); transition: clip-path var(--d); }
+.s-angled .name { background: var(--accent); color: #fff; font-weight: 800; padding: 0.15em 0.7em; }
+.s-angled .title { background: var(--box); color: var(--text); padding: 0.25em 1.2em; margin-left: 1.2cqw; letter-spacing: 0.06em; }
+.s-angled .name > span, .s-angled .title > span { display: inline-block; transform: skewX(14deg); }
+.s-angled.on .name, .s-angled.on .title { clip-path: inset(0 0 0 0); }
+.s-angled.on .title { transition-delay: calc(var(--d) * 0.35); }
+
+/* 9. Letter by letter. */
+.s-letters .l3 { display: inline-grid; gap: 0.5cqw; text-shadow: 0 0.15cqw 0.6cqw rgba(0, 0, 0, 0.7); }
+.s-letters .name span { display: inline-block; white-space: pre; opacity: 0; transform: translateY(0.45em); transition: opacity calc(var(--d) * 0.6), transform calc(var(--d) * 0.6); }
+.s-letters .line { display: block; height: 0.3cqw; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform calc(var(--d) * 1.6); }
+.s-letters .title { opacity: 0; transition: opacity var(--d); }
+.s-letters.on .name span { opacity: 1; transform: none; transition-delay: calc(var(--i) * 28ms * var(--sp)); }
+.s-letters.on .line { transform: none; }
+.s-letters.on .title { opacity: 0.9; transition-delay: calc(var(--d) * 1.2); }
+
+/* 10. Typewriter. */
+.s-type .l3 { display: inline-block; background: color-mix(in srgb, var(--box) 85%, transparent); color: var(--text); padding: 0.9cqw 1.6cqw; border-left: 0.4cqw solid var(--accent); text-align: left; opacity: 0; transition: opacity calc(var(--d) * 0.5); }
+.s-type .name, .s-type .title { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; }
+.s-type .name { display: inline-block; vertical-align: bottom; overflow: hidden; width: 0; transition: width calc(var(--d) * 2.4) steps(var(--n)); }
+.s-type .cur { display: inline-block; width: 0.5em; height: calc(var(--name-size) * 1.1); background: var(--accent); vertical-align: bottom; margin-left: 0.2cqw; animation: lt-blink 0.8s steps(1) infinite; }
+.s-type .title { display: block; opacity: 0; margin-top: 0.4cqw; color: color-mix(in srgb, var(--accent) 40%, var(--text)); transition: opacity var(--d); }
+.s-type.on .l3 { opacity: 1; }
+.s-type.on .name { width: calc(var(--n) * 1ch + 0.05em); transition-delay: calc(var(--d) * 0.3); }
+.s-type.on .title { opacity: 1; transition-delay: calc(var(--d) * 2.8); }
+@keyframes lt-blink { 50% { opacity: 0; } }
+
+/* 11. Social pill: a round badge with initials and a handle. */
+.s-pill .l3 { display: inline-flex; align-items: center; gap: 1cqw; background: var(--box); border-radius: 999px; padding: 0.5cqw 2.2cqw 0.5cqw 0.5cqw; text-align: left; clip-path: inset(0 100% 0 0 round 999px); transition: clip-path var(--d); }
+.s-pill .av { width: calc(var(--name-size) * 1.9); height: calc(var(--name-size) * 1.9); flex: none; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: calc(var(--name-size) * 0.75); transform: scale(0); transition: transform calc(var(--d) * 0.8); }
+.s-pill .name, .s-pill .title { display: block; }
+.s-pill .title { color: var(--accent); font-weight: 700; }
+.s-pill.on .l3 { clip-path: inset(0 0 0 0 round 999px); transition-delay: calc(var(--d) * 0.3); }
+.s-pill.on .av { transform: none; }
+
+/* 12. Corner brackets close in around the text. */
+.s-bracket .l3 { position: relative; display: inline-block; padding: 1.1cqw 2cqw; text-shadow: 0 0.1cqw 0.5cqw rgba(0, 0, 0, 0.7); }
+.s-bracket .c { position: absolute; width: 1.8cqw; height: 1.8cqw; border: 0.3cqw solid var(--accent); opacity: 0; transition: transform var(--d), opacity var(--d); }
+.s-bracket .c1 { left: 0; top: 0; border-right: 0; border-bottom: 0; transform: translate(-2cqw, -2cqw); }
+.s-bracket .c2 { right: 0; bottom: 0; border-left: 0; border-top: 0; transform: translate(2cqw, 2cqw); }
+.s-bracket .name, .s-bracket .title { display: block; opacity: 0; transition: opacity var(--d); }
+.s-bracket.on .c { opacity: 1; transform: none; }
+.s-bracket.on .name { opacity: 1; transition-delay: calc(var(--d) * 0.5); }
+.s-bracket.on .title { opacity: 0.85; transition-delay: calc(var(--d) * 0.8); }
+
+/* 13. Soft fade: a dark fade across the bottom, text rises. */
+.place.s-fade { left: 0; right: 0; bottom: 0; transform: none; }
+.s-fade .l3 { width: 100%; height: 22cqw; padding: 0 5cqw 5cqw; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.4cqw; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.78)); opacity: 0; transition: opacity var(--d); text-align: left; }
+.place.center.s-fade .l3 { align-items: center; text-align: center; }
+.place.right.s-fade .l3 { align-items: flex-end; text-align: right; }
+.s-fade .name, .s-fade .title { transform: translateY(1.4cqw); opacity: 0; transition: transform var(--d), opacity var(--d); }
+.s-fade .title { color: color-mix(in srgb, var(--accent) 35%, var(--text)); }
+.s-fade.on .l3, .s-fade.on .name, .s-fade.on .title { opacity: 1; transform: none; }
+.s-fade.on .name { transition-delay: calc(var(--d) * 0.3); }
+.s-fade.on .title { transition-delay: calc(var(--d) * 0.55); }
+
+/* 14. Ribbons: two cut-corner ribbons unroll one after the other. */
+.s-ribbon .l3 { display: inline-grid; justify-items: start; gap: 0.3cqw; text-align: left; }
+.s-ribbon .name { background: var(--accent); color: #fff; padding: 0.2em 1.2em 0.2em 0.6em; clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); transition: clip-path var(--d); }
+.s-ribbon .title { background: var(--box); padding: 0.3em 1.8em 0.3em 1em; margin-left: 2cqw; clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); transition: clip-path var(--d); }
+.s-ribbon.on .name { clip-path: polygon(0 0, 100% 0, calc(100% - 1.6cqw) 100%, 0 100%); }
+.s-ribbon.on .title { clip-path: polygon(0 0, 100% 0, calc(100% - 1.2cqw) 100%, 0 100%); transition-delay: calc(var(--d) * 0.4); }
+
+/* 15. Centered heading: lines grow out from the title (always in the middle). */
+.place.s-center { left: 50%; right: auto; transform: translateX(-50%); }
+.s-center .l3 { display: grid; justify-items: center; gap: 0.5cqw; text-align: center; text-shadow: 0 0.1cqw 0.6cqw rgba(0, 0, 0, 0.7); }
+.s-center .row { display: flex; align-items: center; gap: 1.4cqw; }
+.s-center .row i { width: 7cqw; height: 0.25cqw; background: var(--accent); transform: scaleX(0); transition: transform var(--d); }
+.s-center .row i:first-child { transform-origin: right; }
+.s-center .row i:last-child { transform-origin: left; }
+.s-center .name { text-transform: uppercase; opacity: 0; letter-spacing: 0.3em; transition: opacity var(--d), letter-spacing calc(var(--d) * 2); }
+.s-center .title { opacity: 0; transition: opacity var(--d); }
+.s-center.on .row i { transform: none; transition-delay: calc(var(--d) * 0.4); }
+.s-center.on .name { opacity: 1; letter-spacing: 0.1em; }
+.s-center.on .title { opacity: 0.85; transition-delay: calc(var(--d) * 0.8); }
+
+/* 16. Behind the bar: text slides out from behind a thick colour bar. */
+.s-vbar .l3 { display: inline-flex; align-items: stretch; text-align: left; }
+.s-vbar .bar { width: 0.9cqw; flex: none; background: var(--accent); transform: scaleY(0); transition: transform calc(var(--d) * 0.6) calc(var(--d) * 0.7); position: relative; z-index: 1; }
+.s-vbar .m { overflow: hidden; }
+.s-vbar .in { background: color-mix(in srgb, var(--box) 85%, transparent); color: var(--text); padding: 0.8cqw 1.8cqw; display: grid; gap: 0.3cqw; transform: translateX(-102%); transition: transform var(--d); }
+.s-vbar .title { color: color-mix(in srgb, var(--accent) 40%, var(--text)); }
+.s-vbar.on .bar { transform: none; transition-delay: 0s; }
+.s-vbar.on .in { transform: none; transition-delay: calc(var(--d) * 0.55); }
+
+@media (prefers-reduced-motion: reduce) { .ltstage .l3, .ltstage .l3 * { transition-duration: 0s !important; animation-duration: 0s !important; } }

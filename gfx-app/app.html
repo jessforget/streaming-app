@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gfx app</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Montserrat:wght@400;500;600;700;800&family=Roboto+Slab:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@500;700&family=Bebas+Neue&family=Playfair+Display:wght@700&family=Roboto+Condensed:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/lt.css">
+<script src="/lt.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -220,6 +223,95 @@
   dialog#about .hint { margin: 0; }
   #abPortNote { margin-top: 10px; }
 
+  /* ---------- New graphics: Stays on, comments, styles, templates, keys, phone remote ---------- */
+  .stay { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .stay h2 { width: 100%; }
+  .sw { display: inline-flex; align-items: center; min-height: 34px; padding: 0; border-radius: 999px; overflow: hidden; border: 1px solid var(--line-2); background: var(--card); }
+  .sw .tog { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px 0 8px; border: 0; border-radius: 0; background: transparent; font-size: 13px; }
+  .sw .gear { min-height: 34px; padding: 0 10px; border: 0; border-left: 1px solid var(--line-2); border-radius: 0; background: transparent; color: var(--muted); }
+  .sw .gear:hover, .sw .gear.on { color: var(--text); background: #16233a; }
+  .knob { width: 30px; height: 18px; border-radius: 999px; background: #353b47; position: relative; transition: 0.2s; flex: none; }
+  .knob::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #c8ceda; transition: 0.2s; }
+  .sw.live { border-color: #6b2a2a; background: #2a1618; }
+  .sw.live .knob { background: var(--live); }
+  .sw.live .knob::after { left: 14px; background: #fff; }
+  .sw kbd, .keyname { font: 600 10px ui-monospace, Consolas, monospace; color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; }
+  .thumb.countdown { background: radial-gradient(circle at 50% 45%, #2c3a58, #0b0e14); font: 700 15px ui-monospace, Consolas, monospace; }
+  .item .hk { font: 600 10px ui-monospace, Consolas, monospace; color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px -2px 0; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); min-height: 32px; padding: 0 10px; }
+  .tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
+  .tabs .count { margin-left: 6px; font-size: 11px; background: var(--card); padding: 0 6px; border-radius: 999px; }
+  .comments { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+  .cm { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 7px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+  .cm.shown { border-color: var(--live); background: #2a1618; }
+  .cm .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff; }
+  .cm .who { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .cm .who b { color: var(--text); font-weight: 600; }
+  .cm .txt { overflow-wrap: anywhere; }
+  .cm .btns { display: grid; gap: 4px; }
+  .cm .btns button { min-height: 26px; padding: 0 8px; font-size: 12px; }
+  .cm .btns .x { border: 0; background: transparent; color: var(--muted); }
+  .plat { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; }
+  .plat.youtube { background: #b3261e; } .plat.facebook { background: #1b5fd1; } .plat.other { background: #4b5563; }
+  .q { color: #f0c36b; font-size: 11px; }
+  .note { border: 1px solid #6b5520; background: rgba(240, 196, 107, 0.07); border-radius: 8px; padding: 8px 10px; color: #e7d3a3; font-size: 12px; }
+  .ask-bar.remote { border-color: var(--accent); background: rgba(76, 141, 255, 0.08); }
+  .ask-bar.remote b { color: #9fc1ff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { min-height: 28px; font-size: 12px; padding: 0 10px; }
+  .chips button[aria-pressed='true'] { border-color: var(--accent); background: #16233a; }
+  .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; min-height: 30px; font-size: 12px; }
+  .seg button + button { border-left: 1px solid var(--line-2); }
+  .seg button[aria-pressed='true'] { background: #16233a; color: #cfe0ff; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btnrow button { min-height: 30px; font-size: 12px; }
+  .big-time { font: 700 26px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .lines { display: grid; gap: 6px; }
+  .lines .r { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .lines .r button { min-height: 30px; padding: 0 8px; }
+  .scorepad { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
+  .scorepad b { font-size: 22px; text-align: center; min-width: 44px; font-variant-numeric: tabular-nums; }
+  .scorepad button { min-height: 34px; }
+  .done-btn { margin-left: auto; }
+  .sethead { display: flex; align-items: center; gap: 8px; }
+  /* A small moving picture of a lower-third style. */
+  .mini { position: relative; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: radial-gradient(ellipse 30% 45% at 72% 22%, rgba(255, 196, 140, 0.18), transparent 70%), radial-gradient(ellipse 40% 60% at 15% 80%, rgba(80, 120, 200, 0.25), transparent 70%), linear-gradient(165deg, #273246 0%, #161c27 55%, #0b0e14 100%); }
+  .mini::before { content: ''; position: absolute; left: 50%; top: 22%; width: 13%; aspect-ratio: 0.84; transform: translateX(-50%); border-radius: 50%; background: linear-gradient(180deg, #4d5566, #2f3542); }
+  .mini::after { content: ''; position: absolute; left: 50%; top: 52%; width: 38%; height: 72%; transform: translateX(-50%); border-radius: 48% 48% 0 0; background: linear-gradient(180deg, #343b49, #1e232d); }
+  .mini .ltstage { z-index: 1; }
+  .style-now { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; align-items: center; }
+  .style-now b { display: block; color: var(--text); font-size: 13px; }
+  dialog.wide { width: min(1180px, calc(100% - 32px)); max-height: calc(100vh - 40px); background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 0; }
+  dialog.wide::backdrop, dialog.mid::backdrop { background: rgba(0, 0, 0, 0.6); }
+  dialog.mid { width: min(720px, calc(100% - 32px)); max-height: calc(100vh - 40px); background: var(--panel-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 0; }
+  .dlg-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel-2); z-index: 2; }
+  .dlg-head h2 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); margin-right: auto; }
+  .dlg-body { padding: 14px 18px 18px; display: grid; gap: 12px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .card { display: grid; padding: 0; text-align: left; overflow: hidden; border-radius: 10px; background: var(--panel); min-height: 0; }
+  .card .mini { border-radius: 0; }
+  .card .meta { padding: 8px 10px 10px; display: grid; gap: 2px; }
+  .card .meta b { font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .card .meta small { color: var(--muted); font-size: 12px; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .tagnew { font-size: 10px; font-weight: 600; color: #f0c36b; }
+  .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .key { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 13px; }
+  .key kbd { min-width: 46px; text-align: center; padding: 4px 8px; border-radius: 6px; background: #252a35; border: 1px solid #3a4150; border-bottom-width: 3px; font: 600 12px ui-monospace, Consolas, monospace; }
+  .qrbox { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .qrbox .qr { width: 220px; height: 220px; background: #fff; border-radius: 8px; padding: 8px; flex: none; }
+  .qrbox .qr svg { width: 100%; height: 100%; display: block; }
+  .qrbox ol { margin: 0; padding-left: 18px; display: grid; gap: 8px; flex: 1; min-width: 240px; color: var(--muted); }
+  .qrbox ol b { color: var(--text); }
+  .qrbox code { font: 13px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+  .devs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .devs li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--card); }
+  .devs li span { flex: 1; min-width: 0; }
+  .devs .dot { width: 8px; height: 8px; border-radius: 50%; background: #5d6574; flex: none; }
+  .devs .dot.on { background: var(--go); }
+
   /* A laptop screen (1366 x 768 and up). Narrower: the settings move under. */
   @media (max-width: 1180px) {
     .cols { grid-template-columns: 250px minmax(0, 1fr); }
@@ -246,6 +338,7 @@
       </div>
     </div>
     <input type="file" id="importInput" accept=".json,application/json" hidden>
+    <input type="file" id="tplImport" accept=".json,application/json" hidden>
   </nav>
   <header class="top">
     <h1>Gfx app</h1>
@@ -257,11 +350,18 @@
       <span class="fw-note" id="fwNote">Windows asks once to confirm.</span>
     </span>
     <span class="addr" id="addr"></span>
+    <button id="remoteBtn" class="about-btn" title="Use a phone or tablet as a remote">Phone remote</button>
+    <button id="keysBtn" class="about-btn" title="Keyboard keys">Keys</button>
     <button id="aboutBtn" class="about-btn">About</button>
   </header>
   <div class="cols">
     <aside class="rundown" id="rundown" aria-label="Rundown">
-      <div class="head">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabRun" aria-selected="true">Rundown</button>
+        <button role="tab" id="tabChat" aria-selected="false">Comments<span class="count" id="chatCount" hidden></span></button>
+      </div>
+      <div id="chatPane" hidden></div>
+      <div class="head" id="runHead">
         <h2>Rundown</h2>
         <button id="addBtn" aria-haspopup="true" aria-expanded="false">+ Add</button>
         <div class="menu" id="addMenu" hidden>
@@ -270,6 +370,10 @@
           <button data-add="photos">Photos or slideshow…</button>
           <button data-add="window">A window on this laptop…</button>
           <button data-add="bars">Color bars (and tone)</button>
+          <button data-add="countdown">Countdown (starting soon, breaks)</button>
+          <button data-add="ticker">Ticker…</button>
+          <button data-add="logo">Logo bug…</button>
+          <button data-add="score">Scoreboard or goal bar…</button>
         </div>
       </div>
       <ul class="items" id="items"></ul>
@@ -310,7 +414,13 @@
         <p class="cue-list-head" id="cueListHead" hidden>In the break, in play order · drag to change the order</p>
         <ol class="cue-list" id="cueList"></ol>
       </div>
+      <div class="ask-bar remote" id="remoteAsk" hidden role="alertdialog" aria-labelledby="remoteAskTitle">
+        <b id="remoteAskTitle">A phone wants to control the graphics</b>
+        <span id="remoteAskText"></span>
+        <div class="ask-row"><button id="remoteAllow">Allow</button><button id="remoteBlock">Block</button></div>
+      </div>
       <p class="hint" id="liveHint">Take puts Preview on air. Space = Take, Esc = Hide, ↓ ↑ = next or previous item.</p>
+      <div class="stay" id="stay" aria-label="Stays on"></div>
     </main>
 
     <aside class="settings" id="settings" aria-label="Item settings"></aside>
@@ -321,6 +431,18 @@
   <header class="proj-head"><h2 id="projTitle"></h2><button id="projClose" aria-label="Close">✕</button></header>
   <div class="proj-body" id="projBody"></div>
   <footer class="proj-foot" id="projFoot"></footer>
+</dialog>
+<dialog class="wide" id="styleDlg" aria-labelledby="styleDlgTitle">
+  <div class="dlg-head"><h2 id="styleDlgTitle">Choose a lower-third style</h2><div class="chips" id="styleFilters"></div><button id="styleClose" aria-label="Close">✕</button></div>
+  <div class="dlg-body"><p class="hint">Each style plays its animation over and over here. Click one to use it. Your colours, font and sizes stay as they are (colours that suit the style are picked for its box and text).</p><div class="gallery" id="styleGallery"></div></div>
+</dialog>
+<dialog class="mid" id="keysDlg" aria-labelledby="keysTitle">
+  <div class="dlg-head"><h2 id="keysTitle">Keyboard keys</h2><button id="keysClose" aria-label="Close">✕</button></div>
+  <div class="dlg-body"><div class="keys" id="keysList"></div><p class="hint">F1 to F12: pick a key in an item’s settings (Hotkey). Keys work while this window is in front, and not while you type in a box.</p></div>
+</dialog>
+<dialog class="mid" id="remoteDlg" aria-labelledby="remoteTitle">
+  <div class="dlg-head"><h2 id="remoteTitle">Phone remote</h2><button id="remoteClose" aria-label="Close">✕</button></div>
+  <div class="dlg-body" id="remoteBody"></div>
 </dialog>
 <dialog id="about" aria-labelledby="aboutTitle">
   <div class="about-head">
@@ -345,13 +467,8 @@
 <script>
   const $ = (id) => document.getElementById(id)
   const desk = window.gfxDesktop || null
-  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window', bars: 'Color bars' }
-  const STYLE_COLORS = {
-    classic: { box: '#f2f2f2', text: '#111111' },
-    block: { box: '#0c0e12', text: '#ffffff' },
-    minimal: { box: '#000000', text: '#ffffff' },
-    news: { box: '#f5f6f8', text: '#111111' }
-  }
+  const KIND_LABEL = { lowerthird: 'Lower third', video: 'Video', photos: 'Slideshow', window: 'Window', bars: 'Color bars', countdown: 'Countdown' }
+  const STYLE_COLORS = Object.fromEntries(GfxLT.STYLES.map((s) => [s.id, s.colors]))
   let S = null
 
   async function act(body) {
@@ -488,6 +605,7 @@
     if (i.kind === 'video') return `Video · ${i.file}${i.ok ? '' : ' (missing)'}`
     if (i.kind === 'photos') return `Slideshow · ${i.count} photo${i.count === 1 ? '' : 's'}`
     if (i.kind === 'bars') return `Color bars · ${i.sound !== false ? 'with 1 kHz tone' : 'no tone'}`
+    if (i.kind === 'countdown') return `Countdown · ${i.until ? `to ${i.until}` : `${i.minutes} min`}`
     return `Window · ${i.windowName || 'pick one'}`
   }
   /**
@@ -496,8 +614,8 @@
    */
   const thumbs = new Map()
   function thumbFor(i) {
-    const look = S.look || {}
-    const key = `${i.id}|${i.kind}|${i.kind === 'video' ? `${i.file}|${i.ok}` : ''}|${i.kind === 'photos' ? (i.files || []).join('/') : ''}|${i.kind === 'lowerthird' ? `${i.name}|${i.title}|${look.accent}|${look.box}|${look.text}` : ''}|${i.kind === 'window' ? i.sourceId : ''}`
+    const look = lookFor(i)
+    const key = `${i.id}|${i.kind}|${i.kind === 'countdown' ? `${i.minutes}|${i.until}` : ''}|${i.kind === 'video' ? `${i.file}|${i.ok}` : ''}|${i.kind === 'photos' ? (i.files || []).join('/') : ''}|${i.kind === 'lowerthird' ? `${i.name}|${i.title}|${look.accent}|${look.box}|${look.text}` : ''}|${i.kind === 'window' ? i.sourceId : ''}`
     const had = thumbs.get(i.id)
     if (had && had.key === key) return had.el
     const el = document.createElement('span')
@@ -544,6 +662,8 @@
     } else if (i.kind === 'window') {
       el.textContent = '▢'
       windowThumb(i, el)
+    } else if (i.kind === 'countdown') {
+      el.textContent = i.until ? i.until : `${i.minutes}:00`
     }
     thumbs.set(i.id, { key, el })
     return el
@@ -575,7 +695,7 @@
       ul.append(li)
     }
     // Grouped by kind (the gfx app keeps them in this order): a heading over each group.
-    const GROUP_LABEL = { lowerthird: 'Lower thirds', video: 'Videos', photos: 'Photos and slideshows', window: 'Windows', bars: 'Color bars' }
+    const GROUP_LABEL = { lowerthird: 'Lower thirds', countdown: 'Countdowns', video: 'Videos', photos: 'Photos and slideshows', window: 'Windows', bars: 'Color bars' }
     const counts = {}
     for (const i of S.items) counts[i.kind] = (counts[i.kind] || 0) + 1
     S.items.forEach((i, n) => {
@@ -600,6 +720,13 @@
       const sub = document.createElement('div')
       sub.className = 'sub'
       sub.textContent = `${subText(i)}${onAir ? ' · ON AIR' : preview ? ' · PREVIEW' : ''}`
+      if (i.hotkey) {
+        const hk = document.createElement('span')
+        hk.className = 'hk'
+        hk.textContent = i.hotkey
+        hk.title = `${i.hotkey} takes it on air`
+        nm.append(hk)
+      }
       txt.append(nm, sub)
       const tools = document.createElement('span')
       tools.className = 'tools'
@@ -663,6 +790,8 @@
     menu.hidden = true
     if (kind === 'lowerthird') return act({ action: 'add', item: { kind, name: 'New name', title: 'Title' } })
     if (kind === 'bars') return act({ action: 'add', item: { kind, name: 'Color bars' } })
+    if (kind === 'countdown') return act({ action: 'add', item: { kind, name: 'Starting soon' } })
+    if (kind === 'ticker' || kind === 'logo' || kind === 'score') return editLayer(kind)
     if (kind === 'window') {
       if (!desk) return alertBar('Windows can be sent from the gfx app window only (Start Gfx App), not from a browser.')
       return act({ action: 'add', item: { kind, name: 'Window' } })
@@ -992,13 +1121,21 @@
   }
   let lookPatch = {}
   let lookTimer = null
+  /** A lower third's template (or null: it uses the shared look). */
+  const templateOf = (i) => S?.templates?.find((t) => t.id === i?.template) ?? null
+  /** A lower third's look: its template's, or the shared one. */
+  const lookFor = (i) => templateOf(i)?.look ?? S?.look ?? {}
+  /** The look being changed in the settings: the one the lower third in Preview uses. */
+  const curLook = () => lookFor(byId(S?.previewId))
   const changeLook = (patch, now) => {
     lookPatch = { ...lookPatch, ...patch }
     clearTimeout(lookTimer)
+    const tpl = templateOf(byId(S.previewId))
     lookTimer = setTimeout(() => {
-      const look = { ...S.look, ...lookPatch }
+      const look = { ...(tpl ? tpl.look : S.look), ...lookPatch }
       lookPatch = {}
-      act({ action: 'look', look })
+      if (tpl) act({ action: 'template.update', id: tpl.id, look })
+      else act({ action: 'look', look })
     }, now ? 0 : 120)
   }
 
@@ -1050,8 +1187,10 @@
 
   function renderSettings() {
     const box = $('settings')
+    if (editing) return renderLayerSettings(box)
     const it = byId(S.previewId)
-    const key = it ? `${it.id}|${it.kind}|${it.kind === 'window' ? it.sourceId : ''}|${it.kind === 'photos' ? it.count : ''}|${it.kind === 'video' ? it.file : ''}` : ''
+    const tpl = templateOf(it)
+    const key = it ? `${it.id}|${it.kind}|${it.kind === 'window' ? it.sourceId : ''}|${it.kind === 'photos' ? it.count : ''}|${it.kind === 'video' ? it.file : ''}|${it.template ?? ''}|${(S.templates ?? []).map((t) => `${t.id}:${t.name}`).join(',')}|${S.defaultTemplate}|${curLook().style}|${it.kind === 'countdown' ? `${S.onAir?.id === it.id}` : ''}` : ''
     // Rebuilt only for another item, so typing isn't interrupted; else just the values.
     if (key === builtFor && box.childElementCount) return refreshValues(box)
     builtFor = key
@@ -1069,6 +1208,27 @@
       )
       box.querySelectorAll('input')[0].dataset.k = 'name'
       box.querySelectorAll('input')[1].dataset.k = 'title'
+    } else if (it.kind === 'countdown') {
+      const heading = input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80, placeholder: 'Starting soon' })
+      heading.dataset.k = 'name'
+      const msg = input(it.title, (i) => change(id, { title: i.value }), { maxLength: 120 })
+      msg.dataset.k = 'title'
+      const mins = input(it.minutes, (i) => Number(i.value) >= 0 && change(id, { minutes: Number(i.value), until: '' }), { type: 'number', min: 0, max: 600, step: 0.5 })
+      mins.dataset.k = 'minutes'
+      const until = input(it.until, (i) => change(id, { until: i.value }), { type: 'time' })
+      until.dataset.k = 'until'
+      const accent = input(it.accent, (i) => change(id, { accent: i.value }), { type: 'color' })
+      accent.dataset.k = 'accent'
+      box.append(
+        field('Heading (big, over the clock)', heading),
+        field('Message under the clock', msg),
+        div('two', field('Minutes', mins), field('Or count to (time of day)', until)),
+        div('two',
+          field('At 0:00', select([['live', 'Say “We’re live!” 5 s, then hide'], ['hide', 'Hide it'], ['hold', 'Keep showing 0:00']], it.end, (v) => change(id, { end: v }, true))),
+          field('Colour', accent)),
+        div('hint', 'It counts from when you Take it. It never switches scenes: going to the show stays a Transition in the streaming app.')
+      )
+      if (S.onAir?.id === id) box.append(countdownControls('item'))
     } else {
       const n = field('Name in the rundown', input(it.name, (i) => change(id, { name: i.value }), { maxLength: 80 }))
       n.querySelector('input').dataset.k = 'name'
@@ -1151,7 +1311,11 @@
     }
     const startText = it.kind === 'lowerthird' ? 'Animate in when the stream puts it live' : it.kind === 'window' ? 'Show when the stream puts it live' : 'Start when the stream puts it live'
     box.append(check(startText, it.playOnLive !== false, (v) => change(id, { playOnLive: v }, true)))
-    if (it.kind === 'lowerthird') box.append(lookSection())
+    // A key that takes this item straight to air.
+    const hk = select([['', 'None'], ...Array.from({ length: 12 }, (_, n) => [`F${n + 1}`, `F${n + 1}${S.items.some((x) => x.id !== id && x.hotkey === `F${n + 1}`) ? ' (moves here)' : ''}`])], it.hotkey || '', (v) => change(id, { hotkey: v }, true))
+    hk.dataset.k = 'hotkey'
+    box.append(field('Hotkey: takes it on air', hk))
+    if (it.kind === 'lowerthird') box.append(lookSection(it, tpl))
     if (it.kind === 'bars') {
       box.append(check('Send a 1 kHz tone to the stream (−20 dBFS, the usual line-up level)', it.sound !== false, (v) => change(id, { sound: v }, true)))
       box.append(div('hint', 'Bars and tone go out before the show, so the streaming operator and the platforms can check the picture and the sound level. The tone is heard only on the stream, not here.'))
@@ -1168,42 +1332,101 @@
       if (document.activeElement === i) continue
       i.value = i.dataset.k in (it ?? {}) ? it[i.dataset.k] : i.value
     }
-    for (const i of box.querySelectorAll('[data-look]')) if (document.activeElement !== i) i.value = S.look[i.dataset.look]
-    for (const b of box.querySelectorAll('[data-style]')) b.setAttribute('aria-checked', String(b.dataset.style === S.look.style))
+    const look = curLook()
+    for (const i of box.querySelectorAll('[data-look]')) if (document.activeElement !== i) i.value = look[i.dataset.look]
     for (const v of box.querySelectorAll('[data-lookv]')) v.textContent = lookValue(v.dataset.lookv)
     const custom = box.querySelector('#customRow')
-    if (custom) custom.hidden = S.look.font !== 'custom'
+    if (custom) custom.hidden = look.font !== 'custom'
     const boxRow = box.querySelector('#boxRow')
-    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+    if (boxRow) boxRow.hidden = !!GfxLT.byId(look.style).noBox
+    const anim = box.querySelector('#animRow')
+    if (anim) anim.hidden = !GfxLT.byId(look.style).old
+    const mini = box.querySelector('#styleMini')
+    if (mini) drawMini(mini, look, byId(S.previewId))
+    const cd = box.querySelector('#cdLeft')
+    if (cd) cdTick()
   }
 
-  const lookValue = (k) => (k === 'length' ? (S.look.length > 0 ? `${S.look.length}% of the width` : 'Fits the words') : `${S.look[k]} px`)
+  const lookValue = (k) => {
+    const look = curLook()
+    return k === 'length' ? (look.length > 0 ? `${look.length}% of the width` : 'Fits the words') : `${look[k]} px`
+  }
 
-  function lookSection() {
-    const sec = div('sep', h2('Look of every lower third'))
-    const styles = div('styles')
-    styles.setAttribute('role', 'radiogroup')
-    styles.setAttribute('aria-label', 'Style')
-    const thumbs = {
-      classic: ['Classic', '#2b3038', '<span style="left:5px;bottom:7px;width:30px;height:7px;background:#f2f2f2"></span><span style="left:5px;bottom:3px;width:36px;height:4px;background:#2563d9"></span>'],
-      block: ['Bold block', '#33291f', '<span style="left:5px;bottom:4px;width:38px;height:12px;background:#0c0e12;border-left:3px solid #2563d9"></span>'],
-      minimal: ['Minimal', '#24302e', '<span style="left:5px;bottom:10px;width:30px;height:5px;background:#fff"></span><span style="left:5px;bottom:6px;width:12px;height:2px;background:#2563d9"></span>'],
-      news: ['News strip', '#2a2a38', '<span style="left:0;right:0;bottom:4px;height:8px;background:#f5f6f8;border-left:9px solid #2563d9"></span>']
-    }
-    for (const [k, [label, bg, inner]] of Object.entries(thumbs)) {
+  function lookSection(it, tpl) {
+    const look = lookFor(it)
+    const users = tpl ? S.items.filter((x) => x.template === tpl.id).length : S.items.filter((x) => x.kind === 'lowerthird' && !templateOf(x)).length
+    const sec = div('sep', h2(tpl ? `Look: ${tpl.name}${S.defaultTemplate === tpl.id ? ' ★' : ''}` : 'Look'))
+    // Template: a saved look this lower third uses (changing the look changes every lower third that uses it).
+    const tsel = select([['', 'Shared look (no template)'], ...(S.templates ?? []).map((t) => [t.id, `${t.name}${S.defaultTemplate === t.id ? ' ★ default' : ''}`])], tpl?.id ?? '', (v) => act({ action: 'update', id: it.id, item: { template: v } }))
+    sec.append(field('Template', tsel))
+    sec.append(div('hint', `${users} lower third${users === 1 ? '' : 's'} use${users === 1 ? 's' : ''} this look: changes here change ${users === 1 ? 'it' : 'all of them'}.`))
+    const tools = div('btnrow')
+    const tbtn = (label, fn, title) => {
       const b = document.createElement('button')
       b.type = 'button'
-      b.setAttribute('role', 'radio')
-      b.dataset.style = k
-      b.setAttribute('aria-checked', String(S.look.style === k))
-      b.innerHTML = `<span class="st" style="background:${bg}">${inner}</span>`
-      b.append(label)
-      b.onclick = () => changeLook({ style: k, ...STYLE_COLORS[k] }, true)
-      styles.append(b)
+      b.textContent = label
+      if (title) b.title = title
+      b.onclick = fn
+      tools.append(b)
+      return b
     }
-    sec.append(styles)
+    // Save as template: a name, right here.
+    const nameBox = div('file')
+    nameBox.hidden = true
+    const nm = input('', () => {}, { maxLength: 60, placeholder: 'Template name, e.g. Guest' })
+    const ok = document.createElement('button')
+    ok.textContent = 'Save'
+    const save = async () => {
+      if (!nm.value.trim()) return nm.focus()
+      const r = await act({ action: 'template.save', name: nm.value.trim(), itemId: it.id })
+      if (r.ok) alertBar(`Saved the template ${nm.value.trim()}. This lower third uses it now.`)
+    }
+    ok.onclick = save
+    nm.onkeydown = (e) => e.key === 'Enter' && save()
+    nameBox.append(nm, ok)
+    tbtn('Save as template…', () => {
+      nameBox.hidden = false
+      nm.focus()
+    })
+    if (tpl) {
+      tbtn(S.defaultTemplate === tpl.id ? '★ Default' : 'Make default', () => act({ action: 'template.default', id: S.defaultTemplate === tpl.id ? '' : tpl.id }), 'New lower thirds start with the default template')
+      tbtn('Rename…', () => {
+        nameBox.hidden = false
+        nm.value = tpl.name
+        ok.textContent = 'Rename'
+        ok.onclick = () => nm.value.trim() && act({ action: 'template.update', id: tpl.id, name: nm.value.trim() })
+        nm.onkeydown = (e) => e.key === 'Enter' && ok.click()
+        nm.focus()
+      })
+      const del = tbtn('Delete', () => {
+        if (del.dataset.sure) return act({ action: 'template.delete', id: tpl.id })
+        del.dataset.sure = '1'
+        del.textContent = `Delete ${tpl.name}?`
+        del.classList.add('warn')
+      }, 'Lower thirds using it go back to the shared look')
+    }
+    tbtn('Export…', exportTemplates, 'Save the templates to a file, to copy to the other gfx laptop')
+    tbtn('Import…', () => $('tplImport').click(), 'Templates from another gfx laptop')
+    sec.append(tools, nameBox)
+
+    // Style: a moving picture of it, and the gallery of all of them.
+    const st = GfxLT.byId(look.style)
+    const now = div('style-now')
+    const mini = div('mini')
+    mini.id = 'styleMini'
+    const words = document.createElement('div')
+    words.innerHTML = `<b>${esc(st.name)}</b><span class="hint">${esc(st.about)}</span>`
+    const more = document.createElement('button')
+    more.type = 'button'
+    more.textContent = 'Choose a style…'
+    more.style.marginTop = '6px'
+    more.onclick = () => openStyles()
+    words.append(document.createElement('br'), more)
+    now.append(mini, words)
+    sec.append(field('Style', now))
+    drawMini(mini, look, it)
     const lookSelect = (k, options) => {
-      const s = select(options, S.look[k], (v) => changeLook({ [k]: k === 'stayFor' ? Number(v) : v }, true))
+      const s = select(options, look[k], (v) => changeLook({ [k]: k === 'stayFor' ? Number(v) : v }, true))
       s.dataset.look = k
       return s
     }
@@ -1215,26 +1438,29 @@
       v.dataset.lookv = k
       v.textContent = lookValue(k)
       row.append(v)
-      const i = input(S.look[k], (x) => changeLook({ [k]: Number(x.value) }), { type: 'range', min, max })
+      const i = input(look[k], (x) => changeLook({ [k]: Number(x.value) }), { type: 'range', min, max })
       i.dataset.look = k
       l.append(row, i)
       return l
     }
     const color = (k, label) => {
-      const i = input(S.look[k], (x) => changeLook({ [k]: x.value }), { type: 'color' })
+      const i = input(look[k], (x) => changeLook({ [k]: x.value }), { type: 'color' })
       i.dataset.look = k
       const f = field(label, i)
       if (k === 'box') f.id = 'boxRow'
       return f
     }
-    const custom = input(S.look.customFont, (x) => changeLook({ customFont: x.value }), { maxLength: 60, placeholder: 'e.g. Arial Black' })
+    const custom = input(look.customFont, (x) => changeLook({ customFont: x.value }), { maxLength: 60, placeholder: 'e.g. Arial Black' })
     custom.dataset.look = 'customFont'
     const customRow = field('Font name (as installed on the streaming PC)', custom)
     customRow.id = 'customRow'
-    customRow.hidden = S.look.font !== 'custom'
+    customRow.hidden = look.font !== 'custom'
+    const anim = field('Animation', lookSelect('animation', [['slide', 'Slide in'], ['fade', 'Fade'], ['wipe', 'Wipe']]))
+    anim.id = 'animRow'
+    anim.hidden = !st.old
     sec.append(
       div('two',
-        field('Font', lookSelect('font', [['Inter', 'Inter'], ['Space Grotesk', 'Space Grotesk'], ['Montserrat', 'Montserrat'], ['Roboto Slab', 'Roboto Slab'], ['custom', 'A font on the streaming PC…']])),
+        field('Font', lookSelect('font', [['Inter', 'Inter'], ['Space Grotesk', 'Space Grotesk'], ['Montserrat', 'Montserrat'], ['Roboto Slab', 'Roboto Slab'], ['Oswald', 'Oswald'], ['Bebas Neue', 'Bebas Neue'], ['Playfair Display', 'Playfair Display'], ['Roboto Condensed', 'Roboto Condensed'], ['JetBrains Mono', 'JetBrains Mono'], ['custom', 'A font on the streaming PC…']])),
         field('Position', lookSelect('position', [['left', 'Bottom left'], ['center', 'Bottom centre'], ['right', 'Bottom right']]))),
       customRow,
       slider('nameSize', 'Name size', 20, 120),
@@ -1243,10 +1469,11 @@
       div('three', color('accent', 'Accent'), color('box', 'Box'), color('text', 'Text')),
       div('two',
         field('Stays on for', lookSelect('stayFor', [['0', 'Until Hide'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds']])),
-        field('Animation', lookSelect('animation', [['slide', 'Slide in'], ['fade', 'Fade'], ['wipe', 'Wipe']])))
+        field('Animation speed', lookSelect('speed', [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']]))),
+      anim
     )
     const boxRow = sec.querySelector('#boxRow')
-    if (boxRow) boxRow.hidden = S.look.style === 'minimal'
+    if (boxRow) boxRow.hidden = !!st.noBox
     return sec
   }
 
@@ -1544,6 +1771,567 @@
     }
   })
 
+  // ---------- Lower-third styles: small moving pictures, and the gallery ----------
+  /** Draw a lower third in a small screen (.mini): rebuilt only when it changes, so it keeps playing. */
+  function drawMini(mini, look, it, loop = true) {
+    const sig = JSON.stringify([look, it?.name, it?.title])
+    if (mini.dataset.sig === sig) return
+    mini.dataset.sig = sig
+    let stg = mini.querySelector('.ltstage')
+    if (!stg) {
+      stg = document.createElement('div')
+      stg.className = 'ltstage'
+      mini.append(stg)
+    }
+    GfxLT.applyLook(stg, look)
+    const name = it?.name || 'Maria Santos'
+    const title = it?.title || 'Host · Morning Show'
+    stg.innerHTML = `<div class="${GfxLT.placeClass(look)}">${GfxLT.html(look.style, name, title)}</div>`
+    if (loop) loopMini(stg.firstChild, look)
+  }
+  /** Play a small lower third in, hold, out, again (while it is on the page). */
+  function loopMini(place, look, delay = 300) {
+    const sp = { slow: 1.6, fast: 0.6 }[look.speed] ?? 1
+    let on = false
+    const step = () => {
+      if (!place.isConnected) return
+      on = !on
+      place.classList.toggle('on', on)
+      setTimeout(step, on ? 3000 * Math.max(1, sp) : 1300 * Math.max(1, sp))
+    }
+    setTimeout(step, delay)
+  }
+  let styleFilter = 'all'
+  function openStyles() {
+    const it = byId(S.previewId)
+    if (!it || it.kind !== 'lowerthird') return
+    const look = curLook()
+    const F = [['all', 'All 16'], ['old', 'The first four'], ['new', 'New'], ['clean', 'Clean'], ['news', 'News'], ['sports', 'Sports'], ['social', 'Social']]
+    $('styleFilters').innerHTML = F.map(([v, n]) => `<button type="button" data-f="${v}" aria-pressed="${v === styleFilter}">${n}</button>`).join('')
+    const gal = $('styleGallery')
+    gal.textContent = ''
+    const list = GfxLT.STYLES.filter((s) => styleFilter === 'all' || (styleFilter === 'old' ? s.old : styleFilter === 'new' ? !s.old : s.tags.includes(styleFilter)))
+    list.forEach((st, n) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = `card${st.id === look.style ? ' sel' : ''}`
+      const mini = div('mini')
+      const meta = div('meta')
+      meta.innerHTML = `<b>${esc(st.name)}${st.old ? '' : '<span class="tagnew">New</span>'}</b><small>${esc(st.about)}</small>`
+      b.append(mini, meta)
+      b.onclick = () => {
+        changeLook({ style: st.id, ...st.colors }, true)
+        $('styleDlg').close()
+      }
+      gal.append(b)
+      const stg = document.createElement('div')
+      stg.className = 'ltstage'
+      mini.append(stg)
+      const l = { ...look, style: st.id, ...st.colors, length: 0, position: look.position }
+      GfxLT.applyLook(stg, l)
+      stg.innerHTML = `<div class="${GfxLT.placeClass(l)}">${GfxLT.html(st.id, it.name || 'Maria Santos', it.title || 'Host')}</div>`
+      loopMini(stg.firstChild, l, 150 + n * 90)
+    })
+    if (!$('styleDlg').open) $('styleDlg').showModal()
+  }
+  $('styleFilters').onclick = (e) => {
+    const b = e.target.closest('[data-f]')
+    if (!b) return
+    styleFilter = b.dataset.f
+    openStyles()
+  }
+  $('styleClose').onclick = () => $('styleDlg').close()
+  $('styleDlg').addEventListener('click', (e) => e.target === $('styleDlg') && $('styleDlg').close())
+
+  // ---------- Templates: export and import (to copy them to the other gfx laptop) ----------
+  function exportTemplates() {
+    const list = (S.templates ?? []).map(({ name, look }) => ({ name, look }))
+    if (!list.length) return alertBar('No templates yet: set up a look, then Save as template.')
+    const blob = new Blob([JSON.stringify({ format: 'gfx-app-templates', version: 1, templates: list }, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'gfx-templates.json'
+    document.body.append(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+  }
+  $('tplImport').onchange = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    let data
+    try {
+      data = JSON.parse(await f.text())
+    } catch {
+      return alertBar('That file isn’t a templates file (it can’t be read).')
+    }
+    const r = await act({ action: 'template.import', templates: data?.templates ?? [] })
+    if (r.ok) alertBar(`Added ${r.result} template${r.result === 1 ? '' : 's'}.`)
+  }
+
+  // ---------- "Stays on": logo bug, ticker, scoreboard or goal bar, corner countdown ----------
+  const LAYER_NAMES = { logo: 'Logo bug', ticker: 'Ticker', score: 'Scoreboard', corner: 'Corner countdown' }
+  const LAYER_KEYS = { logo: 'L', ticker: 'K', score: 'S', corner: 'C' }
+  /** The graphic whose settings are open on the right (instead of the item in Preview), or ''. */
+  let editing = ''
+  function editLayer(name) {
+    editing = editing === name ? '' : name
+    builtFor = ''
+    // The Preview screen shows the graphic being set up, even while it's off.
+    $('previewScreen').querySelector('iframe').contentWindow.location.hash = editing ? `edit=${editing}` : ''
+    renderStay()
+    renderSettings()
+  }
+  function renderStay() {
+    const box = $('stay')
+    if (!S.layers) return
+    const sig = JSON.stringify([Object.entries(S.layers).map(([k, l]) => [k, l.on, l.mode]), editing])
+    if (box.dataset.sig === sig) return
+    box.dataset.sig = sig
+    box.textContent = ''
+    box.append(h2('Stays on · over every scene until you switch it off'))
+    for (const [k, label] of Object.entries(LAYER_NAMES)) {
+      const l = S.layers[k]
+      const w = document.createElement('div')
+      w.className = `sw${l.on ? ' live' : ''}`
+      const t = document.createElement('button')
+      t.className = 'tog'
+      t.setAttribute('aria-pressed', String(l.on))
+      t.title = `${l.on ? 'Switch off' : 'Switch on'} (key ${LAYER_KEYS[k]})`
+      t.innerHTML = `<span class="knob"></span>${esc(k === 'score' && l.mode === 'goal' ? 'Goal bar' : label)}`
+      t.onclick = () => act({ action: 'layer.toggle', layer: k })
+      const g = document.createElement('button')
+      g.className = `gear${editing === k ? ' on' : ''}`
+      g.textContent = '⚙'
+      g.title = `Set up the ${label.toLowerCase()}`
+      g.setAttribute('aria-label', `Set up the ${label.toLowerCase()}`)
+      g.onclick = () => editLayer(k)
+      w.append(t, g)
+      box.append(w)
+    }
+  }
+  const setLayer = (layer, patch, now) => {
+    clearTimeout(typingTimer)
+    typingTimer = setTimeout(() => act({ action: 'layer.set', layer, patch }), now ? 0 : 250)
+  }
+  function slide(label, value, min, max, step, onchange, unit = '') {
+    const l = document.createElement('label')
+    const row = div('row', label)
+    const v = document.createElement('span')
+    v.className = 'v'
+    v.textContent = `${value}${unit}`
+    row.append(v)
+    const i = input(value, (x) => {
+      v.textContent = `${x.value}${unit}`
+      onchange(Number(x.value))
+    }, { type: 'range', min, max, step })
+    l.append(row, i)
+    return l
+  }
+  function renderLayerSettings(box) {
+    const L = S.layers[editing]
+    const key = `layer|${editing}|${L.mode ?? ''}|${editing === 'logo' ? L.url : ''}|${editing === 'ticker' ? L.lines.length : ''}`
+    if (key === builtFor && box.childElementCount) {
+      // Just the values that change from elsewhere (a phone, the other buttons).
+      for (const i of box.querySelectorAll('[data-l]')) if (document.activeElement !== i) i.value = L[i.dataset.l]
+      for (const i of box.querySelectorAll('[data-lc]')) i.checked = !!L[i.dataset.lc]
+      for (const b of box.querySelectorAll('[data-score]')) b.textContent = L[b.dataset.score]
+      cdTick()
+      return
+    }
+    builtFor = key
+    box.textContent = ''
+    const done = document.createElement('button')
+    done.textContent = 'Done'
+    done.className = 'done-btn'
+    done.onclick = () => editLayer(editing)
+    const head = div('sethead', h2(`${LAYER_NAMES[editing]} · ${L.on ? 'on air' : 'off'}`), done)
+    box.append(head)
+    const sw = check(L.on ? 'On the stream now' : 'Show it on the stream', L.on, (v) => act({ action: 'layer.set', layer: editing, patch: { on: v } }))
+    sw.querySelector('input').dataset.lc = 'on'
+    box.append(sw, div('hint', 'The Preview screen shows it while you set it up.'))
+    const keyed = (el, k) => {
+      ;(el.tagName === 'LABEL' ? el.querySelector('input') : el).dataset.l = k
+      return el
+    }
+    const layer = editing
+    if (layer === 'logo') {
+      const file = document.createElement('input')
+      file.type = 'file'
+      file.accept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml'
+      file.onchange = async () => {
+        const f = file.files?.[0]
+        if (!f) return
+        const ext = (f.name.split('.').pop() || 'png').toLowerCase()
+        const r = await fetch(`/api/logo?ext=${encodeURIComponent(ext)}`, { method: 'POST', headers: { 'content-type': f.type || 'image/png' }, body: f })
+        const out = await r.json().catch(() => ({}))
+        if (!r.ok) alertBar(out.error || 'That picture didn’t work')
+      }
+      const corners = div('chips')
+      for (const [n, x, y] of [['↖ Top left', 0, 0], ['↗ Top right', 100, 0], ['↙ Bottom left', 0, 100], ['↘ Bottom right', 100, 100]]) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.textContent = n
+        b.setAttribute('aria-pressed', String(L.x === x && L.y === y))
+        b.onclick = () => {
+          act({ action: 'layer.set', layer, patch: { x, y } })
+          builtFor = ''
+        }
+        corners.append(b)
+      }
+      box.append(
+        field(L.url ? 'Logo (pick another to change it)' : 'Logo: a PNG with a see-through background works best', file),
+        L.url ? div('hint', 'Picked. It is kept in the gfx app’s folder.') : div('warn', 'No logo picked yet.'),
+        field('Start from a corner', corners),
+        keyed(slide('Move left ↔ right', L.x, 0, 100, 1, (v) => setLayer(layer, { x: v }), '%'), 'x'),
+        keyed(slide('Move up ↕ down', L.y, 0, 100, 1, (v) => setLayer(layer, { y: v }), '%'), 'y'),
+        slide('Size (height)', L.size, 30, 400, 2, (v) => setLayer(layer, { size: v }), ' px'),
+        slide('See-through', L.opacity, 10, 100, 1, (v) => setLayer(layer, { opacity: v }), '%'),
+        check('Show a red LIVE dot', L.live, (v) => act({ action: 'layer.set', layer, patch: { live: v } })),
+        check('Show the time (the streaming PC’s clock)', L.clock, (v) => act({ action: 'layer.set', layer, patch: { clock: v } }))
+      )
+    }
+    if (layer === 'ticker') {
+      const lines = div('lines')
+      const draw = () => {
+        lines.textContent = ''
+        S.layers.ticker.lines.forEach((x, n) => {
+          const i = input(x, () => {
+            const all = [...lines.querySelectorAll('input')].map((y) => y.value)
+            setLayer(layer, { lines: all })
+          }, { maxLength: 300 })
+          i.setAttribute('aria-label', `Line ${n + 1}`)
+          const del = document.createElement('button')
+          del.textContent = '✕'
+          del.title = 'Remove this line'
+          del.onclick = () => {
+            const all = [...lines.querySelectorAll('input')].map((y) => y.value).filter((_, k) => k !== n)
+            act({ action: 'layer.set', layer, patch: { lines: all } })
+          }
+          lines.append(div('r', i, del))
+        })
+      }
+      draw()
+      const addLine = document.createElement('button')
+      addLine.textContent = '+ Add a line'
+      addLine.onclick = async () => {
+        const all = [...lines.querySelectorAll('input')].map((y) => y.value)
+        await act({ action: 'layer.set', layer, patch: { lines: [...all, 'New line'] } })
+        setTimeout(() => [...lines.querySelectorAll('input')].at(-1)?.select(), 150)
+      }
+      box.append(
+        field('Label on the left (empty for none)', keyed(input(L.label, (i) => setLayer(layer, { label: i.value }), { maxLength: 40 }), 'label')),
+        field('Lines (they loop, with a dot between). Changes join at the end of a pass.', lines),
+        addLine,
+        slide('Speed', L.speed, 1, 10, 1, (v) => setLayer(layer, { speed: v })),
+        field('Where', select([['bottom', 'The very bottom'], ['above', 'A little higher (lower thirds move up)']], L.place, (v) => act({ action: 'layer.set', layer, patch: { place: v } }))),
+        div('three',
+          field('Label', keyed(input(L.accent, (i) => setLayer(layer, { accent: i.value }), { type: 'color' }), 'accent')),
+          field('Band', keyed(input(L.box, (i) => setLayer(layer, { box: i.value }), { type: 'color' }), 'box')),
+          field('Text', keyed(input(L.text, (i) => setLayer(layer, { text: i.value }), { type: 'color' }), 'text')))
+      )
+    }
+    if (layer === 'score') {
+      const mode = div('seg')
+      for (const [v, n] of [['game', 'Game score'], ['goal', 'Goal or counter']]) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.textContent = n
+        b.setAttribute('aria-pressed', String(L.mode === v))
+        b.onclick = () => act({ action: 'layer.set', layer, patch: { mode: v } })
+        mode.append(b)
+      }
+      box.append(mode)
+      if (L.mode === 'game') {
+        const pad = div('scorepad')
+        for (const t of ['a', 'b']) {
+          const nm = div('', L[t])
+          nm.style.color = 'var(--text)'
+          const v = document.createElement('b')
+          v.dataset.score = `s${t}`
+          v.textContent = L[`s${t}`]
+          const plus = document.createElement('button')
+          plus.textContent = '+1'
+          plus.onclick = () => act({ action: 'score.add', team: t, n: 1 })
+          const minus = document.createElement('button')
+          minus.textContent = '−1'
+          minus.onclick = () => act({ action: 'score.add', team: t, n: -1 })
+          pad.append(nm, v, plus, minus)
+        }
+        const clockRow = div('btnrow')
+        const time = document.createElement('span')
+        time.className = 'big-time'
+        time.id = 'gameClock'
+        const btn = (label, fn) => {
+          const b = document.createElement('button')
+          b.textContent = label
+          b.onclick = fn
+          clockRow.append(b)
+        }
+        clockRow.append(time)
+        btn(L.clockRun ? 'Stop clock' : 'Start clock', () => act({ action: 'score.clock', do: S.layers.score.clockRun ? 'stop' : 'start' }).then(() => (builtFor = '')))
+        btn('Reset clock', () => act({ action: 'score.clock', do: 'reset' }))
+        btn('Next period', () => act({ action: 'score.period' }))
+        btn('Reset game', () => act({ action: 'score.reset' }))
+        box.append(
+          pad,
+          clockRow,
+          div('two',
+            field('Team 1', keyed(input(L.a, (i) => setLayer(layer, { a: i.value }), { maxLength: 30 }), 'a')),
+            field('Team 2', keyed(input(L.b, (i) => setLayer(layer, { b: i.value }), { maxLength: 30 }), 'b'))),
+          div('three',
+            field('Team 1 colour', keyed(input(L.ca, (i) => setLayer(layer, { ca: i.value }), { type: 'color' }), 'ca')),
+            field('Team 2 colour', keyed(input(L.cb, (i) => setLayer(layer, { cb: i.value }), { type: 'color' }), 'cb')),
+            field('Clock colour', keyed(input(L.accent, (i) => setLayer(layer, { accent: i.value }), { type: 'color' }), 'accent'))),
+          div('two',
+            field('Period', keyed(input(L.period, (i) => setLayer(layer, { period: i.value }), { maxLength: 20 }), 'period')),
+            check('Show the game clock', L.showClock, (v) => act({ action: 'layer.set', layer, patch: { showClock: v } })))
+        )
+      } else {
+        const pad = div('btnrow')
+        const v = document.createElement('b')
+        v.className = 'big-time'
+        v.dataset.score = 'raised'
+        v.textContent = L.raised
+        pad.append(v)
+        for (const n of [1, 10, 100, 500, 1000, -1, -100]) {
+          const b = document.createElement('button')
+          b.textContent = n > 0 ? `+${n.toLocaleString('en-US')}` : `−${(-n).toLocaleString('en-US')}`
+          b.onclick = () => act({ action: 'score.add', team: 'goal', n })
+          pad.append(b)
+        }
+        box.append(
+          pad,
+          field('Title', keyed(input(L.gtitle, (i) => setLayer(layer, { gtitle: i.value }), { maxLength: 60 }), 'gtitle')),
+          div('three',
+            field('Now', keyed(input(L.raised, (i) => Number(i.value) >= 0 && setLayer(layer, { raised: Number(i.value) }), { type: 'number', min: 0 }), 'raised')),
+            field('Goal', keyed(input(L.goal, (i) => Number(i.value) >= 1 && setLayer(layer, { goal: Number(i.value) }), { type: 'number', min: 1 }), 'goal')),
+            field('Before the number', keyed(input(L.unit, (i) => setLayer(layer, { unit: i.value }), { maxLength: 4, placeholder: '₱, $ or empty' }), 'unit'))),
+          field('Bar colour', keyed(input(L.accent, (i) => setLayer(layer, { accent: i.value }), { type: 'color' }), 'accent'))
+        )
+      }
+      box.append(div('hint', 'A phone can change the numbers too: Phone remote (top bar), then its Score tab.'))
+    }
+    if (layer === 'corner') {
+      box.append(
+        field('Words before the time', keyed(input(L.label, (i) => setLayer(layer, { label: i.value }), { maxLength: 40, placeholder: 'Back in' }), 'label')),
+        div('two',
+          field('Minutes', keyed(input(L.minutes, (i) => Number(i.value) >= 0 && setLayer(layer, { minutes: Number(i.value), until: '' }), { type: 'number', min: 0, max: 600, step: 0.5 }), 'minutes')),
+          field('Or count to (time of day)', keyed(input(L.until, (i) => setLayer(layer, { until: i.value }), { type: 'time' }), 'until'))),
+        div('two',
+          field('At 0:00', select([['hide', 'Hide it'], ['live', 'Say “We’re live!” 5 s, then hide'], ['hold', 'Keep showing 0:00']], L.end, (v) => act({ action: 'layer.set', layer, patch: { end: v } }))),
+          field('Colour', keyed(input(L.accent, (i) => setLayer(layer, { accent: i.value }), { type: 'color' }), 'accent'))),
+        div('hint', 'It starts counting when you switch it on.')
+      )
+      if (L.on) box.append(countdownControls('corner'))
+    }
+    cdTick()
+  }
+
+  /** Pause, +1 minute, restart: the countdown on air ('item') or the corner one. */
+  function countdownControls(target) {
+    const row = div('btnrow')
+    const t = document.createElement('span')
+    t.className = 'big-time'
+    t.id = 'cdLeft'
+    t.dataset.target = target
+    row.append(t)
+    const c = target === 'corner' ? S.layers.corner : S.onAir?.countdown
+    const paused = Number.isFinite(c?.pausedLeft)
+    const b = (label, body) => {
+      const x = document.createElement('button')
+      x.textContent = label
+      x.onclick = () => act({ action: 'countdown', target, ...body }).then(() => (builtFor = ''))
+      row.append(x)
+    }
+    b(paused ? 'Go on' : 'Pause', { do: paused ? 'resume' : 'pause' })
+    b('+1 min', { do: 'add', secs: 60 })
+    b('−1 min', { do: 'add', secs: -60 })
+    b('Restart', { do: 'restart' })
+    return field(target === 'corner' ? 'Counting now' : 'On air now', row)
+  }
+  /** The gfx laptop's clock is this page's clock (same PC), so no offset here. */
+  function cdTick() {
+    const el = document.getElementById('cdLeft')
+    const fmt = (ms) => {
+      const s = Math.max(0, Math.ceil(ms / 1000))
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    }
+    if (el) {
+      const c = el.dataset.target === 'corner' ? S.layers.corner : S.onAir?.countdown
+      if (c) el.textContent = fmt(Number.isFinite(c.pausedLeft) ? c.pausedLeft : c.endsAt - Date.now()) + (Number.isFinite(c.pausedLeft) ? ' (paused)' : '')
+    }
+    const g = document.getElementById('gameClock')
+    if (g && S.layers) {
+      const sc = S.layers.score
+      g.textContent = fmt(sc.clockMs + (sc.clockRun ? Date.now() - sc.clockAt : 0) - 999)
+    }
+  }
+  setInterval(() => S && cdTick(), 250)
+
+  // ---------- Viewer comments ----------
+  let chatTab = false
+  $('tabRun').onclick = () => showChatTab(false)
+  $('tabChat').onclick = () => showChatTab(true)
+  function showChatTab(on) {
+    chatTab = on
+    $('tabRun').setAttribute('aria-selected', String(!on))
+    $('tabChat').setAttribute('aria-selected', String(on))
+    $('chatPane').hidden = !on
+    for (const id of ['runHead', 'items', 'dropHint']) $(id).hidden = on
+    if (on) {
+      seenComments = S?.chat?.list?.[0]?.id ?? ''
+      renderChatPane(true)
+    }
+    renderChatCount()
+  }
+  let seenComments = ''
+  function renderChatCount() {
+    const list = S?.chat?.list ?? []
+    const n = chatTab ? 0 : Math.max(0, list.findIndex((c) => c.id === seenComments) < 0 ? list.length : list.findIndex((c) => c.id === seenComments))
+    $('chatCount').hidden = !n
+    $('chatCount').textContent = String(n)
+  }
+  const COLORS = ['#0f8f6a', '#7a4cff', '#d13b3b', '#2563d9', '#e0a526', '#ff6a2b']
+  const colorFor = (who) => COLORS[[...who].reduce((n, ch) => n + ch.charCodeAt(0), 0) % COLORS.length]
+  function renderChatPane(force) {
+    const pane = $('chatPane')
+    if (!S?.chat || (!chatTab && !force)) return
+    if (!pane.dataset.built) {
+      pane.dataset.built = '1'
+      pane.innerHTML = `
+        <div class="note">Comments from YouTube and Facebook come in here once the gfx app is signed in to your channel and page. That sign-in isn’t set up yet: you’ll be asked first. Until then, type a comment in below.</div>
+        <form id="cmForm" style="display:grid;gap:6px;margin-top:8px">
+          <div class="two"><select id="cmPlat" aria-label="From"><option value="youtube">YouTube</option><option value="facebook">Facebook</option><option value="other">Other</option></select><input id="cmWho" maxlength="60" placeholder="Name" aria-label="Name"></div>
+          <div class="file"><input id="cmText" maxlength="300" placeholder="What they wrote" aria-label="What they wrote"><button>Add</button></div>
+        </form>
+        <div class="two" style="margin-top:8px"><label>Shows for<select id="cmStay"><option value="0">Until Hide</option><option value="5">5 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><label>&nbsp;<button type="button" id="cmHide">Hide the comment</button></label></div>
+        <label style="margin-top:8px">Hidden words (comments with these never show)<input id="cmHidden" placeholder="spam, scam, http"></label>
+        <ul class="comments" id="cmList" style="margin-top:10px"></ul>`
+      $('cmForm').onsubmit = async (e) => {
+        e.preventDefault()
+        const r = await act({ action: 'chat.add', platform: $('cmPlat').value, who: $('cmWho').value, text: $('cmText').value })
+        if (r.ok) {
+          $('cmText').value = ''
+          $('cmWho').focus()
+        }
+      }
+      $('cmHide').onclick = () => act({ action: 'chat.hide' })
+      $('cmStay').onchange = () => act({ action: 'chat.settings', stayFor: Number($('cmStay').value) })
+      let t = null
+      $('cmHidden').oninput = () => {
+        clearTimeout(t)
+        t = setTimeout(() => act({ action: 'chat.settings', hidden: $('cmHidden').value }), 500)
+      }
+      $('cmList').onclick = (e) => {
+        const b = e.target.closest('button[data-id]')
+        if (!b) return
+        if (b.dataset.do === 'remove') act({ action: 'chat.remove', id: b.dataset.id })
+        else if (S.chat.shown?.id === b.dataset.id) act({ action: 'chat.hide' })
+        else act({ action: 'chat.show', id: b.dataset.id })
+      }
+    }
+    const c = S.chat
+    if (document.activeElement !== $('cmHidden')) $('cmHidden').value = c.hidden.join(', ')
+    $('cmStay').value = String(c.stayFor)
+    $('cmHide').disabled = !c.shown
+    const sig = JSON.stringify([c.list.map((x) => x.id), c.shown?.id])
+    if (pane.dataset.sig === sig) return
+    pane.dataset.sig = sig
+    $('cmList').innerHTML = c.list.length
+      ? c.list.map((m) => {
+          const on = c.shown?.id === m.id
+          const label = { youtube: 'YOUTUBE', facebook: 'FACEBOOK', other: 'TYPED IN' }[m.platform]
+          return `<li class="cm${on ? ' shown' : ''}"><span class="av" style="background:${colorFor(m.who)}">${esc([...m.who][0] ?? '?')}</span><div style="min-width:0"><div class="who"><b>${esc(m.who)}</b><span class="plat ${esc(m.platform)}">${label}</span>${m.text.includes('?') ? '<span class="q">Question</span>' : ''}</div><div class="txt">${esc(m.text)}</div></div><div class="btns"><button data-id="${esc(m.id)}" class="${on ? 'take' : ''}" style="${on ? 'background:var(--live);border-color:var(--live);color:#fff' : ''}">${on ? 'On air' : 'Show'}</button><button class="x" data-id="${esc(m.id)}" data-do="remove" aria-label="Remove this comment">✕</button></div></li>`
+        }).join('')
+      : '<li class="empty">No comments yet.</li>'
+  }
+
+  // ---------- Keys ----------
+  const KEYS = [['Space', 'Take'], ['Esc', 'Hide'], ['↓', 'Next item'], ['↑', 'Previous item'], ['L', 'Logo bug on / off'], ['K', 'Ticker on / off'], ['S', 'Scoreboard on / off'], ['C', 'Corner countdown on / off'], ['H', 'Hide the comment']]
+  $('keysBtn').onclick = () => {
+    const withKeys = (S?.items ?? []).filter((i) => i.hotkey).sort((a, b) => Number(a.hotkey.slice(1)) - Number(b.hotkey.slice(1)))
+    $('keysList').innerHTML = [...KEYS, ...withKeys.map((i) => [i.hotkey, `Take “${i.name}”`])].map(([k, w]) => `<div class="key"><kbd>${esc(k)}</kbd><span>${esc(w)}</span></div>`).join('')
+    $('keysDlg').showModal()
+  }
+  $('keysClose').onclick = () => $('keysDlg').close()
+  document.addEventListener('keydown', (e) => {
+    if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]') || !S) return
+    // F1 to F12: the item with that hotkey, straight to air.
+    if (/^F([1-9]|1[0-2])$/.test(e.key)) {
+      const it = S.items.find((i) => i.hotkey === e.key)
+      e.preventDefault()
+      if (it) takeItem(it.id)
+      return
+    }
+    if (e.repeat) return
+    const layer = { l: 'logo', k: 'ticker', s: 'score', c: 'corner' }[e.key.toLowerCase()]
+    if (layer) {
+      e.preventDefault()
+      act({ action: 'layer.toggle', layer })
+    } else if (e.key.toLowerCase() === 'h') act({ action: 'chat.hide' })
+  })
+
+  // ---------- Phone remote: a QR code, and which phones may use it ----------
+  async function openRemote() {
+    const body = $('remoteBody')
+    let qr = null
+    try {
+      qr = await (await fetch('/api/remote/qr')).json()
+    } catch {}
+    if (!qr?.link) {
+      body.innerHTML = '<p class="warn">The QR code is made on the gfx laptop itself: open the phone remote there.</p>'
+    } else {
+      body.innerHTML = `<div class="qrbox"><div class="qr">${qr.svg || ''}</div>
+        <ol>
+          <li>Phone or tablet on the <b>same Wi-Fi</b> as this laptop.</li>
+          <li>Point its <b>camera</b> at the code and tap the link. The remote opens in the phone’s browser: no app to install.${qr.svg ? '' : ' (No QR code here: type the address below into the phone’s browser.)'}</li>
+          <li>This window asks <b>“Let this phone control the graphics?”</b> Click Allow once. After that it connects by itself.</li>
+          <li>Tip: in the phone browser’s menu, <b>Add to Home screen</b> gives it an icon like an app.</li>
+          <li>Address: <code>${esc(qr.link)}</code></li>
+        </ol></div>
+        ${qr.addresses.length > 1 ? `<label>This laptop’s address for the phone<select id="qrIp">${qr.addresses.map((a) => `<option ${a === qr.host ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></label>` : ''}
+        <h2>Phones allowed</h2><ul class="devs" id="devList"></ul>
+        <div class="btnrow"><button id="qrNew" title="The old code stops working; allowed phones scan the new one">New code</button><button id="qrForget">New code and forget all phones</button></div>`
+      $('qrNew').onclick = async () => {
+        await act({ action: 'remote.newkey' })
+        openRemote()
+      }
+      $('qrForget').onclick = async () => {
+        await act({ action: 'remote.newkey', forgetPhones: true })
+        openRemote()
+      }
+      const ipSel = $('qrIp')
+      if (ipSel) ipSel.onchange = async () => {
+        const r = await (await fetch(`/api/remote/qr?ip=${encodeURIComponent(ipSel.value)}`)).json()
+        body.querySelector('.qr').innerHTML = r.svg || ''
+        body.querySelector('code').textContent = r.link
+      }
+      renderDevices()
+    }
+    if (!$('remoteDlg').open) $('remoteDlg').showModal()
+  }
+  function renderDevices() {
+    const ul = document.getElementById('devList')
+    if (!ul || !S?.remotes) return
+    const list = S.remotes.devices
+    ul.innerHTML = list.length
+      ? list.map((d) => `<li><span class="dot${d.connected ? ' on' : ''}"></span><span>${esc(d.name)} · ${d.connected ? 'connected' : 'not connected'}</span><button data-forget="${esc(d.id)}">Forget</button></li>`).join('')
+      : '<li class="empty">None yet.</li>'
+    for (const b of ul.querySelectorAll('[data-forget]')) b.onclick = () => act({ action: 'remote.forget', id: b.dataset.forget })
+  }
+  $('remoteBtn').onclick = () => void openRemote()
+  $('remoteClose').onclick = () => $('remoteDlg').close()
+  function renderRemoteAsk() {
+    const p = S?.remotes?.pending?.[0]
+    $('remoteAsk').hidden = !p
+    if (!p) return
+    $('remoteAskText').textContent = `${p.name} scanned the QR code and wants to Take, Hide and switch graphics. Allow it only if it’s a phone you know.`
+    $('remoteAllow').onclick = () => act({ action: 'remote.allow', id: p.id })
+    $('remoteBlock').onclick = () => act({ action: 'remote.block', id: p.id })
+  }
+
   // ---------- State from the gfx app's server ----------
   const events = new EventSource('/events?role=operator')
   events.onmessage = (e) => {
@@ -1551,10 +2339,16 @@
     if (msg.type === 'rtc-offer') return answerOffer(msg)
     if (msg.type !== 'state') return
     S = msg
+    if (editing && !S.layers?.[editing]) editing = ''
     renderItems()
     renderMain()
     renderSettings()
     renderProject()
+    renderStay()
+    renderChatPane()
+    renderChatCount()
+    renderRemoteAsk()
+    renderDevices()
     dropCaptures()
     fit()
   }

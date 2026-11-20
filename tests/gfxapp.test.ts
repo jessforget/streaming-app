@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -264,5 +264,112 @@ describe('gfx app server', () => {
     expect(s.previewId).toBe('item-1')
     await doit({ action: 'next' })
     expect((await state()).previewId).toBe('item-2')
+  })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const st = () => state() as Promise<any>
+
+  it('saves lower-third templates; new lower thirds start with the default one', async () => {
+    const t = await doit({ action: 'template.save', name: 'Guest', itemId: 'item-1', look: { style: 'glass', accent: '#ff0000', speed: 'fast' } })
+    let s = await st()
+    expect(s.templates).toEqual([{ id: t.result, name: 'Guest', look: expect.objectContaining({ style: 'glass', accent: '#ff0000', speed: 'fast' }) }])
+    expect(s.items[0].template).toBe(t.result)
+    await doit({ action: 'template.default', id: t.result })
+    const n = await doit({ action: 'add', item: { kind: 'lowerthird', name: 'New', title: 'One' } })
+    s = await st()
+    expect(s.items.find((i: { id: string }) => i.id === n.result).template).toBe(t.result)
+    // Unknown styles are refused; deleting a template sends its lower thirds back to the shared look.
+    await doit({ action: 'template.update', id: t.result, look: { style: 'nope', nameSize: 70 } })
+    expect((await st()).templates[0].look).toMatchObject({ style: 'glass', nameSize: 70 })
+    expect((await doit({ action: 'template.import', templates: [{ name: 'Guest', look: { style: 'vbar' } }] })).result).toBe(1)
+    expect((await st()).templates.map((x: { name: string }) => x.name)).toEqual(['Guest', 'Guest 2'])
+    await doit({ action: 'template.delete', id: t.result })
+    s = await st()
+    expect(s.defaultTemplate).toBe('')
+    expect(s.items.every((i: { template: string }) => i.template === '')).toBe(true)
+  })
+
+  it('switches the Stays-on graphics and keeps their settings in projects', async () => {
+    expect((await doit({ action: 'layer.toggle', layer: 'logo' })).error).toMatch(/logo picture/)
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3])
+    expect((await fetch(`${base}/api/logo?ext=png`, { method: 'POST', body: png })).status).toBe(200)
+    await doit({ action: 'layer.set', layer: 'logo', patch: { on: true, x: 20, y: 150, size: 999 } })
+    let s = await st()
+    expect(s.layers.logo).toMatchObject({ on: true, x: 20, y: 100, size: 400, url: expect.stringContaining('/media/logo') })
+    expect(JSON.stringify(s)).not.toContain(dir)
+    expect(Buffer.from(await (await fetch(`${base}${s.layers.logo.url}`)).arrayBuffer())).toEqual(png)
+    await doit({ action: 'layer.set', layer: 'ticker', patch: { on: true, lines: ['One', 'Two', 3] } })
+    await doit({ action: 'score.add', team: 'a', n: 1 })
+    await doit({ action: 'score.add', team: 'a', n: -5 })
+    await doit({ action: 'score.add', team: 'b', n: 2 })
+    s = await st()
+    expect(s.layers.ticker.lines).toEqual(['One', 'Two'])
+    expect(s.layers.score).toMatchObject({ sa: 0, sb: 2 })
+    await doit({ action: 'score.clock', do: 'start' })
+    expect((await st()).layers.score.clockRun).toBe(true)
+    await doit({ action: 'project.save', name: 'Game night' })
+    const saved = JSON.parse(readFileSync(join(dir, 'projects', 'Game night.gfx.json'), 'utf8'))
+    expect(saved.layers.ticker).toMatchObject({ lines: ['One', 'Two'] })
+    expect(saved.layers.ticker.on).toBeUndefined()
+  })
+
+  it('counts down: a countdown item from Take, and the corner one from when it is switched on', async () => {
+    const c = await doit({ action: 'add', item: { kind: 'countdown', minutes: 2 } })
+    await doit({ action: 'take', id: c.result })
+    let s = await st()
+    const left = s.onAir.countdown.endsAt - s.now
+    expect(left).toBeGreaterThan(119_000)
+    expect(left).toBeLessThanOrEqual(120_000)
+    await doit({ action: 'countdown', do: 'add', secs: 60 })
+    await doit({ action: 'countdown', do: 'pause' })
+    s = await st()
+    expect(s.onAir.countdown.pausedLeft).toBeGreaterThan(179_000)
+    expect((await doit({ action: 'countdown', target: 'corner', do: 'pause' })).error).toMatch(/off/)
+    await doit({ action: 'layer.set', layer: 'corner', patch: { on: true, minutes: 0 } })
+    s = await st()
+    expect(s.layers.corner.on).toBe(true)
+    // Set to hide at 0:00: it goes off by itself.
+    await new Promise((r) => setTimeout(r, 1300))
+    expect((await st()).layers.corner.on).toBe(false)
+  })
+
+  it('takes one hotkey per item', async () => {
+    const n = await doit({ action: 'add', item: { kind: 'lowerthird', name: 'B', hotkey: 'F2' } })
+    await doit({ action: 'update', id: 'item-1', item: { hotkey: 'F2' } })
+    const s = await st()
+    expect(s.items.map((i: { hotkey: string }) => i.hotkey)).toEqual(['F2', ''])
+    expect(s.items[1].id).toBe(n.result)
+  })
+
+  it('shows a viewer comment, leaves out hidden words, and takes comments from other programs', async () => {
+    const r = await fetch(`${base}/api/chat`, { method: 'POST', body: JSON.stringify([{ platform: 'youtube', who: 'Ana', text: 'Hello from Cebu' }, { who: 'Bot', text: 'cheap http://scam' }, { text: '' }]) })
+    expect((await r.json()).added).toBe(2)
+    let s = await st()
+    expect(s.chat.list.map((c: { who: string }) => c.who)).toEqual(['Ana'])
+    await doit({ action: 'chat.show', id: s.chat.list[0].id })
+    s = await st()
+    expect(s.chat.shown).toMatchObject({ who: 'Ana', platform: 'youtube', text: 'Hello from Cebu' })
+    await doit({ action: 'chat.hide' })
+    expect((await st()).chat.shown).toBeNull()
+  })
+
+  it('lets a phone remote in only with the QR code’s key and once it is allowed', async () => {
+    const qr = await (await fetch(`${base}/api/remote/qr`)).json()
+    expect(qr.link).toMatch(/\/remote\?k=/)
+    expect(qr.svg).toContain('<svg')
+    const k = new URL(qr.link).searchParams.get('k')
+    const hello = (key: string) => fetch(`${base}/api/remote/hello`, { method: 'POST', body: JSON.stringify({ k: key, id: 'phone-123456', name: 'Android phone' }) }).then((x) => x.json())
+    const remote = (body: object) => fetch(`${base}/api/remote/do`, { method: 'POST', body: JSON.stringify({ k, id: 'phone-123456', do: body }) })
+    expect((await hello('wrong')).state).toBe('badkey')
+    expect((await hello(k!)).state).toBe('waiting')
+    expect((await st()).remotes.pending).toEqual([{ id: 'phone-123456', name: 'Android phone' }])
+    expect((await remote({ action: 'take' })).status).toBe(403)
+    await doit({ action: 'remote.allow', id: 'phone-123456' })
+    expect((await hello(k!)).state).toBe('allowed')
+    expect((await remote({ action: 'take' })).status).toBe(200)
+    expect((await st()).onAir).toMatchObject({ id: 'item-1' })
+    // Only the operator's buttons: not projects or files.
+    expect((await remote({ action: 'project.delete', file: 'x.gfx.json' })).status).toBe(400)
+    expect((await fetch(`${base}/remote`)).status).toBe(200)
   })
 })

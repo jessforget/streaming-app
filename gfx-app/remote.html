@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Gfx remote</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e1014; --panel: #14171d; --card: #1b1f27; --line: #262b34; --line-2: #2c323d;
+    --text: #e8eaee; --muted: #9ba4b4; --accent: #4c8dff; --live: #c93636; --go: #3fb37f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  body { padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line-2); background: var(--card); border-radius: 12px; min-height: 48px; padding: 0 14px; touch-action: manipulation; }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.45; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+  header h1 { font-size: 17px; margin: 0; }
+  .st { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .st::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #5d6574; }
+  .st.ok { color: #8fe0b6; } .st.ok::before { background: var(--go); }
+  .st.bad { color: #ff9b9b; } .st.bad::before { background: #ff5a5a; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+  .tabs button { min-height: 40px; }
+  .tabs button[aria-selected='true'] { border-color: var(--accent); background: #16233a; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 10px; margin-bottom: 12px; }
+  .lbl { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .now { font-size: 18px; font-weight: 600; }
+  .now.live { color: #ff9b9b; }
+  .list { display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
+  .list button { text-align: left; min-height: 46px; display: flex; align-items: center; gap: 10px; }
+  .list button.sel { border-color: #3d6fbf; background: #16233a; }
+  .list button.air { border-color: var(--live); }
+  .list small { color: var(--muted); margin-left: auto; font-size: 12px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .take { background: var(--live); border-color: var(--live); color: #fff; font-weight: 800; font-size: 22px; letter-spacing: 0.05em; min-height: 70px; }
+  .hide { font-weight: 700; font-size: 20px; min-height: 70px; }
+  .sw { display: flex; align-items: center; gap: 10px; justify-content: flex-start; }
+  .knob { width: 36px; height: 22px; border-radius: 999px; background: #353b47; position: relative; flex: none; }
+  .knob::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #c8ceda; transition: 0.2s; }
+  .sw.on { border-color: #6b2a2a; background: #2a1618; }
+  .sw.on .knob { background: var(--live); }
+  .sw.on .knob::after { left: 17px; background: #fff; }
+  .team { text-align: center; }
+  .team b { display: block; font-size: 16px; }
+  .team span { font-size: 40px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .plus { font-size: 24px; font-weight: 800; min-height: 64px; color: #fff; }
+  .minus { font-size: 20px; min-height: 64px; }
+  .clock { text-align: center; font: 700 28px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .msg { text-align: center; padding: 30px 10px; display: grid; gap: 12px; }
+  .msg h2 { margin: 0; font-size: 20px; }
+  .msg p { margin: 0; color: var(--muted); }
+  .err { color: #ff9b9b; font-size: 13px; min-height: 18px; text-align: center; }
+  .goalnum { text-align: center; font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .goalnum small { display: block; font-size: 14px; font-weight: 500; color: var(--muted); }
+</style>
+</head>
+<body>
+<header><h1>Gfx remote</h1><span class="st" id="st">Connecting…</span></header>
+
+<div id="gate" class="msg"><h2 id="gateTitle">Connecting…</h2><p id="gateText"></p></div>
+
+<div id="app" hidden>
+  <div class="tabs" role="tablist"><button role="tab" id="tGfx" aria-selected="true">Graphics</button><button role="tab" id="tScore" aria-selected="false">Score</button></div>
+  <section id="pGfx">
+    <div class="box">
+      <div><div class="lbl">On air</div><div class="now" id="onair">Nothing</div></div>
+      <div><div class="lbl">Preview · tap an item</div><div class="now" id="preview">Nothing</div></div>
+      <div class="list" id="items"></div>
+      <div class="two"><button class="take" id="take">TAKE</button><button class="hide" id="hide">HIDE</button></div>
+      <div class="two"><button id="prev">↑ Previous</button><button id="next">Next ↓</button></div>
+      <div id="cdBox" hidden><div class="lbl" id="cdLbl">Countdown</div><div class="clock" id="cdTime"></div><div class="three"><button id="cdPause">Pause</button><button id="cdPlus">+1 min</button><button id="cdMinus">−1 min</button></div></div>
+      <button id="chatHide" hidden>Hide the comment</button>
+    </div>
+    <div class="box"><div class="lbl">Stays on</div><div class="two" id="stay"></div></div>
+  </section>
+  <section id="pScore" hidden><div class="box" id="score"></div></section>
+  <p class="err" id="err" role="status"></p>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
+    set: (k, v) => { try { localStorage.setItem(k, v) } catch {} }
+  }
+  // The key from the QR code (kept, so the page opens again from the home screen without it).
+  const key = new URLSearchParams(location.search).get('k') || store.get('gfx-remote-key') || ''
+  let id = store.get('gfx-remote-id')
+  if (!id) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20)
+    store.set('gfx-remote-id', id)
+  }
+  const ua = navigator.userAgent
+  const name = /iPad/.test(ua) ? 'iPad' : /iPhone/.test(ua) ? 'iPhone' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet') : 'Phone or tablet'
+
+  let S = null
+  let offset = 0
+  let events = null
+
+  function gate(title, text, cls) {
+    $('gate').hidden = false
+    $('app').hidden = true
+    $('gateTitle').textContent = title
+    $('gateText').textContent = text
+    $('st').className = `st ${cls || ''}`
+    $('st').textContent = cls === 'bad' ? 'Not connected' : 'Waiting'
+  }
+
+  async function hello() {
+    if (!key) return gate('Scan the QR code', 'In the gfx app: Phone remote (top bar). Point this phone’s camera at the code.', 'bad')
+    let r
+    try {
+      r = await (await fetch('/api/remote/hello', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ k: key, id, name }) })).json()
+    } catch {
+      gate('Can’t reach the gfx app', 'Is this phone on the same Wi-Fi as the gfx laptop, and is the gfx app open? Trying again…', 'bad')
+      return setTimeout(hello, 3000)
+    }
+    if (r.state === 'badkey') return gate('This code is old', 'Scan the QR code in the gfx app again (Phone remote, top bar).', 'bad')
+    if (r.state === 'blocked') return gate('Blocked', 'This phone was blocked in the gfx app. To use it, Forget it there and scan the code again.', 'bad')
+    if (r.state === 'waiting') {
+      gate('Click Allow in the gfx app', `The gfx app is asking “Let this phone control the graphics?” (${name}).`)
+      return setTimeout(hello, 2000)
+    }
+    store.set('gfx-remote-key', key)
+    $('gate').hidden = true
+    $('app').hidden = false
+    listen()
+  }
+
+  function listen() {
+    events?.close()
+    events = new EventSource(`/events?role=remote&id=${encodeURIComponent(id)}`)
+    events.onopen = () => {
+      $('st').className = 'st ok'
+      $('st').textContent = 'Connected'
+    }
+    events.onerror = () => {
+      $('st').className = 'st bad'
+      $('st').textContent = 'Reconnecting…'
+    }
+    events.onmessage = (e) => {
+      const msg = JSON.parse(e.data)
+      if (msg.type !== 'state') return
+      S = msg
+      if (msg.now) offset = msg.now - Date.now()
+      render()
+    }
+  }
+
+  let errTimer = null
+  async function act(body) {
+    let r, out
+    try {
+      r = await fetch('/api/remote/do', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ k: key, id, do: body }) })
+      out = await r.json().catch(() => ({}))
+    } catch {
+      out = { error: 'Can’t reach the gfx app' }
+    }
+    if (r?.status === 403) {
+      events?.close()
+      return hello()
+    }
+    if (!r?.ok) {
+      $('err').textContent = out.error || 'That didn’t work'
+      clearTimeout(errTimer)
+      errTimer = setTimeout(() => ($('err').textContent = ''), 4000)
+    }
+    navigator.vibrate?.(15)
+    return out
+  }
+
+  // ---------- Tabs ----------
+  $('tGfx').onclick = () => tab(false)
+  $('tScore').onclick = () => tab(true)
+  function tab(score) {
+    $('tGfx').setAttribute('aria-selected', String(!score))
+    $('tScore').setAttribute('aria-selected', String(score))
+    $('pGfx').hidden = score
+    $('pScore').hidden = !score
+  }
+
+  // ---------- Graphics ----------
+  $('take').onclick = () => act({ action: 'take' })
+  $('hide').onclick = () => act({ action: 'hide' })
+  $('next').onclick = () => act({ action: 'next' })
+  $('prev').onclick = () => act({ action: 'next', back: true })
+  $('chatHide').onclick = () => act({ action: 'chat.hide' })
+  $('items').onclick = (e) => {
+    const b = e.target.closest('[data-id]')
+    if (b) act({ action: 'preview', id: b.dataset.id })
+  }
+  $('stay').onclick = (e) => {
+    const b = e.target.closest('[data-layer]')
+    if (b) act({ action: 'layer.toggle', layer: b.dataset.layer })
+  }
+  const cdTarget = () => (S?.onAir?.countdown ? 'item' : S?.layers?.corner?.on ? 'corner' : '')
+  $('cdPause').onclick = () => {
+    const t = cdTarget()
+    const c = t === 'corner' ? S.layers.corner : S.onAir?.countdown
+    act({ action: 'countdown', target: t, do: Number.isFinite(c?.pausedLeft) ? 'resume' : 'pause' })
+  }
+  $('cdPlus').onclick = () => act({ action: 'countdown', target: cdTarget(), do: 'add', secs: 60 })
+  $('cdMinus').onclick = () => act({ action: 'countdown', target: cdTarget(), do: 'add', secs: -60 })
+
+  const KIND = { lowerthird: 'LT', countdown: 'Clock', video: 'Video', photos: 'Photos', window: 'Window', bars: 'Bars' }
+  let listSig = ''
+  function render() {
+    const byId = (x) => S.items.find((i) => i.id === x)
+    const o = S.onAir ? byId(S.onAir.id) : null
+    const p = byId(S.previewId)
+    $('onair').textContent = o ? o.name : 'Nothing'
+    $('onair').className = `now${o ? ' live' : ''}`
+    $('preview').textContent = p ? `${p.name}${p.kind === 'lowerthird' && p.title ? ` · ${p.title}` : ''}` : 'Nothing'
+    $('take').disabled = !p
+    $('hide').disabled = !o
+    const sig = JSON.stringify([S.items.map((i) => [i.id, i.name, i.title, i.hotkey]), S.previewId, S.onAir?.id])
+    if (sig !== listSig) {
+      listSig = sig
+      $('items').innerHTML = S.items.map((i) => `<button data-id="${esc(i.id)}" class="${i.id === S.previewId ? 'sel' : ''} ${i.id === S.onAir?.id ? 'air' : ''}"><span>${esc(i.name)}${i.kind === 'lowerthird' && i.title ? ` · ${esc(i.title)}` : ''}</span><small>${esc(KIND[i.kind] ?? '')}${i.hotkey ? ` · ${esc(i.hotkey)}` : ''}</small></button>`).join('')
+    }
+    const L = S.layers
+    $('stay').innerHTML = [['logo', 'Logo'], ['ticker', 'Ticker'], ['score', L.score.mode === 'goal' ? 'Goal bar' : 'Score'], ['corner', 'Countdown']].map(([k, n]) => `<button class="sw${L[k].on ? ' on' : ''}" data-layer="${k}" aria-pressed="${L[k].on}"><span class="knob"></span>${n}</button>`).join('')
+    $('chatHide').hidden = !S.chat?.shown
+    $('cdBox').hidden = !cdTarget()
+    renderScore()
+    tick()
+  }
+  const fmt = (ms) => {
+    const s = Math.max(0, Math.ceil(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+  function tick() {
+    if (!S) return
+    const t = cdTarget()
+    if (t) {
+      const c = t === 'corner' ? S.layers.corner : S.onAir.countdown
+      const paused = Number.isFinite(c.pausedLeft)
+      $('cdLbl').textContent = t === 'corner' ? 'Corner countdown' : 'Countdown on air'
+      $('cdTime').textContent = `${fmt(paused ? c.pausedLeft : c.endsAt - (Date.now() + offset))}${paused ? ' (paused)' : ''}`
+      $('cdPause').textContent = paused ? 'Go on' : 'Pause'
+    }
+    const g = $('gclock')
+    if (g) {
+      const sc = S.layers.score
+      g.textContent = fmt(sc.clockMs + (sc.clockRun ? Date.now() + offset - sc.clockAt : 0) - 999)
+    }
+  }
+  setInterval(tick, 250)
+
+  // ---------- Score ----------
+  let scoreSig = ''
+  function renderScore() {
+    const sc = S.layers.score
+    const sig = JSON.stringify(sc)
+    if (sig === scoreSig) return
+    scoreSig = sig
+    const money = (n) => `${sc.unit || ''}${Number(n).toLocaleString('en-US')}`
+    const onBtn = `<button class="sw${sc.on ? ' on' : ''}" data-layer="score" aria-pressed="${sc.on}"><span class="knob"></span>${sc.on ? 'On the stream' : 'Show on the stream'}</button>`
+    $('score').innerHTML = sc.mode === 'goal'
+      ? `${onBtn}<div class="goalnum">${esc(money(sc.raised))}<small>of ${esc(money(sc.goal))} · ${esc(sc.gtitle)}</small></div>
+         <div class="three">${[1, 10, 100, 500, 1000].map((n) => `<button class="plus" style="background:${sc.accent};border-color:${sc.accent}" data-g="${n}">+${n.toLocaleString('en-US')}</button>`).join('')}<button class="minus" data-g="-1">−1</button></div>`
+      : `${onBtn}<div class="two"><div class="team"><b>${esc(sc.a)}</b><span>${sc.sa}</span></div><div class="team"><b>${esc(sc.b)}</b><span>${sc.sb}</span></div></div>
+         <div class="two"><button class="plus" style="background:${sc.ca};border-color:${sc.ca}" data-t="a" data-n="1">+1</button><button class="plus" style="background:${sc.cb};border-color:${sc.cb}" data-t="b" data-n="1">+1</button></div>
+         <div class="two"><button class="minus" data-t="a" data-n="-1">−1</button><button class="minus" data-t="b" data-n="-1">−1</button></div>
+         <div class="clock"><span id="gclock"></span> · ${esc(sc.period)}</div>
+         <div class="two"><button data-clock="${sc.clockRun ? 'stop' : 'start'}">${sc.clockRun ? 'Stop clock' : 'Start clock'}</button><button data-period="1">Next period</button></div>`
+  }
+  $('score').onclick = (e) => {
+    const b = e.target.closest('button')
+    if (!b) return
+    if (b.dataset.layer) act({ action: 'layer.toggle', layer: b.dataset.layer })
+    else if (b.dataset.t) act({ action: 'score.add', team: b.dataset.t, n: Number(b.dataset.n) })
+    else if (b.dataset.g) act({ action: 'score.add', team: 'goal', n: Number(b.dataset.g) })
+    else if (b.dataset.clock) act({ action: 'score.clock', do: b.dataset.clock })
+    else if (b.dataset.period) act({ action: 'score.period' })
+  }
+
+  hello()
+</script>
+</body>
+</html>

@@ -33,9 +33,14 @@ const ABOUT = (() => {
   }
 })()
 
-const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars']
-const STYLES = ['classic', 'block', 'minimal', 'news']
-const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'custom']
+const L = require('./layers.cjs')
+
+const KINDS = ['lowerthird', 'video', 'photos', 'window', 'bars', 'countdown']
+/** The first four are the original styles; the others each bring their own animation. */
+const STYLES = ['classic', 'block', 'minimal', 'news', 'reveal', 'split', 'glass', 'angled', 'letters', 'type', 'pill', 'bracket', 'fade', 'ribbon', 'center', 'vbar']
+const FONTS = ['Inter', 'Space Grotesk', 'Montserrat', 'Roboto Slab', 'Oswald', 'Bebas Neue', 'Playfair Display', 'Roboto Condensed', 'JetBrains Mono', 'custom']
+const SPEEDS = ['slow', 'normal', 'fast']
+const HOTKEYS = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']
 const POSITIONS = ['left', 'center', 'right']
 const ANIMATIONS = ['slide', 'fade', 'wipe']
 const SHOWS = ['full', 'box']
@@ -64,7 +69,9 @@ const DEFAULT_LOOK = {
   text: '#111111',
   /** Seconds before a lower third hides by itself; 0 = until Hide is pressed. */
   stayFor: 0,
-  animation: 'slide'
+  animation: 'slide',
+  /** How fast it animates in and out. */
+  speed: 'normal'
 }
 
 const isVideoFile = (p) => VIDEO_EXT.includes(extname(p).toLowerCase())
@@ -87,7 +94,8 @@ function cleanLook(p, was) {
     box: color('box'),
     text: color('text'),
     stayFor: num('stayFor', 0, 600),
-    animation: pick('animation', ANIMATIONS)
+    animation: pick('animation', ANIMATIONS),
+    speed: pick('speed', SPEEDS) ?? 'normal'
   }
 }
 
@@ -98,15 +106,34 @@ const numOf = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, 
 /** One rundown item from what was sent, over what it was (or a fresh one). Paths are checked by the caller. */
 function cleanItem(p, was) {
   const kind = was ? was.kind : pickOf(p.kind, KINDS, null)
-  if (!kind) throw new Error('kind must be lowerthird, video, photos, window or bars')
+  if (!kind) throw new Error('kind must be lowerthird, video, photos, window, bars or countdown')
   const base = was ?? { id: '', kind, playOnLive: true }
   const item = { ...base }
   if (p.name !== undefined) item.name = text(p.name, 80)
   if (p.playOnLive !== undefined) item.playOnLive = p.playOnLive === true
+  // A key (F1 to F12) that takes this item straight to air.
+  if (p.hotkey !== undefined) item.hotkey = pickOf(p.hotkey, HOTKEYS, '')
+  item.hotkey ??= ''
   if (kind === 'lowerthird') {
     if (p.title !== undefined) item.title = text(p.title, 120)
+    // A saved template's look ('' = the shared look of lower thirds without a template).
+    if (p.template !== undefined) item.template = typeof p.template === 'string' ? p.template.slice(0, 40) : ''
     item.name ??= ''
     item.title ??= ''
+    item.template ??= ''
+  }
+  if (kind === 'countdown') {
+    // A countdown: "Starting soon" (or a break) with the time left, full screen.
+    if (p.title !== undefined) item.title = text(p.title, 120)
+    if (p.minutes !== undefined) item.minutes = numOf(p.minutes, 0, 600, item.minutes ?? 5)
+    if (p.until !== undefined) item.until = p.until === '' ? '' : L.timeOf(p.until, item.until ?? '')
+    if (p.end !== undefined) item.end = pickOf(p.end, L.COUNTDOWN_ENDS, item.end ?? 'live')
+    if (p.accent !== undefined) item.accent = /^#[0-9a-f]{6}$/i.test(p.accent) ? p.accent : item.accent
+    item.title ??= 'Grab a coffee, we start in a few minutes'
+    item.minutes ??= 5
+    item.until ??= ''
+    item.end ??= 'live'
+    item.accent ??= '#4c8dff'
   }
   if (kind === 'video') {
     if (p.shows !== undefined) item.shows = pickOf(p.shows, SHOWS, item.shows ?? 'full')
@@ -138,7 +165,7 @@ function cleanItem(p, was) {
     if (p.shows !== undefined) item.shows = pickOf(p.shows, SHOWS, item.shows ?? 'full')
     item.shows ??= 'full'
   }
-  if (!item.name) item.name = { lowerthird: 'Lower third', video: 'Video', photos: 'Photos', window: 'Window', bars: 'Color bars' }[kind]
+  if (!item.name) item.name = { lowerthird: 'Lower third', video: 'Video', photos: 'Photos', window: 'Window', bars: 'Color bars', countdown: 'Starting soon' }[kind]
   return item
 }
 
@@ -154,7 +181,7 @@ function startServer(opts = {}) {
   const log = opts.log ?? ((s) => console.log(s))
 
   /** The rundown is grouped by kind, in this order: lower thirds, videos, photos and slideshows, windows, color bars. */
-  const GROUPS = ['lowerthird', 'video', 'photos', 'window', 'bars']
+  const GROUPS = ['lowerthird', 'countdown', 'video', 'photos', 'window', 'bars']
   const groupOf = (i) => {
     const n = GROUPS.indexOf(i?.kind)
     return n < 0 ? GROUPS.length : n
@@ -165,12 +192,22 @@ function startServer(opts = {}) {
   }
 
   /** The show: the rundown, the lower thirds' look, Preview and On air. */
-  let show = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
+  let show = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null, layers: L.readLayers(null), templates: [], defaultTemplate: '' }
   let nextId = 1
+  let nextTemplate = 1
   /** The rundown from a saved file (the app's own save, or a project): items, look, Preview. */
   function readShow(saved) {
-    const out = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null }
+    const out = { items: [], look: { ...DEFAULT_LOOK }, previewId: null, onAir: null, layers: L.readLayers(saved?.layers), templates: [], defaultTemplate: '' }
     let next = 1
+    // Saved lower-third templates (a name and a look each), and the one new lower thirds start with.
+    for (const raw of Array.isArray(saved?.templates) ? saved.templates.slice(0, 200) : []) {
+      const t = L.cleanTemplate(raw, cleanLook, DEFAULT_LOOK)
+      t.id = typeof raw?.id === 'string' && /^tpl-\d+$/.test(raw.id) && !out.templates.some((x) => x.id === raw.id) ? raw.id : `tpl-${nextTemplate++}`
+      const n = Number(t.id.slice(4))
+      if (n >= nextTemplate) nextTemplate = n + 1
+      out.templates.push(t)
+    }
+    out.defaultTemplate = out.templates.some((t) => t.id === saved?.defaultTemplate) ? saved.defaultTemplate : ''
     const items = Array.isArray(saved?.items) ? saved.items.slice(0, 2000) : []
     for (const raw of items) {
       try {
@@ -188,6 +225,7 @@ function startServer(opts = {}) {
       if (n >= next) next = n + 1
     }
     for (const it of out.items) if (!it.id) it.id = `item-${next++}`
+    for (const it of out.items) if (it.template && !out.templates.some((t) => t.id === it.template)) it.template = ''
     // Grouped by kind, keeping the order within each group (rundowns saved before groups existed too).
     sortByGroup(out.items)
     out.look = cleanLook(saved?.look ?? {}, DEFAULT_LOOK)
@@ -268,16 +306,92 @@ function startServer(opts = {}) {
   const hasPicture = () => Date.now() - programAt < 3000
   let pictureShown = false
 
+  /**
+   * Viewer comments: the newest first (not saved), the one on the stream now ({ ...comment, take }), and
+   * the settings (hidden words; seconds a shown comment stays, 0 = until Hide).
+   */
+  const chat = { list: [], shown: null, next: 1 }
+  let chatSettings = { hidden: ['spam', 'scam', 'http'], stayFor: 10 }
+  try {
+    const saved = JSON.parse(readFileSync(SAVED, 'utf8')).chatSettings
+    if (saved) chatSettings = { hidden: L.wordList((saved.hidden ?? []).join(',')), stayFor: numOf(saved.stayFor, 0, 600, 10) }
+  } catch {
+    // first start
+  }
+  const hiddenWord = (t) => {
+    const low = String(t).toLowerCase()
+    return chatSettings.hidden.some((w) => low.includes(w))
+  }
+  let chatTimer = null
+  function addComment(p) {
+    const c = { ...L.cleanComment(p), id: `c-${chat.next++}`, at: Date.now() }
+    chat.list.unshift(c)
+    chat.list.length = Math.min(chat.list.length, 200)
+    return c
+  }
+
+  /**
+   * Phones and tablets used as a remote (the /remote page in their browser). The QR code holds a key;
+   * a phone that has it asks once, and the operator allows it. Kept in remotes.json.
+   *   devices: { id, name, state: 'waiting' | 'allowed' | 'blocked', seenAt }
+   */
+  const REMOTES = join(dataDir, 'remotes.json')
+  const newKey = () => require('node:crypto').randomBytes(9).toString('base64url')
+  let remotes = { key: newKey(), devices: [] }
+  try {
+    const r = JSON.parse(readFileSync(REMOTES, 'utf8'))
+    if (typeof r.key === 'string' && r.key.length >= 8) remotes.key = r.key
+    if (Array.isArray(r.devices)) remotes.devices = r.devices.filter((d) => typeof d?.id === 'string' && ['allowed', 'blocked'].includes(d.state)).map((d) => ({ id: d.id.slice(0, 40), name: text(d.name, 60) || 'Phone', state: d.state, seenAt: Number(d.seenAt) || 0 }))
+  } catch {
+    // none yet
+  }
+  const saveRemotes = () => {
+    try {
+      mkdirSync(dataDir, { recursive: true })
+      writeFileSync(REMOTES, JSON.stringify({ key: remotes.key, devices: remotes.devices.filter((d) => d.state !== 'waiting') }, null, 2))
+    } catch (e) {
+      log(`Could not save the phone remotes: ${e.message}`)
+    }
+  }
+  /** Remotes with their page open now (id -> count of open pages). */
+  const remoteLinks = new Map()
+
   const save = () => {
     try {
       mkdirSync(dataDir, { recursive: true })
-      writeFileSync(SAVED, JSON.stringify({ items: show.items, look: show.look, previewId: show.previewId, project }, null, 2))
+      writeFileSync(SAVED, JSON.stringify({ items: show.items, look: show.look, previewId: show.previewId, layers: show.layers, templates: show.templates, defaultTemplate: show.defaultTemplate, chatSettings, project }, null, 2))
     } catch (e) {
       log(`Could not save the show: ${e.message}`)
     }
   }
 
   const item = (id) => show.items.find((i) => i.id === id) ?? null
+  /** A lower third's look: its template's, or the shared one. */
+  const lookOf = (it) => show.templates.find((t) => t.id === it?.template)?.look ?? show.look
+  const template = (id) => {
+    const t = show.templates.find((x) => x.id === id)
+    if (!t) throw new Error('No such template')
+    return t
+  }
+  /** The time left on a countdown ({ endsAt, pausedLeft }), in ms. */
+  const leftOf = (c) => (Number.isFinite(c?.pausedLeft) ? c.pausedLeft : Math.max(0, (c?.endsAt ?? 0) - Date.now()))
+  /** Pause, go on, add time to or restart a countdown (the one on air, or the corner one). */
+  function adjustCountdown(c, what, secs, restartTo) {
+    if (what === 'pause' && !Number.isFinite(c.pausedLeft)) c.pausedLeft = leftOf(c)
+    else if (what === 'resume' && Number.isFinite(c.pausedLeft)) {
+      c.endsAt = Date.now() + c.pausedLeft
+      c.pausedLeft = null
+    } else if (what === 'add') {
+      const ms = Math.round(numOf(secs, -3600, 3600, 60) * 1000)
+      if (Number.isFinite(c.pausedLeft)) c.pausedLeft = Math.max(0, c.pausedLeft + ms)
+      else c.endsAt = Math.max(Date.now(), c.endsAt) + ms
+      c.total = Math.max(1000, (c.total ?? 0) + ms, leftOf(c))
+    } else if (what === 'restart') {
+      c.endsAt = restartTo()
+      c.pausedLeft = null
+      c.total = Math.max(1000, c.endsAt - Date.now())
+    }
+  }
   /** What every page gets: no file paths, just names (the files come from /media). */
   const publicItem = (i) => {
     if (!i) return null
@@ -294,10 +408,22 @@ function startServer(opts = {}) {
     }
     return out
   }
+  /** The "Stays on" graphics for the pages: the logo's file as a link, not a path. */
+  const publicLayers = () => {
+    const { file, ...logo } = show.layers.logo
+    return { ...show.layers, logo: { ...logo, url: file && exists(file) ? `/media/logo?v=${encodeURIComponent(basename(file))}` : '' } }
+  }
   const snapshot = () => ({
     type: 'state',
+    /** The gfx laptop's clock, so a page on another PC counts down the same seconds. */
+    now: Date.now(),
     items: show.items.map(publicItem),
     look: show.look,
+    layers: publicLayers(),
+    templates: show.templates,
+    defaultTemplate: show.defaultTemplate,
+    chat: { list: chat.list.filter((c) => !hiddenWord(c.text)), shown: chat.shown, hidden: chatSettings.hidden, stayFor: chatSettings.stayFor },
+    remotes: { pending: remotes.devices.filter((d) => d.state === 'waiting').map(({ id, name }) => ({ id, name })), devices: remotes.devices.filter((d) => d.state === 'allowed').map(({ id, name, seenAt }) => ({ id, name, seenAt, connected: remoteLinks.has(id) })) },
     previewId: show.previewId,
     onAir: show.onAir,
     held,
@@ -339,13 +465,19 @@ function startServer(opts = {}) {
     take++
     // Taken with a streaming app connected (or gone only a moment ago)? If not, it is held back when one connects.
     show.onAir = { id: it.id, take, withStream: streamPages.size > 0 || Date.now() - streamGoneAt < 60_000 }
+    // A countdown starts counting when it is taken.
+    if (it.kind === 'countdown') {
+      const endsAt = L.countdownEnd(it.minutes, it.until)
+      show.onAir.countdown = { endsAt, pausedLeft: null, total: Math.max(1000, endsAt - Date.now()) }
+    }
     clearTimeout(hideTimer)
-    if (it.kind === 'lowerthird' && show.look.stayFor > 0) {
+    const stayFor = it.kind === 'lowerthird' ? lookOf(it).stayFor : 0
+    if (stayFor > 0) {
       hideTimer = setTimeout(() => {
         if (show.onAir?.take !== take) return
         show.onAir = null
         broadcast()
-      }, show.look.stayFor * 1000)
+      }, stayFor * 1000)
     }
   }
 
@@ -421,7 +553,16 @@ function startServer(opts = {}) {
   // ---------- Projects (File menu): a rundown and its look, saved to a file and opened again ----------
   const PROJECTS = join(dataDir, 'projects')
   /** What a project holds: the items (with their file paths) and the lower thirds' look. */
-  const projectData = () => ({ items: show.items.map((i) => ({ ...i })), look: show.look })
+  const projectData = () => ({ items: show.items.map((i) => ({ ...i })), look: show.look, layers: layersToKeep(), templates: show.templates, defaultTemplate: show.defaultTemplate })
+  /** The "Stays on" graphics as a project keeps them: their settings, not the running clocks or on/off. */
+  const layersToKeep = () => {
+    const out = {}
+    for (const [n, l] of Object.entries(show.layers)) {
+      const { on, clockRun, clockAt, endsAt, pausedLeft, ...rest } = l
+      out[n] = rest
+    }
+    return out
+  }
   /** What decides "changes not saved": the rundown and the look, not Preview or what's on air. */
   const fingerprint = () => JSON.stringify(projectData())
   const fileFor = (name) => {
@@ -606,7 +747,10 @@ function startServer(opts = {}) {
         return
       }
       case 'add': {
-        const it = addItem(body.item ?? {}, local)
+        // A new lower third starts with the default template, unless it says otherwise.
+        const p = body.item ?? {}
+        const it = addItem(p.kind === 'lowerthird' && p.template === undefined ? { ...p, template: show.defaultTemplate } : p, local)
+        if (it.hotkey) for (const x of show.items) if (x !== it && x.hotkey === it.hotkey) x.hotkey = ''
         show.previewId = it.id
         return it.id
       }
@@ -623,6 +767,9 @@ function startServer(opts = {}) {
           if (!isVideoFile(body.item.path)) throw new Error('Pick a video file (mp4, webm, mov)')
           next.path = text(body.item.path, 1000)
         }
+        if (next.kind === 'lowerthird' && next.template && !show.templates.some((t) => t.id === next.template)) next.template = ''
+        // One item per key: the key moves to this item.
+        if (next.hotkey) for (const x of show.items) if (x !== was && x.hotkey === next.hotkey) x.hotkey = ''
         show.items[show.items.indexOf(was)] = next
         return
       }
@@ -650,6 +797,175 @@ function startServer(opts = {}) {
       }
       case 'look': {
         show.look = cleanLook(body.look ?? {}, show.look)
+        return
+      }
+
+      // ---------- Lower-third templates ----------
+      case 'template.save': {
+        // Save a look (the one sent, or the item's, or the shared one) under a name; the item uses it from now on.
+        const it = item(body.itemId)
+        const t = L.cleanTemplate({ name: body.name, look: body.look ?? lookOf(it) }, cleanLook, DEFAULT_LOOK)
+        if (show.templates.length >= 200) throw new Error('200 templates at most')
+        t.id = `tpl-${nextTemplate++}`
+        show.templates.push(t)
+        if (it?.kind === 'lowerthird') it.template = t.id
+        return t.id
+      }
+      case 'template.update': {
+        const t = template(body.id)
+        if (body.look !== undefined) t.look = cleanLook(body.look ?? {}, t.look)
+        if (body.name !== undefined) t.name = text(body.name, 60) || t.name
+        return
+      }
+      case 'template.delete': {
+        const t = template(body.id)
+        show.templates = show.templates.filter((x) => x !== t)
+        // Lower thirds that used it keep its look as... the shared look: they switch to it.
+        for (const i of show.items) if (i.template === t.id) i.template = ''
+        if (show.defaultTemplate === t.id) show.defaultTemplate = ''
+        return
+      }
+      case 'template.default': {
+        show.defaultTemplate = body.id ? template(body.id).id : ''
+        return
+      }
+      case 'template.import': {
+        // Templates from another gfx laptop (Export templates): added, renamed if the name is taken.
+        const list = Array.isArray(body.templates) ? body.templates.slice(0, 200) : []
+        let n = 0
+        for (const raw of list) {
+          if (show.templates.length >= 200) break
+          const t = L.cleanTemplate(raw, cleanLook, DEFAULT_LOOK)
+          let name = t.name
+          for (let k = 2; show.templates.some((x) => x.name.toLowerCase() === name.toLowerCase()); k++) name = `${t.name} ${k}`
+          show.templates.push({ ...t, name, id: `tpl-${nextTemplate++}` })
+          n++
+        }
+        return n
+      }
+
+      // ---------- "Stays on" graphics: logo bug, ticker, scoreboard or goal, corner countdown ----------
+      case 'layer.set': {
+        const name = pickOf(body.layer, L.LAYERS, null)
+        if (!name) throw new Error('No such graphic')
+        const was = show.layers[name]
+        const next = L.cleanLayer(name, body.patch ?? {}, was)
+        if (name === 'logo') next.file = was.file
+        // The corner countdown starts counting when it is switched on (or its time is changed while on).
+        if (name === 'corner' && next.on && (!was.on || body.patch?.minutes !== undefined || body.patch?.until !== undefined)) {
+          next.endsAt = L.countdownEnd(next.minutes, next.until)
+          next.pausedLeft = null
+        }
+        if (name === 'logo' && next.on && !next.file) throw new Error('Pick a logo picture first')
+        show.layers[name] = next
+        return next.on
+      }
+      case 'layer.toggle': {
+        const name = pickOf(body.layer, L.LAYERS, null)
+        if (!name) throw new Error('No such graphic')
+        return apply({ action: 'layer.set', layer: name, patch: { on: !show.layers[name].on } }, local)
+      }
+      case 'score.add': {
+        const sc = show.layers.score
+        if (body.team === 'a') sc.sa = Math.max(0, sc.sa + Math.round(numOf(body.n, -99, 99, 1)))
+        else if (body.team === 'b') sc.sb = Math.max(0, sc.sb + Math.round(numOf(body.n, -99, 99, 1)))
+        else sc.raised = Math.max(0, sc.raised + Math.round(numOf(body.n, -1e9, 1e9, 0)))
+        sc.bump = { team: body.team === 'a' || body.team === 'b' ? body.team : 'goal', seq: (sc.bump?.seq ?? 0) + 1 }
+        return
+      }
+      case 'score.clock': {
+        const sc = show.layers.score
+        const now = Date.now()
+        const counted = sc.clockMs + (sc.clockRun ? now - sc.clockAt : 0)
+        if (body.do === 'start' && !sc.clockRun) Object.assign(sc, { clockRun: true, clockAt: now })
+        else if (body.do === 'stop' && sc.clockRun) Object.assign(sc, { clockRun: false, clockMs: counted, clockAt: 0 })
+        else if (body.do === 'reset') Object.assign(sc, { clockRun: false, clockMs: 0, clockAt: 0 })
+        else if (body.do === 'set') Object.assign(sc, { clockMs: Math.round(numOf(body.ms, 0, 1e9, 0)), clockAt: sc.clockRun ? now : 0 })
+        return
+      }
+      case 'score.period': {
+        const sc = show.layers.score
+        const NEXT = { '1st': '2nd', '2nd': '3rd', '3rd': '4th', '4th': 'OT', OT: '1st' }
+        sc.period = body.period !== undefined ? text(body.period, 20) : NEXT[sc.period] ?? '1st'
+        return
+      }
+      case 'score.reset': {
+        Object.assign(show.layers.score, { sa: 0, sb: 0, clockMs: 0, clockRun: false, clockAt: 0, period: '1st' })
+        return
+      }
+
+      // ---------- Countdowns: the one on air, or the corner one ----------
+      case 'countdown': {
+        const what = pickOf(body.do, ['pause', 'resume', 'add', 'restart'], null)
+        if (!what) throw new Error('pause, resume, add or restart')
+        if (body.target === 'corner') {
+          const c = show.layers.corner
+          if (!c.on) throw new Error('The corner countdown is off')
+          adjustCountdown(c, what, body.secs, () => L.countdownEnd(c.minutes, c.until))
+          return
+        }
+        const it = show.onAir ? item(show.onAir.id) : null
+        if (it?.kind !== 'countdown' || !show.onAir.countdown) throw new Error('No countdown is on air')
+        adjustCountdown(show.onAir.countdown, what, body.secs, () => L.countdownEnd(it.minutes, it.until))
+        return
+      }
+
+      // ---------- Viewer comments ----------
+      case 'chat.add': {
+        return addComment(body).id
+      }
+      case 'chat.show': {
+        const c = chat.list.find((x) => x.id === body.id)
+        if (!c) throw new Error('That comment is gone')
+        chat.shown = { ...c, take: ++take }
+        clearTimeout(chatTimer)
+        if (chatSettings.stayFor > 0) {
+          const t = chat.shown.take
+          chatTimer = setTimeout(() => {
+            if (chat.shown?.take !== t) return
+            chat.shown = null
+            broadcast()
+          }, chatSettings.stayFor * 1000)
+        }
+        return
+      }
+      case 'chat.hide': {
+        chat.shown = null
+        clearTimeout(chatTimer)
+        return
+      }
+      case 'chat.remove': {
+        chat.list = chat.list.filter((x) => x.id !== body.id)
+        return
+      }
+      case 'chat.clear': {
+        chat.list = []
+        return
+      }
+      case 'chat.settings': {
+        if (body.hidden !== undefined) chatSettings.hidden = L.wordList(body.hidden)
+        if (body.stayFor !== undefined) chatSettings.stayFor = numOf(Number(body.stayFor), 0, 600, chatSettings.stayFor)
+        return
+      }
+
+      // ---------- Phone remotes (only from the gfx laptop itself) ----------
+      case 'remote.allow':
+      case 'remote.block':
+      case 'remote.forget': {
+        if (!local) throw new Error('Phones are allowed on the gfx laptop itself')
+        const d = remotes.devices.find((x) => x.id === body.id)
+        if (!d) throw new Error('No such phone')
+        if (body.action === 'remote.forget') remotes.devices = remotes.devices.filter((x) => x !== d)
+        else d.state = body.action === 'remote.allow' ? 'allowed' : 'blocked'
+        saveRemotes()
+        return
+      }
+      case 'remote.newkey': {
+        // A new QR code: the old one stops working. Phones already allowed stay allowed only if asked.
+        if (!local) throw new Error('Only on the gfx laptop itself')
+        remotes.key = newKey()
+        if (body.forgetPhones) remotes.devices = []
+        saveRemotes()
         return
       }
       default:
@@ -737,6 +1053,109 @@ function startServer(opts = {}) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
         return res.end(readFileSync(join(pagesDir, 'live.html')))
       }
+      // The phone remote, in a phone's or tablet's browser (opened from the QR code).
+      if (req.method === 'GET' && path === '/remote') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        return res.end(readFileSync(join(pagesDir, 'remote.html')))
+      }
+      // The lower-third styles, shared by the graphics page and the gfx app's style picker.
+      if (req.method === 'GET' && (path === '/lt.css' || path === '/lt.js')) {
+        res.writeHead(200, { 'content-type': path.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*' })
+        return res.end(readFileSync(join(pagesDir, path.slice(1))))
+      }
+      if (req.method === 'GET' && path === '/media/logo') {
+        if (!show.layers.logo.file) {
+          res.writeHead(404, { 'content-type': 'text/plain' })
+          return res.end('No logo picked')
+        }
+        return sendFile(req, res, show.layers.logo.file)
+      }
+      // A logo picture from the operator's page: kept in the gfx app's folder.
+      if (req.method === 'POST' && path === '/api/logo') {
+        const ext = IMAGE_EXT.includes(`.${url.searchParams.get('ext')}`.toLowerCase()) ? `.${url.searchParams.get('ext').toLowerCase()}` : ''
+        if (!ext && !(req.headers['content-type'] ?? '').includes('svg')) return json(res, 400, { error: 'Pick a picture (png, jpg, webp, gif)' })
+        const chunks = []
+        let size = 0
+        for await (const c of req) {
+          size += c.length
+          if (size > 15_000_000) return json(res, 413, { error: 'That picture is too big (15 MB at most)' })
+          chunks.push(c)
+        }
+        if (!size) return json(res, 400, { error: 'The picture is empty' })
+        const dir = join(dataDir, 'logos')
+        mkdirSync(dir, { recursive: true })
+        const file = join(dir, `logo-${Date.now()}${ext || '.png'}`)
+        writeFileSync(file, Buffer.concat(chunks))
+        show.layers.logo.file = file
+        changed()
+        return json(res, 200, { ok: true })
+      }
+      // Viewer comments from another program (later: the YouTube and Facebook readers), on this network.
+      if (req.method === 'POST' && path === '/api/chat') {
+        const body = await readBody(req)
+        const list = Array.isArray(body) ? body.slice(0, 50) : [body]
+        let n = 0
+        for (const c of list) {
+          try {
+            addComment(c)
+            n++
+          } catch {
+            // no words: skipped
+          }
+        }
+        if (n) broadcast()
+        return json(res, 200, { ok: true, added: n })
+      }
+      // ----- Phone remote -----
+      // The QR code (only for the gfx laptop's own window): the address with the key, as a picture.
+      if (req.method === 'GET' && path === '/api/remote/qr') {
+        if (!isLocal(req)) return json(res, 403, { error: 'Only on the gfx laptop itself' })
+        const ip = url.searchParams.get('ip')
+        const host = lanAddresses().includes(ip) ? ip : lanAddresses()[0] || 'localhost'
+        const link = `http://${host}:${server.address().port}/remote?k=${remotes.key}`
+        let svg = ''
+        try {
+          svg = await require('qrcode').toString(link, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
+        } catch {
+          // No QR maker here: the address is shown to type in.
+        }
+        return json(res, 200, { link, svg, addresses: lanAddresses(), host })
+      }
+      // A phone with the key says hello: allowed, waiting for the operator, or not.
+      if (req.method === 'POST' && path === '/api/remote/hello') {
+        const body = await readBody(req)
+        if (body.k !== remotes.key) return json(res, 200, { state: 'badkey' })
+        const id = text(body.id, 40)
+        if (!/^[\w-]{8,40}$/.test(id)) return json(res, 400, { error: 'No phone id' })
+        let d = remotes.devices.find((x) => x.id === id)
+        if (!d) {
+          d = { id, name: text(body.name, 60) || 'Phone', state: 'waiting', seenAt: Date.now() }
+          remotes.devices.push(d)
+          broadcast()
+        }
+        d.seenAt = Date.now()
+        return json(res, 200, { state: d.state, name: d.name })
+      }
+      // What a phone remote does: the operator's buttons, after the phone was allowed.
+      if (req.method === 'POST' && path === '/api/remote/do') {
+        const body = await readBody(req)
+        const d = body.k === remotes.key ? remotes.devices.find((x) => x.id === body.id && x.state === 'allowed') : null
+        if (!d) return json(res, 403, { error: 'This phone isn’t allowed. Scan the QR code in the gfx app again.' })
+        const what = body.do ?? {}
+        const OK = ['preview', 'take', 'hide', 'next', 'layer.toggle', 'score.add', 'score.clock', 'score.period', 'countdown', 'chat.hide']
+        if (!OK.includes(what.action)) return json(res, 400, { error: 'Not from the phone' })
+        // A full-screen video or color bars cover the whole stream: put those on air from the gfx app itself.
+        if (what.action === 'take') {
+          const it = item(what.id ?? show.previewId)
+          if (it && ((it.kind === 'video' && it.shows !== 'box') || it.kind === 'bars') && streamPages.size) {
+            return json(res, 400, { error: `${it.name} fills the whole stream: put it on air from the gfx app` })
+          }
+        }
+        d.seenAt = Date.now()
+        const result = apply(what, false)
+        changed()
+        return json(res, 200, { ok: true, result: result ?? null })
+      }
       if (req.method === 'GET' && path === '/api/info') {
         // Also how the streaming app's "Find gfx apps" and "Test" know this is a gfx app, and which PC.
         return json(res, 200, {
@@ -765,11 +1184,23 @@ function startServer(opts = {}) {
           broadcast()
         }
         if (role === 'operator') operators.add(res)
+        // A phone remote's page: "connected" in the gfx app while it is open.
+        const remoteId = role === 'remote' ? text(url.searchParams.get('id'), 40) : ''
+        if (remoteId) {
+          remoteLinks.set(remoteId, (remoteLinks.get(remoteId) ?? 0) + 1)
+          broadcast()
+        }
         const ping = setInterval(() => res.write(': ping\n\n'), 15000)
         req.on('close', () => {
           clearInterval(ping)
           listeners.delete(res)
           operators.delete(res)
+          if (remoteId) {
+            const n = (remoteLinks.get(remoteId) ?? 1) - 1
+            if (n > 0) remoteLinks.set(remoteId, n)
+            else remoteLinks.delete(remoteId)
+            broadcast()
+          }
           if (streamPages.delete(res)) {
             if (!streamPages.size) {
               streamLive = false
@@ -912,11 +1343,26 @@ function startServer(opts = {}) {
   })
 
   // The Live picture stopped coming (the streaming app closed): say so once.
+  // And countdowns that reached 0:00 hide when they are set to (after "We're live!" for 5 seconds).
   const pictureCheck = setInterval(() => {
+    let news = false
     if (pictureShown && !hasPicture()) {
       pictureShown = false
-      broadcast()
+      news = true
     }
+    const it = show.onAir ? item(show.onAir.id) : null
+    const c = show.onAir?.countdown
+    if (it?.kind === 'countdown' && c && !Number.isFinite(c.pausedLeft) && it.end !== 'hold' && Date.now() > c.endsAt + (it.end === 'live' ? 5000 : 0)) {
+      show.onAir = null
+      news = true
+    }
+    const k = show.layers.corner
+    if (k.on && !Number.isFinite(k.pausedLeft) && k.end !== 'hold' && Date.now() > k.endsAt + (k.end === 'live' ? 5000 : 0)) {
+      k.on = false
+      save()
+      news = true
+    }
+    if (news) broadcast()
   }, 1000)
 
   return new Promise((resolve, reject) => {

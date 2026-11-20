@@ -5,7 +5,9 @@
 <title>Graphics</title>
 <!-- Fonts for the lower thirds. A "font on the streaming PC" uses that PC's own fonts (the page is drawn there). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Montserrat:wght@400;500;700;800&family=Roboto+Slab:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Montserrat:wght@400;500;600;700;800&family=Roboto+Slab:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@500;700&family=Bebas+Neue&family=Playfair+Display:wght@700&family=Roboto+Condensed:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/lt.css">
+<script src="/lt.js"></script>
 <style>
   /* The rules for a graphics page: see-through background, laid out at 1920 x 1080. */
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent; }
@@ -28,61 +30,93 @@
   .media img.shown { opacity: 1; }
   .media .note { position: absolute; inset: 0; display: grid; place-items: center; color: #c3c9d4; font: 500 40px Inter, 'Segoe UI', sans-serif; text-align: center; padding: 0 120px; }
 
-  /* Lower thirds. */
-  .place { position: absolute; bottom: 120px; }
-  .place.left { left: 96px; }
-  .place.right { right: 96px; }
-  .place.center { left: 50%; transform: translateX(-50%); }
+  /* Lower thirds: lt.css. Lifted when the ticker sits a little higher. */
+  .tk-above .place:not(.s-fade):not(.news) { bottom: 12cqw; }
+  .tk-above .place.news { bottom: 11cqw; }
 
-  .l3 { font-family: var(--font), 'Segoe UI', system-ui, sans-serif; width: var(--width); transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 500ms ease, clip-path 600ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .place.right .l3 { margin-left: auto; }
-  .still .l3 { transition: none; }
+  /* ---------- "Stays on" graphics ---------- */
+  .layer { position: absolute; opacity: 0; transition: opacity 500ms ease, transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .layer.on { opacity: 1; }
+  /* Logo bug: anywhere on the picture (x, y from 0 to 100), inside a 64 px margin. */
+  .bug { display: flex; align-items: center; gap: 16px; }
+  .bug.on { opacity: var(--op, 1); }
+  .bug img { display: block; height: var(--h, 110px); width: auto; max-width: 600px; object-fit: contain; }
+  .bug .livedot { display: flex; align-items: center; gap: 10px; background: rgba(8, 10, 14, 0.75); color: #fff; padding: 6px 16px; border-radius: 8px; font: 700 23px Inter, sans-serif; letter-spacing: 0.1em; }
+  .bug .livedot::before { content: ''; width: 15px; height: 15px; border-radius: 50%; background: #ff4b4b; animation: blink 1.6s infinite; }
+  .bug .clock { color: #fff; font: 600 29px Inter, sans-serif; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
+  @keyframes blink { 50% { opacity: 0.2; } }
 
-  /* In and out. */
-  .anim-slide .l3 { transform: translateX(-140%); }
-  .place.right.anim-slide .l3 { transform: translateX(140%); }
-  .place.center.anim-slide .l3 { transform: translateY(160%); }
-  .anim-fade .l3 { opacity: 0; }
-  .anim-wipe .l3 { clip-path: inset(0 100% 0 0); }
-  /* Shown: wins over every hidden spot above (they are more specific). */
-  .place.on .l3 { transform: none !important; opacity: 1 !important; clip-path: inset(0 0 0 0) !important; }
+  /* Ticker across the bottom. */
+  .tk { left: 0; right: 0; bottom: 0; height: 84px; display: flex; overflow: hidden; background: color-mix(in srgb, var(--tk-box) 92%, transparent); color: var(--tk-text); font-family: 'Roboto Condensed', Inter, sans-serif; transform: translateY(100%); }
+  .tk.on { transform: none; }
+  .tk.above { bottom: 115px; transform: translateY(40px); }
+  .tk.above.on { transform: none; }
+  .tk .lbl { flex: none; background: var(--tk-accent); color: #fff; display: flex; align-items: center; padding: 0 30px; font-weight: 700; font-size: 32px; letter-spacing: 0.08em; text-transform: uppercase; position: relative; z-index: 1; }
+  .tk .lbl:empty { display: none; }
+  .tk .lane { flex: 1; overflow: hidden; display: flex; align-items: center; mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent); }
+  .tk .track { display: flex; white-space: nowrap; animation: crawl var(--dur, 30s) linear infinite; will-change: transform; }
+  .tk .track span { font-size: 37px; padding-right: 46px; }
+  .tk .track span::after { content: '•'; color: var(--tk-accent); padding-left: 46px; }
+  @keyframes crawl { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
-  /* 1. Classic: name bar over a colour title bar. */
-  .classic .name { display: inline-block; min-width: 100%; box-sizing: border-box; background: var(--box); color: var(--text); font-size: var(--name-size); font-weight: 700; padding: 0.27em 0.7em; border-radius: 10px 10px 0 0; }
-  .classic .title { background: var(--accent); color: #fff; font-size: var(--title-size); font-weight: 500; padding: 0.33em 1.2em; border-radius: 0 0 10px 10px; }
-  .classic .l3 { display: inline-flex; flex-direction: column; }
-  .classic .l3[style*='width'] .name { min-width: 0; }
+  /* Scoreboard (top left) or goal bar. */
+  .sb { left: 64px; top: 64px; display: flex; align-items: stretch; font-family: Oswald, 'Roboto Condensed', sans-serif; color: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45); border-radius: 8px; overflow: hidden; transform: translateY(-20px); }
+  .sb.on { transform: none; }
+  .sb .team { display: flex; align-items: center; gap: 18px; padding: 8px 22px; background: rgba(10, 12, 18, 0.92); font-size: 35px; font-weight: 500; text-transform: uppercase; position: relative; }
+  .sb .team i { position: absolute; top: 0; bottom: 0; width: 10px; }
+  .sb .team.a i { left: 0; } .sb .team.b i { right: 0; }
+  .sb .sc { min-width: 72px; display: grid; place-items: center; background: #1d2230; font-size: 46px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 0 10px; }
+  .sb .sc.bump { animation: bump 0.6s; }
+  @keyframes bump { 30% { background: var(--sb-accent); transform: scale(1.12); } }
+  .sb .clk { display: grid; place-items: center; padding: 0 22px; background: var(--sb-accent); font-size: 33px; font-variant-numeric: tabular-nums; line-height: 1.05; text-align: center; }
+  .sb .clk small { font-size: 21px; opacity: 0.85; display: block; }
+  .goal { left: 64px; top: 64px; width: 650px; background: rgba(10, 12, 18, 0.9); color: #fff; border-radius: 14px; padding: 22px 30px; font-family: Inter, sans-serif; display: grid; gap: 12px; transform: translateY(-20px); }
+  .goal.on { transform: none; }
+  .goal .t { font-size: 26px; text-transform: uppercase; letter-spacing: 0.1em; color: #c6cddb; }
+  .goal .v { font: 800 60px Montserrat, Inter, sans-serif; font-variant-numeric: tabular-nums; }
+  .goal .v.bump { animation: pop 0.6s; }
+  @keyframes pop { 30% { transform: scale(1.06); color: #8fe0b6; } }
+  .goal .v small { font: 500 30px Inter, sans-serif; color: #9ba4b4; }
+  .goal .bar { height: 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+  .goal .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--sb-accent), #4be3a4); transition: width 0.8s; }
 
-  /* 2. Bold block: a box with a colour stripe, name in capitals. */
-  .block .l3 { display: inline-flex; background: color-mix(in srgb, var(--box) 90%, transparent); border-left: 14px solid var(--accent); padding: 0.3em 0.9em 0.35em 0.6em; box-sizing: border-box; }
-  .block .inner { display: flex; flex-direction: column; gap: 2px; }
-  .block .name { font-size: var(--name-size); font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.15; }
-  .block .title { font-size: var(--title-size); font-weight: 500; color: color-mix(in srgb, var(--text) 80%, transparent); }
+  /* Countdowns: a corner clock, or full screen (a rundown item). */
+  .cdc { right: 64px; bottom: 64px; display: flex; align-items: center; gap: 18px; background: rgba(8, 10, 14, 0.88); color: #fff; padding: 14px 30px; border-radius: 12px; border-left: 8px solid var(--cd-accent); font-family: Inter, sans-serif; transform: translateY(30px); }
+  .cdc.on { transform: none; }
+  .tk-bottom .cdc { bottom: 110px; }
+  .cdc span { font-size: 29px; color: #c6cddb; }
+  .cdc span:empty { display: none; }
+  .cdc b { font-size: 50px; font-variant-numeric: tabular-nums; }
+  .cdfull { inset: 0; display: grid; place-content: center; justify-items: center; gap: 24px; background: radial-gradient(ellipse at 50% 40%, rgba(20, 28, 45, 0.86), rgba(5, 7, 11, 0.96)); color: #fff; font-family: Montserrat, Inter, sans-serif; }
+  .cdfull .eb { font-size: 34px; letter-spacing: 0.35em; text-transform: uppercase; color: color-mix(in srgb, var(--cd-accent) 55%, #fff); font-weight: 600; text-align: center; }
+  .cdfull .t { font-size: 270px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -0.02em; }
+  .cdfull .t.words { font-size: 170px; }
+  .cdfull .msg { font-size: 38px; color: #c6cddb; font-family: Inter, sans-serif; text-align: center; max-width: 1500px; }
+  .cdfull .msg:empty { display: none; }
+  .cdfull .bar { width: 690px; height: 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+  .cdfull .bar i { display: block; height: 100%; background: var(--cd-accent); transition: width 0.9s linear; }
 
-  /* 3. Minimal: words only, a soft shadow and a thin colour line. */
-  .minimal .l3 { display: inline-flex; flex-direction: column; gap: 10px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75); }
-  .minimal .name { font-size: var(--name-size); font-weight: 700; color: var(--text); line-height: 1.1; }
-  .minimal .line { width: 96px; height: 5px; background: var(--accent); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
-  .minimal .l3[style*='width'] .line { width: 100%; }
-  .minimal .title { font-size: var(--title-size); color: var(--text); opacity: 0.92; }
-  .place.center.minimal .l3 { align-items: center; text-align: center; }
-
-  /* 4. News strip: a band across the bottom with a LIVE tag. */
-  .place.news { left: 0; right: 0; transform: none; }
-  .news .l3 { display: flex; height: calc(var(--name-size) * 1.7); width: var(--width, 100%); }
-  .place.news.right .l3 { margin-left: auto; }
-  .place.news.center .l3 { margin: 0 auto; }
-  .news .tag { background: var(--accent); color: #fff; font-weight: 800; font-size: calc(var(--name-size) * 0.55); letter-spacing: 0.08em; display: flex; align-items: center; padding: 0 0.9em 0 3em; }
-  .place.news.right .tag, .place.news.center .tag { padding-left: 0.9em; }
-  .news .band { flex: 1; background: color-mix(in srgb, var(--box) 95%, transparent); display: flex; align-items: center; gap: 0.7em; padding: 0 1em; min-width: 0; }
-  .news .name { font-size: var(--name-size); font-weight: 700; color: var(--text); white-space: nowrap; }
-  .news .divider { width: 2px; height: 50%; background: color-mix(in srgb, var(--text) 30%, transparent); }
-  .news .title { font-size: var(--title-size); color: color-mix(in srgb, var(--text) 80%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* A viewer comment. */
+  .chat { left: 96px; bottom: 130px; max-width: 1080px; display: flex; gap: 22px; align-items: flex-start; background: #fff; color: #111; border-radius: 26px; padding: 22px 34px 24px 22px; font-family: Inter, sans-serif; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); transform: translateY(50px) scale(0.96); }
+  .chat.on { transform: none; }
+  .chat .av { width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 36px; flex: none; }
+  .chat .who { font-size: 29px; font-weight: 700; display: flex; align-items: center; gap: 14px; }
+  .chat .plat { font-size: 18px; font-weight: 700; padding: 2px 10px; border-radius: 6px; color: #fff; letter-spacing: 0.04em; }
+  .chat .plat.youtube { background: #c4302b; } .chat .plat.facebook { background: #1b5fd1; } .chat .plat.other { display: none; }
+  .chat .say { font-size: 40px; line-height: 1.25; margin-top: 6px; }
 </style>
 </head>
 <body>
-<div class="media" id="media"></div>
-<div class="place" id="place"></div>
+<div class="ltstage" id="stage">
+  <div class="media" id="media"></div>
+  <div class="layer cdfull" id="cdfull"><div class="eb"></div><div class="t"></div><div class="msg"></div><div class="bar"><i></i></div></div>
+  <div class="layer bug" id="bug"><img alt=""><span class="livedot" hidden>LIVE</span><span class="clock" hidden></span></div>
+  <div class="layer" id="score"></div>
+  <div class="layer cdc" id="corner"><span></span><b></b></div>
+  <div class="place" id="place"></div>
+  <div class="layer tk" id="tk"><div class="lbl"></div><div class="lane"><div class="track"></div></div></div>
+  <div class="layer chat" id="chat"></div>
+</div>
 <script>
   /*
    * The graphics page. Three ways to open it:
@@ -184,60 +218,227 @@
     }
   })()
 
-  // ---------- Lower thirds ----------
+  // ---------- Lower thirds (styles: lt.css and lt.js) ----------
 
-  /** The lower third's parts for one style. Only rebuilt when the style changes, so the animation can run. */
-  let builtStyle = ''
-  let parts = {}
-  function build(style) {
-    place.textContent = ''
-    const l3 = el('div', 'l3')
-    const name = el('div', 'name')
-    const title = el('div', 'title')
-    if (style === 'block') {
-      const inner = el('div', 'inner')
-      inner.append(name, title)
-      l3.append(inner)
-    } else if (style === 'minimal') {
-      l3.append(name, el('div', 'line'), title)
-    } else if (style === 'news') {
-      const band = el('div', 'band')
-      band.append(name, el('div', 'divider'), title)
-      l3.append(el('div', 'tag', 'LIVE'), band)
-    } else {
-      l3.append(name, title)
-    }
-    place.append(l3)
-    parts = { l3, name, title }
-    builtStyle = style
-  }
+  const stage = document.getElementById('stage')
+  /** What the lower third shows now (style and words), and the look it was last shown with. */
+  let ltSig = ''
+  let lastLook = null
+  /** A lower third's look: its template's, or the shared one. */
+  const lookFor = (item) => state.templates?.find((t) => t.id === item?.template)?.look ?? state.look
 
   /** Show (or hide) a lower third. `still`: no animation (the Preview screen). */
   function lowerThird(item, show, still) {
-    const look = state.look
-    if (look.style !== builtStyle) {
-      place.classList.remove('on')
-      build(look.style)
-    }
-    const root = document.documentElement.style
-    const font = look.font === 'custom' ? look.customFont || 'Segoe UI' : look.font
-    root.setProperty('--font', `'${font}'`)
-    root.setProperty('--name-size', `${look.nameSize}px`)
-    root.setProperty('--title-size', `${look.titleSize}px`)
-    root.setProperty('--accent', look.accent)
-    root.setProperty('--box', look.box)
-    root.setProperty('--text', look.text)
-    // Length: 0 = as long as the words, else that share of the picture's width.
-    if (look.length > 0) parts.l3.style.width = `${Math.round((1920 * look.length) / 100)}px`
-    else parts.l3.style.removeProperty('width')
-    if (item) {
-      parts.name.textContent = item.name
-      parts.title.textContent = item.title
-    }
+    if (item) lastLook = lookFor(item)
+    const look = lastLook ?? state.look
+    GfxLT.applyLook(stage, look)
+    const cls = GfxLT.placeClass(look)
     const wasOn = place.classList.contains('on')
-    place.className = `place ${look.style} ${look.position} anim-${look.animation}${wasOn ? ' on' : ''}${still ? ' still' : ''}`
+    const sig = item ? `${look.style}|${item.name}|${item.title}` : ltSig
+    if (sig !== ltSig) {
+      place.innerHTML = GfxLT.html(look.style, item.name, item.title)
+      ltSig = sig
+      // Changed while on air (the words were edited): swap in place, without animating in again.
+      if (wasOn && show) {
+        place.className = `${cls} on still`
+        return
+      }
+    }
+    place.className = `${cls}${wasOn ? ' on' : ''}${still ? ' still' : ''}`
     // Next frame, so a freshly built lower third starts from its hidden spot and animates in.
     requestAnimationFrame(() => requestAnimationFrame(() => place.classList.toggle('on', show)))
+  }
+
+  // ---------- "Stays on" graphics, countdowns and comments ----------
+
+  /** The gfx laptop's clock minus this PC's (countdowns and the game clock count the same seconds). */
+  let offset = 0
+  const now = () => Date.now() + offset
+  const clockText = (ms) => {
+    const s = Math.max(0, Math.ceil(ms / 1000))
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    return h ? `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${m}:${String(s % 60).padStart(2, '0')}`
+  }
+  const leftOf = (c) => (Number.isFinite(c?.pausedLeft) ? c.pausedLeft : Math.max(0, (c?.endsAt ?? 0) - now()))
+  const $id = (id) => document.getElementById(id)
+  /** The graphic being set up in the gfx app (its Preview screen shows it even while off). */
+  const editing = () => (view === 'preview' ? new URLSearchParams(location.hash.slice(1)).get('edit') || '' : '')
+  window.addEventListener('hashchange', () => render())
+
+  let tickerSig = ''
+  let tickerNext = null
+  let scoreSig = ''
+  let lastBump = { team: '', seq: -1 }
+
+  function renderLayers() {
+    const L = state.layers
+    if (!L) return
+    const breakOn = state.cue?.status === 'onair'
+    const edit = editing()
+    const shows = (n) => !breakOn && (L[n].on || edit === n)
+    stage.classList.toggle('tk-above', shows('ticker') && L.ticker.place === 'above')
+    stage.classList.toggle('tk-bottom', shows('ticker') && L.ticker.place === 'bottom')
+
+    // Logo bug
+    const lg = L.logo
+    const bug = $id('bug')
+    const img = bug.querySelector('img')
+    if (lg.url && img.getAttribute('src') !== lg.url) img.src = lg.url
+    bug.classList.toggle('on', shows('logo') && !!lg.url)
+    bug.style.setProperty('--h', `${lg.size}px`)
+    bug.style.setProperty('--op', String(lg.opacity / 100))
+    bug.style.left = `calc(64px + (100% - 128px) * ${lg.x / 100})`
+    bug.style.top = `calc(64px + (100% - 128px) * ${lg.y / 100})`
+    bug.style.transform = `translate(-${lg.x}%, -${lg.y}%)`
+    bug.style.flexDirection = lg.x > 50 ? 'row-reverse' : 'row'
+    bug.querySelector('.livedot').hidden = !lg.live
+    bug.querySelector('.clock').hidden = !lg.clock
+
+    // Ticker: a change joins at the end of a pass, so the words don't jump.
+    const tk = L.ticker
+    const el = $id('tk')
+    el.style.setProperty('--tk-accent', tk.accent)
+    el.style.setProperty('--tk-box', tk.box)
+    el.style.setProperty('--tk-text', tk.text)
+    el.querySelector('.lbl').textContent = tk.label
+    el.classList.toggle('above', tk.place === 'above')
+    const wasShown = el.classList.contains('on')
+    el.classList.toggle('on', shows('ticker'))
+    const sig = JSON.stringify([tk.lines, tk.speed])
+    if (sig !== tickerSig) {
+      const track = el.querySelector('.track')
+      const fill = () => {
+        tickerNext = null
+        tickerSig = sig
+        const lines = tk.lines.filter((x) => x.trim())
+        track.textContent = ''
+        for (const x of [...lines, ...lines]) {
+          const sp = document.createElement('span')
+          sp.textContent = x
+          track.append(sp)
+        }
+        // Speed 1 to 10: 70 to 340 pixels a second.
+        const px = 40 + tk.speed * 30
+        track.style.setProperty('--dur', `${Math.max(4, track.scrollWidth / 2 / px)}s`)
+        track.style.animation = 'none'
+        void track.offsetWidth
+        track.style.animation = ''
+      }
+      if (!tickerSig || !track.childElementCount || !wasShown) fill()
+      else if (!tickerNext) {
+        tickerNext = fill
+        track.addEventListener('animationiteration', () => tickerNext?.(), { once: true })
+      } else tickerNext = fill
+    }
+
+    // Scoreboard or goal bar
+    const sc = L.score
+    const box = $id('score')
+    box.style.setProperty('--sb-accent', sc.accent)
+    const bump = sc.bump && (sc.bump.seq !== lastBump.seq) && lastBump.seq !== -1 ? sc.bump.team : ''
+    if (sc.bump) lastBump = sc.bump
+    else lastBump = { team: '', seq: 0 }
+    const money = (n) => `${sc.unit || ''}${Number(n).toLocaleString('en-US')}`
+    const ssig = JSON.stringify([sc.mode, sc.a, sc.b, sc.sa, sc.sb, sc.ca, sc.cb, sc.period, sc.showClock, sc.gtitle, sc.raised, sc.goal, sc.unit])
+    if (ssig !== scoreSig || bump) {
+      scoreSig = ssig
+      const e = GfxLT.esc
+      box.className = `layer ${sc.mode === 'goal' ? 'goal' : 'sb'}${box.classList.contains('on') ? ' on' : ''}`
+      box.innerHTML = sc.mode === 'goal'
+        ? `<div class="t">${e(sc.gtitle)}</div><div class="v${bump ? ' bump' : ''}">${e(money(sc.raised))} <small>of ${e(money(sc.goal))}</small></div><div class="bar"><i style="width:${Math.min(100, (100 * sc.raised) / Math.max(1, sc.goal))}%"></i></div>`
+        : `<div class="team a"><i style="background:${sc.ca}"></i>${e(sc.a)}</div><div class="sc${bump === 'a' ? ' bump' : ''}">${sc.sa}</div><div class="sc${bump === 'b' ? ' bump' : ''}">${sc.sb}</div><div class="team b">${e(sc.b)}<i style="background:${sc.cb}"></i></div>${sc.showClock || sc.period ? `<div class="clk"><span class="gclock"${sc.showClock ? '' : ' hidden'}></span><small>${e(sc.period)}</small></div>` : ''}`
+    }
+    box.classList.toggle('on', shows('score'))
+
+    // Corner countdown
+    const k = L.corner
+    const cdc = $id('corner')
+    cdc.style.setProperty('--cd-accent', k.accent)
+    cdc.classList.toggle('on', shows('corner') && (L.corner.on || edit === 'corner'))
+
+    // A viewer comment
+    renderChat()
+    tick()
+  }
+
+  let chatKey = ''
+  function renderChat() {
+    const c = view === 'preview' ? null : state.chat?.shown
+    const box = $id('chat')
+    const key = c ? String(c.take) : ''
+    if (key === chatKey) return
+    const show = () => {
+      chatKey = key
+      if (!c) return
+      const e = GfxLT.esc
+      const colors = ['#0f8f6a', '#7a4cff', '#d13b3b', '#2563d9', '#e0a526', '#ff6a2b']
+      const color = colors[[...c.who].reduce((n, ch) => n + ch.charCodeAt(0), 0) % colors.length]
+      const label = { youtube: 'YOUTUBE', facebook: 'FACEBOOK' }[c.platform] ?? ''
+      box.innerHTML = `<div class="av" style="background:${color}">${e([...c.who][0] ?? '?')}</div><div><div class="who">${e(c.who)}<span class="plat ${e(c.platform)}">${label}</span></div><div class="say">${e(c.text)}</div></div>`
+      requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('on')))
+    }
+    if (box.classList.contains('on')) {
+      box.classList.remove('on')
+      chatKey = '…'
+      setTimeout(show, 450)
+    } else show()
+  }
+
+  /** The clocks: countdowns, the game clock, the logo's time. A few times a second. */
+  function tick() {
+    if (!state?.layers) return
+    const L = state.layers
+    const k = L.corner
+    const cdc = $id('corner')
+    const kleft = leftOf(k)
+    cdc.querySelector('b').textContent = !L.corner.on ? clockText(k.minutes * 60000) : kleft <= 0 && k.end === 'live' ? 'We’re live!' : clockText(kleft)
+    cdc.querySelector('span').textContent = kleft <= 0 && k.end === 'live' && L.corner.on ? '' : k.label
+    const g = document.querySelector('#score .gclock')
+    if (g) g.textContent = clockText(L.score.clockMs + (L.score.clockRun ? Math.max(0, now() - L.score.clockAt) : 0)).replace(/^0:/, '0:')
+    const clock = document.querySelector('#bug .clock')
+    if (!clock.hidden) clock.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    // A full-screen countdown (a rundown item)
+    if (cdShown) {
+      const full = $id('cdfull')
+      const c = view === 'preview' ? null : state.onAir?.countdown
+      // In Preview: how long it will count (to a time of day: from now).
+      let left = c ? leftOf(c) : (cdShown.minutes || 0) * 60000
+      if (!c && cdShown.until) {
+        const [h, m] = cdShown.until.split(':').map(Number)
+        const d = new Date(now())
+        d.setHours(h, m, 0, 0)
+        if (d.getTime() <= now()) d.setDate(d.getDate() + 1)
+        left = d.getTime() - now()
+      }
+      const t = full.querySelector('.t')
+      const done = !!c && left <= 0 && cdShown.end === 'live'
+      t.textContent = done ? 'We’re live!' : clockText(left)
+      t.classList.toggle('words', done)
+      const total = Math.max(1, c?.total ?? left, left)
+      full.querySelector('.bar i').style.width = c ? `${Math.min(100, 100 - (100 * left) / total)}%` : '0%'
+    }
+  }
+  setInterval(tick, 250)
+
+  /** The full-screen countdown shown now (the item), or null. */
+  let cdShown = null
+  function countdownItem(item, show) {
+    const full = $id('cdfull')
+    if (show && item) {
+      cdShown = item
+      full.style.setProperty('--cd-accent', item.accent || '#4c8dff')
+      full.querySelector('.eb').textContent = item.name
+      full.querySelector('.msg').textContent = item.title
+      tick()
+    }
+    if (show) requestAnimationFrame(() => requestAnimationFrame(() => full.classList.add('on')))
+    else {
+      full.classList.remove('on')
+      setTimeout(() => {
+        if (!full.classList.contains('on')) cdShown = null
+      }, 600)
+    }
   }
 
   // ---------- Videos, photos, windows ----------
@@ -464,12 +665,16 @@
         const k = key
         setTimeout(() => shown.key === k && lowerThird(item, true, false), 450)
       } else lowerThird(item, true, view === 'preview')
-    } else if (builtStyle) lowerThird(null, false, view === 'preview')
+    } else if (ltSig) lowerThird(null, false, view === 'preview')
+    // A full-screen countdown
+    if (kind === 'countdown') countdownItem(item, true)
+    else if (cdShown) countdownItem(null, false)
     // Media
-    if (kind && kind !== 'lowerthird') {
+    if (kind && kind !== 'lowerthird' && kind !== 'countdown') {
       if (fresh || !mediaKey) startMedia(item, key, take)
     } else if (mediaKey) clearMedia()
     shown = { key, kind }
+    renderLayers()
   }
 
   // ---------- The stream ----------
@@ -483,6 +688,7 @@
       const msg = JSON.parse(e.data)
       if (msg.type !== 'state') return
       state = msg
+      if (msg.now) offset = msg.now - Date.now()
       render()
       passCue()
       passLoop()
