@@ -70,6 +70,7 @@ export class Controller extends Emitter<Events> {
     }
     this.s.show ??= { file: null, savedAt: null, changed: false }
     this.s.show.autosave ??= true
+    this.cameraSoundsToTheirScenes()
     if (!this.s.show.changed) this.savedPrint = showFingerprint(this.s)
     // The engine says when an output stops on its own (connection lost, the studio page closed).
     this.engine.onNotice = (message) => this.emit('error', message)
@@ -535,9 +536,10 @@ export class Controller extends Emitter<Events> {
         scene.layers.unshift(layer) // new sources go on top, like OBS
         await this.engine.setScene(scene)
         if (layer.kind === 'text') await this.pushText(scene, layer)
-        // A camera in a scene with no sound of its own yet: the scene's sound is the camera's (follow the picture).
-        if (layer.kind === 'video' && layer.device && !isOverlay(scene) && !scene.commercial && !this.s.audio.some((a) => a.scenes?.includes(scene.id))) {
-          await this.setSceneSound(scene, this.pictureSound(scene))
+        // A camera added to a scene: its own sound comes with it (the sound follows the source).
+        if (layer.kind === 'video' && layer.device && !isOverlay(scene) && !scene.commercial) {
+          this.followCamera(scene)
+          await this.engine.setAudioSources(this.s.audio)
         }
         this.changed()
         return { layerId: layer.id }
@@ -641,6 +643,23 @@ export class Controller extends Emitter<Events> {
         const set = new Set(src.scenes ?? this.soundSceneIds())
         set.add(scene.id)
         src.scenes = [...set]
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'scene.removeSound': {
+        const scene = this.soundScene(str(P, 'sceneId'))
+        const src = this.audio(str(P, 'sourceId'))
+        src.scenes = (src.scenes ?? this.soundSceneIds()).filter((id) => id !== scene.id)
+        await this.engine.setAudioSources(this.s.audio)
+        return this.changed()
+      }
+      case 'scene.soundFromCameras': {
+        // Every scene with a camera: its sound is that camera's own. Mics and music stay as they are.
+        for (const scene of this.s.scenes) {
+          if (isOverlay(scene) || scene.commercial || scene.stored) continue
+          if (!scene.layers.some((l) => l.kind === 'video' && l.device)) continue
+          this.followCamera(scene)
+        }
         await this.engine.setAudioSources(this.s.audio)
         return this.changed()
       }
@@ -1243,6 +1262,54 @@ export class Controller extends Emitter<Events> {
     return src
   }
 
+  /**
+   * The scene plays its camera's own sound. The sound of a camera that is no longer in
+   * the scene is taken out of it; mics, music and sound for every scene stay.
+   */
+  private followCamera(scene: Scene) {
+    let pic: AudioSource
+    try {
+      pic = this.pictureSound(scene)
+    } catch {
+      return
+    }
+    const devices = new Set(scene.layers.filter((l) => l.kind === 'video' && l.device).map((l) => l.device))
+    const own = this.boxAudioOf([...devices].filter((d): d is string => !!d))
+    const all = this.soundSceneIds()
+    for (const a of this.s.audio) {
+      if (a === pic || !this.isCameraSound(a)) continue
+      if (a.kind === 'video' ? devices.has(a.device) : own.has(a.device ?? '')) continue
+      // Another camera's sound (even one set to every scene) is taken out of this scene.
+      const list = a.scenes ?? all
+      if (list.includes(scene.id)) a.scenes = list.filter((id) => id !== scene.id)
+    }
+    pic.scenes = [...new Set([...(pic.scenes ?? all), scene.id])]
+  }
+
+  /** Audio inputs that come in the same box as these cameras (the ATEM Mini's USB audio with its picture). */
+  private boxAudioOf(cams: string[]): Set<string> {
+    const groups = new Set(this.s.inputs.video.filter((d) => cams.includes(d.id) && d.group).map((d) => d.group))
+    return new Set(this.s.inputs.audio.filter((d) => d.group && groups.has(d.group)).map((d) => d.id))
+  }
+
+  /** A camera's own sound: the sound with a video input, or the audio input in the same box as a camera. */
+  private isCameraSound(a: AudioSource): boolean {
+    if (a.kind === 'video') return true
+    if (a.kind !== 'device' || !a.device) return false
+    return this.boxAudioOf(this.s.inputs.video.map((d) => d.id)).has(a.device)
+  }
+
+  /**
+   * Older setups had camera sounds set to "every scene", so one scene played every
+   * camera. A camera's sound plays only in the scenes that show that camera.
+   */
+  private cameraSoundsToTheirScenes() {
+    for (const a of this.s.audio) {
+      if (a.kind !== 'video' || a.scenes || !a.device) continue
+      a.scenes = this.s.scenes.filter((x) => !isOverlay(x) && !x.commercial && x.layers.some((l) => l.kind === 'video' && l.device === a.device)).map((x) => x.id)
+    }
+  }
+
   /** Make this the scene's only sound (null: no sound). Other scenes keep theirs. */
   private async setSceneSound(scene: Scene, want: AudioSource | null) {
     const all = this.soundSceneIds()
@@ -1347,6 +1414,7 @@ export class Controller extends Emitter<Events> {
     if (this.s.stream.live || this.s.recording.active) throw new CommandError('Stop streaming and recording first, then open the project.')
     const before = this.s.scenes.map((x) => x.id)
     apply()
+    this.cameraSoundsToTheirScenes()
     this.cueBack = ''
     for (const id of before) if (!this.s.scenes.some((x) => x.id === id)) await this.engine.removeScene(id)
     for (const scene of this.s.scenes) await this.engine.setScene(scene)

@@ -101,6 +101,8 @@ export interface CommandMap {
   /** Add a sound to a scene ('picture' or a channel's id), next to the ones it has. */
   'scene.addSound': { sceneId: string; sourceId: string }
   'scene.removeSound': { sceneId: string; sourceId: string }
+  /** Every scene with a camera plays that camera's own sound (mics and music stay). */
+  'scene.soundFromCameras': Record<string, never>
   /** The gfx app took its cue back: empty the Commercial scene, and put back what was in Preview. */
   'cue.clear': Record<string, never>
   'layer.add': {
@@ -250,6 +252,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'scene.setSound': 'admin',
   'scene.addSound': 'admin',
   'scene.removeSound': 'admin',
+  'scene.soundFromCameras': 'admin',
   'layer.add': 'admin',
   'layer.remove': 'admin',
   'layer.move': 'admin',
