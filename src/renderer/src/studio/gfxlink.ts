@@ -50,6 +50,8 @@ const PICTURE_H = 360
 const PICTURE_FPS = 5
 
 export class GfxLink {
+  /** How long a new cue waits for the state that shows it, before a scene without it counts as replaced. */
+  static SETTLE_MS = 3000
   private readonly desk = linkDesktop()
   private offCue: (() => void) | null = null
   private pictureTimer: ReturnType<typeof setInterval> | null = null
@@ -59,8 +61,12 @@ export class GfxLink {
   private extending = false
   /** The break's Loop as last told to the gfx app. */
   private toldLoop = false
-  /** The cue being handled: where it came from, and the file it was copied to. */
-  private cue: { origin: string; take: number; paths: string[]; status: string } | null = null
+  /**
+   * The cue being handled: where it came from, and the files it was copied to. `since` is when it was
+   * set: the state with its scene comes a moment after the command's answer, so until the scene shows
+   * these files (seen), a scene that doesn't is the old one, not one replaced here.
+   */
+  private cue: { origin: string; take: number; paths: string[]; status: string; since: number; seen: boolean } | null = null
   private seen = new Set<string>()
   /** The newest take seen from each gfx app. */
   private latest = new Map<string, number>()
@@ -133,7 +139,7 @@ export class GfxLink {
       if (stale()) return
       const r = await this.bridge.command('cue.commercial', { items })
       if (!r.ok) throw new Error(r.error ?? 'Could not cue it')
-      this.cue = { origin: c.origin, take: c.take, paths: items.map((x) => x.path), status: 'cued' }
+      this.cue = { origin: c.origin, take: c.take, paths: items.map((x) => x.path), status: 'cued', since: Date.now(), seen: false }
       this.tell(c.origin, c.take, 'cued')
       this.notice(`The gfx app cued ${name}. It’s in Preview: press Transition to play ${n === 1 ? 'it' : 'them, one after the other'}.`)
     } catch (e) {
@@ -159,7 +165,7 @@ export class GfxLink {
       this.extending = true
       const r = await this.bridge.command('cue.commercial', { items, extend: true })
       if (!r.ok) throw new Error(r.error ?? 'Could not add to the break')
-      this.cue = { origin: c.origin, take: c.take, paths: items.map((x) => x.path), status: 'onair' }
+      this.cue = { origin: c.origin, take: c.take, paths: items.map((x) => x.path), status: 'onair', since: Date.now(), seen: false }
       this.notice(`The gfx app changed the break on air: ${items.length} commercials now.`)
     } catch (e) {
       if (stale()) return
@@ -176,7 +182,12 @@ export class GfxLink {
     if (!cue || !st || this.extending) return
     const scene = st.scenes.find((s) => s.commercial)
     const media = scene?.layers.filter((l) => l.kind === 'media') ?? []
-    const ours = media.length === cue.paths.length && media.every((l, i) => l.url === cue.paths[i])
+    const ours = !!scene && media.length === cue.paths.length && media.every((l, i) => l.url === cue.paths[i])
+    // Just cued, or the break on air just got longer: wait for the state that has it (it follows the
+    // command's answer). Taking the old scene for "replaced here" ended the break in the gfx app,
+    // and its list was gone while the videos still played.
+    if (!ours && !cue.seen && Date.now() - cue.since < GfxLink.SETTLE_MS) return
+    if (ours) cue.seen = true
     if (!scene || !ours) {
       // Replaced or emptied here.
       if (cue.status !== 'onair') this.tell(cue.origin, cue.take, 'cleared')
