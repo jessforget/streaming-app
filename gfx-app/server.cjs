@@ -220,6 +220,14 @@ function startServer(opts = {}) {
   /** The streaming app's graphics pages that are connected, and whether the stream has them live. */
   const streamPages = new Set()
   let streamLive = false
+  /** When the last streaming app page went away (a short Wi-Fi drop doesn't count as "not connected"). */
+  let streamGoneAt = 0
+  /**
+   * Something taken while no streaming app was connected, then taken off air when one connected (so it
+   * can't pop up on the stream by surprise): { name, seq } for the operator's message.
+   */
+  let held = null
+  let heldSeq = 0
   /** '' = the stream shows the graphics over every scene; else the scenes they are linked to ("Main show"). */
   let streamOnly = ''
   /** Pages listening for changes, and operator pages (they answer window-capture requests). */
@@ -292,6 +300,7 @@ function startServer(opts = {}) {
     look: show.look,
     previewId: show.previewId,
     onAir: show.onAir,
+    held,
     cue,
     breakLoop: { on: breakLoop, seq: loopSeq },
     project: { name: project.name, file: project.file, savedAt: project.savedAt, changed: fingerprint() !== project.saved },
@@ -328,7 +337,8 @@ function startServer(opts = {}) {
     const it = item(id)
     if (!it) throw new Error('No such item')
     take++
-    show.onAir = { id: it.id, take }
+    // Taken with a streaming app connected (or gone only a moment ago)? If not, it is held back when one connects.
+    show.onAir = { id: it.id, take, withStream: streamPages.size > 0 || Date.now() - streamGoneAt < 60_000 }
     clearTimeout(hideTimer)
     if (it.kind === 'lowerthird' && show.look.stayFor > 0) {
       hideTimer = setTimeout(() => {
@@ -337,6 +347,19 @@ function startServer(opts = {}) {
         broadcast()
       }, show.look.stayFor * 1000)
     }
+  }
+
+  /**
+   * A streaming app connects. A video, slideshow, window or color bars that went on air while none was
+   * connected would cover its Live picture at once (no "Take over everything" question was asked then):
+   * take it off air, and tell the operator. Lower thirds stay: they wait for the stream and animate in.
+   */
+  function holdBackOnConnect() {
+    const it = show.onAir && !show.onAir.withStream ? item(show.onAir.id) : null
+    if (!it || it.kind === 'lowerthird') return
+    show.onAir = null
+    clearTimeout(hideTimer)
+    held = { name: it.name || 'The item', seq: ++heldSeq }
   }
 
   /**
@@ -730,9 +753,11 @@ function startServer(opts = {}) {
       if (req.method === 'GET' && path === '/events') {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
         res.write('retry: 2000\n\n')
+        const role = url.searchParams.get('role')
+        // Before this page sees anything: the first streaming app to connect doesn't get a surprise on air.
+        if (role === 'stream' && !streamPages.size) holdBackOnConnect()
         send(res, snapshot())
         listeners.add(res)
-        const role = url.searchParams.get('role')
         // The graphics page inside the streaming app says so: the app shows "connected".
         if (role === 'stream') {
           streamPages.add(res)
@@ -746,7 +771,10 @@ function startServer(opts = {}) {
           listeners.delete(res)
           operators.delete(res)
           if (streamPages.delete(res)) {
-            if (!streamPages.size) streamLive = false
+            if (!streamPages.size) {
+              streamLive = false
+              streamGoneAt = Date.now()
+            }
             broadcast()
           }
         })

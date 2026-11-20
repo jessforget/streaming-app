@@ -49,7 +49,7 @@ describe('gfx app server', () => {
     expect(s.previewId).toBe('item-1')
     await doit({ action: 'take' })
     s = await state()
-    expect(s.onAir).toEqual({ id: 'item-1', take: 1 })
+    expect(s.onAir).toMatchObject({ id: 'item-1', take: 1 })
     // A page asking to hide an older take changes nothing.
     await doit({ action: 'hide', take: 0 })
     expect((await state()).onAir).not.toBeNull()
@@ -100,6 +100,28 @@ describe('gfx app server', () => {
     ctl.abort()
     await new Promise((r) => setTimeout(r, 100))
     expect((await state()).stream).toEqual({ connected: false, live: false, only: '', picture: false })
+  })
+
+  it('a video taken while no streaming app was connected is taken off air when one connects (it would cover the stream)', async () => {
+    const v = (await doit({ action: 'add', item: { kind: 'video', path: join(dir, 'clip.mp4') } })).result
+    await doit({ action: 'take', id: v })
+    expect((await state()).onAir?.id).toBe(v)
+    // The streaming app's graphics page connects: its very first state has nothing on air.
+    const ctl = new AbortController()
+    const first = await state('?role=stream')
+    expect(first.onAir).toBeNull()
+    expect((first as State & { held: { name: string } }).held).toMatchObject({ name: 'clip' })
+    // Taken while it is connected (or after a short drop): it stays, as the operator meant it for the stream.
+    await fetch(`${base}/events?role=stream`, { signal: ctl.signal })
+    await doit({ action: 'take', id: v })
+    ctl.abort()
+    await new Promise((r) => setTimeout(r, 100))
+    expect((await state('?role=stream')).onAir?.id).toBe(v)
+  })
+
+  it('a lower third taken before the streaming app connected stays on air (it waits for the stream)', async () => {
+    await doit({ action: 'take', id: 'item-1' })
+    expect((await state('?role=stream')).onAir?.id).toBe('item-1')
   })
 
   it('color bars go off air once the stream moves away from them (graphics taken off Live, or a break on air)', async () => {

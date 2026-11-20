@@ -361,14 +361,14 @@
     return out
   }
   let barTimer = null
-  function alertBar(text) {
+  function alertBar(text, ms = 5000) {
     $('liveHint').textContent = text
     $('liveHint').classList.add('warn')
     clearTimeout(barTimer)
     barTimer = setTimeout(() => {
       $('liveHint').classList.remove('warn')
       renderMain()
-    }, 5000)
+    }, ms)
   }
 
   // ---------- Screens: the graphics page at 1920 x 1080, shrunk to fit ----------
@@ -749,7 +749,15 @@
     }
   })
 
+  /** The last "held back" message shown (the server's seq), so each shows once. */
+  let heldShown = -1
   function renderMain() {
+    if (S.held && heldShown !== -1 && S.held.seq !== heldShown) {
+      heldShown = S.held.seq
+      alertBar(`${S.held.name} was on air before the streaming app connected, so it was taken off air (it would have covered the stream). Take it again to show it.`, 20000)
+      return renderMain()
+    }
+    if (heldShown === -1) heldShown = S.held?.seq ?? 0
     const p = byId(S.previewId)
     const o = S.onAir ? byId(S.onAir.id) : null
     $('previewName').textContent = p ? p.name : 'Nothing'
