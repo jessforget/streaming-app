@@ -483,7 +483,8 @@ button.icon { padding: 2px 7px; min-height: 26px; font-size: 13px; line-height: 
 .messages-list h3 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .messages-list ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .messages-list li { color: var(--warn); line-height: 1.35; }
-.messages-pop > p { margin: 0; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
+.messages-pop > footer { display: flex; align-items: center; gap: 12px; padding: 8px 14px 12px; border-top: 1px solid var(--line); }
+.messages-pop > footer p { margin: 0; flex: 1; }
 .offline-bar { padding: 8px 16px; background: var(--warn-bg); border-bottom: 1px solid var(--warn); }
 
 /* Sound that follows the scene: dimmed while its scene is not on air. */

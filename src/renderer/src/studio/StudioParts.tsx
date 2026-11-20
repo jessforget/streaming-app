@@ -94,8 +94,9 @@ export function StudioBar({ studio, elsewhere, state }: { studio: Studio | null;
     const name = state.audio.find((a) => a.id === id)?.name ?? (id === 'commercials' ? 'Commercials' : layer ? `${layer.name} (sound)` : 'An audio channel')
     if (!(id === 'desktop' || why.startsWith('Needs a click'))) problems.push({ kind: 'sound', text: `${name}: ${why}` })
   }
+  const shown = notCleared(problems)
   const soundOff = !studio.soundOn
-  if (waiting.length === 0 && problems.length === 0 && !soundOff) return null
+  if (waiting.length === 0 && shown.length === 0 && !soundOff) return null
   const allow = async (w: (typeof waiting)[number]) => {
     setBusy(w.id)
     try {
@@ -130,7 +131,15 @@ export function StudioBar({ studio, elsewhere, state }: { studio: Studio | null;
           ))}
         </div>
       )}
-      {problems.length > 0 && <MessagesTray problems={problems} />}
+      {shown.length > 0 && (
+        <MessagesTray
+          problems={shown}
+          onClear={() => {
+            clearMessages(shown)
+            redraw()
+          }}
+        />
+      )}
     </>
   )
 }
@@ -140,11 +149,71 @@ interface Problem {
   text: string
 }
 
+/*
+ * Messages the person cleared stay hidden while the same thing is still wrong
+ * (also after a restart). Once a cleared message has been gone for a minute
+ * (the camera or sound came back), it's forgotten, so if it goes wrong again
+ * it shows up again.
+ */
+const CLEARED_KEY = 'messages-cleared'
+const FORGET_AFTER_MS = 60_000
+let cleared: Set<string> | null = null
+const lastSeen = new Map<string, number>()
+const startedAt = Date.now()
+
+function clearedSet(): Set<string> {
+  if (cleared) return cleared
+  try {
+    const list = JSON.parse(localStorage.getItem(CLEARED_KEY) ?? '[]')
+    cleared = new Set(Array.isArray(list) ? list.filter((x) => typeof x === 'string') : [])
+  } catch {
+    cleared = new Set()
+  }
+  return cleared
+}
+
+function saveCleared(): void {
+  try {
+    localStorage.setItem(CLEARED_KEY, JSON.stringify([...clearedSet()]))
+  } catch {
+    // No storage: they stay cleared until the app restarts.
+  }
+}
+
+function clearMessages(list: Problem[]): void {
+  const set = clearedSet()
+  const now = Date.now()
+  for (const p of list) {
+    set.add(p.text)
+    lastSeen.set(p.text, now)
+  }
+  saveCleared()
+}
+
+/** The messages to show: all but the cleared ones (and forget cleared ones that went away). */
+function notCleared(problems: Problem[]): Problem[] {
+  const set = clearedSet()
+  if (set.size === 0) return problems
+  const now = Date.now()
+  const present = new Set(problems.map((p) => p.text))
+  let changed = false
+  for (const text of set) {
+    if (present.has(text)) lastSeen.set(text, now)
+    else if (now - (lastSeen.get(text) ?? startedAt) > FORGET_AFTER_MS) {
+      set.delete(text)
+      lastSeen.delete(text)
+      changed = true
+    }
+  }
+  if (changed) saveCleared()
+  return problems.filter((p) => !set.has(p.text))
+}
+
 /**
  * Messages about cameras and sound (not plugged in, no sound found…): a small button in the corner
  * with how many there are, and a pop-up with the list, instead of lines across the top of the window.
  */
-function MessagesTray({ problems }: { problems: Problem[] }) {
+function MessagesTray({ problems, onClear }: { problems: Problem[]; onClear: () => void }) {
   const [open, setOpen] = useState(false)
   // Seen = the messages that were there when the list was last opened: the button only stands out for new ones.
   const [seen, setSeen] = useState<Set<string>>(() => new Set())
@@ -189,7 +258,18 @@ function MessagesTray({ problems }: { problems: Problem[] }) {
               </section>
             ))}
           </div>
-          <p className="muted small">These go away by themselves when the camera or sound is found.</p>
+          <footer>
+            <p className="muted small">These go away by themselves when the camera or sound is found. Clear hides them until something new goes wrong.</p>
+            <button
+              className="small"
+              onClick={() => {
+                setOpen(false)
+                onClear()
+              }}
+            >
+              Clear all
+            </button>
+          </footer>
         </div>
       )}
       <button

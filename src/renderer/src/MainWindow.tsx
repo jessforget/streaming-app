@@ -1291,7 +1291,8 @@ function SceneSoundPicker({ scene, state, run, heard }: { scene: Scene; state: A
     )
   }
   const value = heard.length === 0 ? '' : heard.length > 1 ? '__several' : heard[0] === pictureSrc ? 'picture' : heard[0].id
-  const others = state.audio.filter((a) => !heard.includes(a))
+  // Only sounds whose device is connected now (an unplugged phone or camera isn't offered).
+  const others = state.audio.filter((a) => !heard.includes(a) && !soundFrom(a, state).unplugged)
   return (
     <div className="scene-sound-pick">
       <span className="small">
