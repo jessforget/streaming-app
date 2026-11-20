@@ -341,6 +341,8 @@ export interface Destination {
 }
 
 export type Quality = 'low' | 'medium' | 'high'
+/** Recording quality: 'stream' = same as the stream; the others record at a higher bitrate than the platforms take. */
+export type RecordQuality = 'stream' | 'high' | 'veryhigh' | 'best'
 
 export interface DataField {
   value: DataValue
@@ -421,7 +423,14 @@ export interface AppState {
     /** The frame rate family in use now. Only changes while not streaming or recording. */
     family: FpsFamily
   }
-  recording: { active: boolean; startedAt: number | null; folder: string; format: 'mp4' | 'mkv' }
+  recording: {
+    active: boolean
+    startedAt: number | null
+    folder: string
+    format: 'mp4' | 'mkv'
+    /** How good the recording is: the stream's own quality, or higher (bigger files). Absent = 'stream'. */
+    quality?: RecordQuality
+  }
   /** Devices the PC can see, for the source and audio pickers. */
   inputs: { video: InputDevice[]; audio: InputDevice[] }
   data: Record<string, DataField>

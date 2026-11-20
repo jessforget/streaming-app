@@ -44,9 +44,10 @@ export class Output {
     this.ws = ws
     ws.onopen = () => {
       // Twice the platform bitrate: ffmpeg re-encodes the stream, and the recording keeps this.
+      // A high-quality recording already asks for a high bitrate: that one is used as is.
       rec = new MediaRecorder(this.media, {
         mimeType,
-        videoBitsPerSecond: this.preset.videoKbps * 2000,
+        videoBitsPerSecond: this.preset.videoKbps * (this.preset.exact ? 1000 : 2000),
         audioBitsPerSecond: 192_000
       })
       this.rec = rec

@@ -28,6 +28,7 @@ export interface ShowFile {
   destinations: { id: string; enabled: boolean; vertical: boolean; serverUrl?: string }[]
   recordFolder: string
   recordFormat: AppState['recording']['format']
+  recordQuality?: AppState['recording']['quality']
   /** Live data fields and their values when saved (team names, the guest's name...). */
   data: Record<string, DataValue>
   /** The devices the show used, by name, so they are found again on another PC (or after their ids change). */
@@ -72,6 +73,7 @@ export function showFromState(s: AppState, name: string, savedAt: number): ShowF
     destinations: s.stream.destinations.map((d) => ({ id: d.id, enabled: d.enabled, vertical: d.vertical, ...(d.serverUrl ? { serverUrl: d.serverUrl } : {}) })),
     recordFolder: s.recording.folder,
     recordFormat: s.recording.format,
+    recordQuality: s.recording.quality ?? 'stream',
     data: Object.fromEntries(Object.entries(s.data).map(([k, f]) => [k, f.value])),
     devices: { video: named(s.inputs.video), audio: named(s.inputs.audio) }
   }
@@ -83,7 +85,7 @@ export function showFromState(s: AppState, name: string, savedAt: number): ShowF
  */
 export function showFingerprint(s: AppState): string {
   const show = showFromState(s, '', 0)
-  return JSON.stringify([show.scenes, show.transition, show.color ?? null, show.audio, show.quality, show.frameRate, show.destinations, show.recordFolder, show.recordFormat])
+  return JSON.stringify([show.scenes, show.transition, show.color ?? null, show.audio, show.quality, show.frameRate, show.destinations, show.recordFolder, show.recordFormat, show.recordQuality ?? 'stream'])
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -117,6 +119,9 @@ export function readShow(raw: unknown): ShowFile {
     destinations: Array.isArray(raw.destinations) ? (raw.destinations.filter((d) => isObj(d) && typeof d.id === 'string') as ShowFile['destinations']) : [],
     recordFolder: typeof raw.recordFolder === 'string' ? raw.recordFolder : '',
     recordFormat: raw.recordFormat === 'mkv' ? 'mkv' : 'mp4',
+    ...(raw.recordQuality === 'high' || raw.recordQuality === 'veryhigh' || raw.recordQuality === 'best' || raw.recordQuality === 'stream'
+      ? { recordQuality: raw.recordQuality }
+      : {}),
     data,
     devices: { video: list(devices.video), audio: list(devices.audio) }
   }
@@ -160,6 +165,7 @@ export function applyShow(s: AppState, show: ShowFile, now: number): void {
   })
   if (show.recordFolder) s.recording.folder = show.recordFolder
   s.recording.format = show.recordFormat
+  if (show.recordQuality) s.recording.quality = show.recordQuality
   s.data = Object.fromEntries(Object.entries(show.data).map(([k, value]) => [k, { value, updatedAt: now, source: 'Show file' }]))
 }
 

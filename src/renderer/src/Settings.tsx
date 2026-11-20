@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import type { AppState, Destination } from '../../shared/state'
-import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, presetFor } from '../../shared/presets'
+import type { AppState, Destination, RecordQuality } from '../../shared/state'
+import { MAX_DESTINATIONS, PLATFORMS, QUALITY_PRESETS, RECORD_QUALITIES, gbPerHour, presetFor, recordPresetFor } from '../../shared/presets'
 import { ROLES, ROLE_LABELS, type Role } from '../../shared/protocol'
 import type { Run } from './useApp'
 import { NET_PREFIX, NETCAMS_CHANGED, type NetCamConfig } from './studio/netcams'
@@ -113,6 +113,17 @@ function frameRateNote(state: AppState): string {
   return text
 }
 
+/** In plain words: how the recording will look and how much room it takes. */
+function recordNote(state: AppState): string {
+  const rec = state.recording.quality ?? 'stream'
+  const p = recordPresetFor(state.stream.quality, state.stream.family, rec)
+  const size = `${p.height}p ${p.fps} fps at ${(p.videoKbps / 1000).toFixed(p.videoKbps < 10_000 ? 1 : 0)} Mbps, about ${gbPerHour(p).toFixed(1)} GB an hour`
+  let text = `Saved as ${state.recording.format.toUpperCase()}, which survives a crash. ${size}.`
+  if (rec !== 'stream') text += ' Same picture size and frame rate as the stream (pick 1080p in Quality above for a 1080p recording), with far less squeezing.'
+  if (state.recording.active) text += ' Stop recording to change it.'
+  return text
+}
+
 function GoLive({ state, run }: { state: AppState; run: Run }) {
   const enabled = state.stream.destinations.filter((d) => d.enabled).length
   const locked = state.stream.live
@@ -172,7 +183,21 @@ function GoLive({ state, run }: { state: AppState; run: Run }) {
       <section>
         <h3>Recordings</h3>
         <FolderField value={state.recording.folder} onSave={(folder) => run('settings.setRecordFolder', { folder })} />
-        <p className="muted">Saved as {state.recording.format.toUpperCase()}, which survives a crash. Same quality as the stream.</p>
+        <h4>Recording quality</h4>
+        <div className="segmented">
+          {(Object.keys(RECORD_QUALITIES) as RecordQuality[]).map((k) => (
+            <button
+              key={k}
+              className={(state.recording.quality ?? 'stream') === k ? 'on' : ''}
+              disabled={state.recording.active}
+              onClick={() => run('settings.setRecordQuality', { quality: k })}
+            >
+              {RECORD_QUALITIES[k].label}
+              <small>{RECORD_QUALITIES[k].hint}</small>
+            </button>
+          ))}
+        </div>
+        <p className="muted">{recordNote(state)}</p>
       </section>
     </div>
   )

@@ -8,7 +8,7 @@
  * - mixes the sound,
  * - sends the result to the app's server while streaming or recording.
  */
-import { QUALITY_PRESETS, cameraRate, presetFor } from '../../../shared/presets'
+import { QUALITY_PRESETS, RECORD_QUALITIES, cameraRate, presetFor, recordPresetFor } from '../../../shared/presets'
 import { COMMERCIALS_CHANNEL, type AppState } from '../../../shared/state'
 import type { Bridge } from '../bridge/bridge'
 import { Compositor } from './compositor'
@@ -132,6 +132,12 @@ export class Studio {
         this.notice('The graphics card stopped drawing (a driver reset). Reload this window with F5 to get the picture back.')
       }
       for (const [q, preset] of Object.entries(QUALITY_PRESETS)) this.gpuEncode.set(q, await gpuEncodeSupported(preset))
+      // High-quality recordings ask the card for more bits (and a higher H.264 level): checked on their own.
+      for (const q of Object.keys(QUALITY_PRESETS) as (keyof typeof QUALITY_PRESETS)[]) {
+        for (const r of Object.keys(RECORD_QUALITIES) as (keyof typeof RECORD_QUALITIES)[]) {
+          if (r !== 'stream') this.gpuEncode.set(`${q}/${r}`, await gpuEncodeSupported(recordPresetFor(q, 'ntsc', r)))
+        }
+      }
     }
     console.info(`[studio] ${this.engineInfo}`)
     this.clock = workerClock(this.fps, () => this.tick())
@@ -277,10 +283,12 @@ export class Studio {
     if (on && !running && this.state) {
       this.mixer.resume()
       const quality = this.state.stream.quality
-      const preset = presetFor(quality, this.state.stream.family)
+      const rec = kind === 'record' ? (this.state.recording.quality ?? 'stream') : 'stream'
+      const preset = kind === 'record' ? recordPresetFor(quality, this.state.stream.family, rec) : presetFor(quality, this.state.stream.family)
       const onProblem = (m: string) => this.notice(m)
+      if (kind === 'record') console.info(`[studio] recording at ${preset.width}x${preset.height} ${preset.fps} fps, ${preset.videoKbps} kbps (${rec})`)
       // Encoded once on the graphics card and passed on as is, when it can; otherwise the browser's recorder as before.
-      this.outputs[kind] = this.gpuEncode.get(quality)
+      this.outputs[kind] = this.gpuEncode.get(rec === 'stream' ? quality : `${quality}/${rec}`)
         ? new GpuOutput(kind, this.compositor.program, this.mixer.output.stream.getAudioTracks()[0], preset, onProblem)
         : new Output(kind, this.programMedia(), preset, onProblem)
     } else if (!on && running) {

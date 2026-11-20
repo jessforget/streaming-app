@@ -107,7 +107,7 @@ export function defaultState(): AppState {
         { id: 'custom', platform: 'custom', enabled: false, hasKey: false, vertical: false }
       ]
     },
-    recording: { active: false, startedAt: null, folder: 'Videos/Streams', format: 'mkv' },
+    recording: { active: false, startedAt: null, folder: 'Videos/Streams', format: 'mkv', quality: 'stream' },
     inputs: { video: [], audio: [] },
     data: {},
     devices: { pairingOpen: true, pairingCode: '', controlUrl: '', list: [], network: { addresses: [], controlPort: 0, phonePort: 0, rtmpPort: 0 } },

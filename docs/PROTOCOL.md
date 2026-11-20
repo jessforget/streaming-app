@@ -83,6 +83,7 @@ There are no camera switching commands: cameras are switched on the ATEM itself.
 | `audio.muteAll` | none | remote, buttons |
 | `stream.start` / `stream.stop` | none | remote, buttons |
 | `record.start` / `record.stop` | none | remote, buttons |
+| `settings.setRecordQuality` | `{ "quality": "stream" | "high" | "veryhigh" | "best" }`: recording quality (not while recording). `stream` = same as the stream; the others keep the stream's size and frame rate at a higher bitrate (1080p30: 12 / 24 / 40 Mbps, scaled for other sizes, at most 60 Mbps). `state.recording.quality`; saved on this PC and in the project. | admin |
 | `data.set` | `{ "values": { "team1.score": 3 } }` | remote, data |
 | `data.clear` | `{ "keys": ["team1.score"] }`, or `{}` for all | remote, data |
 

@@ -35,6 +35,7 @@ type SavedSetup = Pick<AppState, 'setupName' | 'scenes' | 'transition' | 'audio'
   overlayOn?: boolean
   recordFolder: string
   recordFormat: AppState['recording']['format']
+  recordQuality?: AppState['recording']['quality']
   /** The devices seen last time, so a device whose id changed is found again by its name. */
   inputs?: AppState['inputs']
   /** The show file this layout came from, and whether it had changes not saved yet. */
@@ -83,7 +84,8 @@ export class SetupFile {
       recording: {
         ...base.recording,
         folder: saved.recordFolder ?? base.recording.folder,
-        format: saved.recordFormat ?? base.recording.format
+        format: saved.recordFormat ?? base.recording.format,
+        quality: (['stream', 'high', 'veryhigh', 'best'] as const).find((q) => q === saved.recordQuality) ?? base.recording.quality
       },
     })
   }
@@ -101,6 +103,7 @@ export class SetupFile {
       destinations: s.stream.destinations,
       recordFolder: s.recording.folder,
       recordFormat: s.recording.format,
+      recordQuality: s.recording.quality ?? 'stream',
       inputs: s.inputs,
       show: s.show,
       data: s.data

@@ -1,4 +1,4 @@
-import type { AppState, FpsFamily, Platform, Quality } from './state'
+import type { AppState, FpsFamily, Platform, Quality, RecordQuality } from './state'
 
 export interface QualityPreset {
   label: string
@@ -9,6 +9,8 @@ export interface QualityPreset {
   audioKbps: number
   /** Short description shown under the Low/Medium/High buttons. */
   summary: string
+  /** The browser's own encoder uses videoKbps as is (a high-quality recording), not twice it. */
+  exact?: boolean
 }
 
 /**
@@ -135,6 +137,45 @@ export function cameraRate(
   if (families.size > 1) return { family: null, note: `Cameras differ: ${list}` }
   if (families.size === 1) return { family: fixed[0].family, note: list }
   return { family: flexible ? 'ntsc' : null, note: '' }
+}
+
+export interface RecordQualityInfo {
+  label: string
+  /** Short words under the button. */
+  hint: string
+  /** Video bitrate at 1080p 30 fps; other sizes and frame rates scale from it. 0 = the stream's own. */
+  kbps1080p30: number
+}
+
+/**
+ * Recording quality, like OBS's "Recording Quality". The recording keeps the stream's picture size
+ * and frame rate (there is one picture), but it isn't squeezed down to what the platforms take.
+ * The card's encoder makes it (NVENC on the laptop), so it costs about the same as the stream.
+ */
+export const RECORD_QUALITIES: Record<RecordQuality, RecordQualityInfo> = {
+  stream: { label: 'Same as stream', hint: 'Smallest files', kbps1080p30: 0 },
+  high: { label: 'High', hint: 'Medium files (OBS "High Quality")', kbps1080p30: 12_000 },
+  veryhigh: { label: 'Very high', hint: 'Large files (OBS "Indistinguishable")', kbps1080p30: 24_000 },
+  best: { label: 'Best', hint: 'Very large files, for editing', kbps1080p30: 40_000 }
+}
+
+/** The most a recording gets: H.264 level 4.2 allows 62.5 Mbps. */
+export const MAX_RECORD_KBPS = 60_000
+
+/** The quality a recording uses: the stream's size and frame rate, with the recording's own bitrate. */
+export function recordPresetFor(quality: Quality, family: FpsFamily = 'ntsc', rec: RecordQuality = 'stream'): QualityPreset {
+  const p = presetFor(quality, family)
+  const info = RECORD_QUALITIES[rec] ?? RECORD_QUALITIES.stream
+  if (!info.kbps1080p30) return p
+  // Bigger pictures and more frames need more bits, but not in proportion (more frames look alike).
+  const scale = ((p.width * p.height * p.fps) / (1920 * 1080 * 30)) ** 0.8
+  const kbps = Math.min(MAX_RECORD_KBPS, Math.max(p.videoKbps, Math.round((info.kbps1080p30 * scale) / 500) * 500))
+  return { ...p, videoKbps: kbps, audioKbps: 320, exact: true }
+}
+
+/** About how many gigabytes an hour of recording takes. */
+export function gbPerHour(p: QualityPreset): number {
+  return ((p.videoKbps + p.audioKbps) * 3600) / 8 / 1_000_000
 }
 
 export function requiredUploadKbps(quality: Quality, enabledCount: number): number {

@@ -16,10 +16,16 @@ const RECONNECT_CODE = 4010
 /** Frames waiting in the encoder before new ones are skipped (like OBS's "skipped frames"). */
 const MAX_QUEUE = 6
 
-/** H.264 High profile, level picked for the size and frame rate. */
+/** H.264 High profile, level picked for the size, frame rate and bitrate (high-quality recordings need a higher level). */
 export function avcCodec(p: QualityPreset): string {
   const mbps = (Math.ceil(p.width / 16) * Math.ceil(p.height / 16) * p.fps) / 1000
-  const level = mbps <= 108 ? '1f' : mbps <= 245.76 ? '28' : '2a' // 3.1, 4.0, 4.2
+  // [level, most macroblocks a second (thousands), most kbps in High profile]
+  const levels: [string, number, number][] = [
+    ['1f', 108, 17_500], // 3.1
+    ['28', 245.76, 31_250], // 4.0
+    ['2a', 522.24, 62_500] // 4.2
+  ]
+  const level = levels.find(([, mb, kbps]) => mbps <= mb && p.videoKbps <= kbps)?.[0] ?? '2a'
   return `avc1.6400${level}`
 }
 

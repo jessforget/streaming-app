@@ -18,7 +18,7 @@ import {
   type Role
 } from '../shared/protocol'
 import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene, PHONE_CAM_KEYS, type PhoneCamControl, type PhoneCamValue } from '../shared/state'
-import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
+import { MAX_DESTINATIONS, PLATFORMS, RECORD_QUALITIES, presetFor, recordPresetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
 import { GRADE_KEYS, GRADE_LIMITS, cleanGrade, isNeutral } from '../shared/color'
 import { Emitter } from './emitter'
@@ -289,7 +289,7 @@ export class Controller extends Emitter<Events> {
       case 'record.start': {
         if (this.s.recording.active) return this.s
         const r = this.s.recording
-        await this.engine.startRecording(r.folder, r.format, this.preset())
+        await this.engine.startRecording(r.folder, r.format, recordPresetFor(this.s.stream.quality, this.s.stream.family, r.quality ?? 'stream'))
         r.active = true
         r.startedAt = this.now()
         return this.changed()
@@ -334,6 +334,13 @@ export class Controller extends Emitter<Events> {
         return this.setDestination(P)
       case 'settings.testDestination':
         return this.testDestination(P)
+      case 'settings.setRecordQuality': {
+        const q = P.quality
+        if (typeof q !== 'string' || !(q in RECORD_QUALITIES)) throw new CommandError(`quality must be ${Object.keys(RECORD_QUALITIES).join(', ')}`)
+        if (this.s.recording.active) throw new CommandError('Stop recording first')
+        this.s.recording.quality = q as keyof typeof RECORD_QUALITIES
+        return this.changed()
+      }
       case 'settings.setRecordFolder': {
         if (this.s.recording.active) throw new CommandError('Stop recording first')
         this.s.recording.folder = str(P, 'folder')

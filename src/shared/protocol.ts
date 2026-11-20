@@ -73,6 +73,7 @@ export interface CommandMap {
   /** Check a platform's saved stream key without going live. Answers { ok, message }. */
   'settings.testDestination': { id: string }
   'settings.setRecordFolder': { folder: string }
+  'settings.setRecordQuality': { quality: 'stream' | 'high' | 'veryhigh' | 'best' }
   // Editing scenes, sources and audio, like OBS. On-screen only, so a tap on a tablet can't break the layout.
   'scene.add': { name: string }
   'scene.remove': { sceneId: string }
@@ -237,6 +238,7 @@ export const ACTION_PERMISSION: Record<Action, Permission> = {
   'settings.setDestination': 'admin',
   'settings.testDestination': 'admin',
   'settings.setRecordFolder': 'admin',
+  'settings.setRecordQuality': 'admin',
   'scene.add': 'admin',
   'scene.remove': 'admin',
   'scene.rename': 'admin',
