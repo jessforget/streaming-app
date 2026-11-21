@@ -55,8 +55,17 @@ export function ColorButton({ state, run }: { state: AppState; run: Run }) {
       const r = anchor.current?.getBoundingClientRect()
       if (!r) return
       const w = Math.min(320, window.innerWidth - 16)
-      const left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))
-      setAt({ left, top: r.bottom + 6, maxHeight: Math.max(200, window.innerHeight - r.bottom - 14) })
+      // Beside the Live monitor (over the side panel), so the whole Live picture stays in view while adjusting.
+      const live = anchor.current?.closest('.monitor')?.getBoundingClientRect()
+      if (live && live.right + 12 + w <= window.innerWidth - 8) {
+        const top = Math.max(8, live.top)
+        setAt({ left: live.right + 12, top, maxHeight: window.innerHeight - top - 8 })
+        return
+      }
+      // Narrow window: under the Live picture instead.
+      const below = live ? live.bottom + 8 : r.bottom + 6
+      const left = Math.max(8, Math.min((live?.right ?? r.right) - w, window.innerWidth - w - 8))
+      setAt({ left, top: below, maxHeight: Math.max(200, window.innerHeight - below - 8) })
     }
     place()
     window.addEventListener('resize', place)
