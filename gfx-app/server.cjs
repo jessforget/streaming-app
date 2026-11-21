@@ -48,9 +48,11 @@ const VIDEO_ENDS = ['loop', 'hide', 'hold']
 const PHOTO_ENDS = ['loop', 'hold', 'hide']
 const VIDEO_EXT = ['.mp4', '.webm', '.mov', '.m4v', '.mkv']
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']
+/** A moving logo: WebM (VP8/VP9 can carry a see-through background) or MP4; a MOV (ProRes 4444 etc.) is turned into WebM. */
+const LOGO_VIDEO_EXT = ['.webm', '.mp4', '.m4v', '.mov']
 const TYPES = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska',
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp'
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml'
 }
 
 const DEFAULT_LOOK = {
@@ -408,10 +410,67 @@ function startServer(opts = {}) {
     }
     return out
   }
+  /** A MOV logo being turned into WebM (one at a time), and why the last one failed. */
+  let logoJob = null
+  let logoError = ''
+  const findFfmpeg = () => {
+    const tries = [process.env.FFMPEG_PATH]
+    try {
+      tries.push(require('ffmpeg-static'))
+    } catch {
+      // not installed next to the gfx app: use the one on the PATH
+    }
+    tries.push('ffmpeg')
+    const { spawnSync } = require('node:child_process')
+    return tries.filter(Boolean).find((c) => spawnSync(c, ['-hide_banner', '-version'], { timeout: 10_000, windowsHide: true }).status === 0) ?? null
+  }
+  function convertLogo(src, name) {
+    if (logoJob) logoJob.proc.kill()
+    const ff = findFfmpeg()
+    const done = (err, out) => {
+      logoJob = null
+      try {
+        unlinkSync(src)
+      } catch {
+        // already gone
+      }
+      if (err) logoError = err
+      else {
+        logoError = ''
+        show.layers.logo.file = out
+      }
+      changed()
+    }
+    if (!ff) return done('This video needs to be changed to WebM, but ffmpeg wasn’t found on this PC. Export the logo as WebM (VP9 with alpha) and pick that instead.')
+    const out = src.replace(/\.mov$/i, '.webm')
+    // VP9 with an alpha channel; logos are short, so a quick, good-looking encode.
+    const args = ['-hide_banner', '-y', '-i', src, '-an', '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-b:v', '0', '-crf', '30', '-deadline', 'good', '-cpu-used', '4', '-row-mt', '1', '-auto-alt-ref', '0', out]
+    const proc = require('node:child_process').spawn(ff, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
+    let errText = ''
+    proc.stderr.on('data', (d) => (errText = (errText + d).slice(-2000)))
+    logoJob = { proc, name }
+    logoError = ''
+    changed()
+    proc.on('error', () => done('Couldn’t start ffmpeg to change the video to WebM.'))
+    proc.on('close', (code, signal) => {
+      if (logoJob?.proc !== proc) return
+      if (code === 0) return done('', out)
+      try {
+        unlinkSync(out)
+      } catch {
+        // nothing written
+      }
+      done(signal ? 'Stopped.' : `That video couldn’t be changed to WebM (${(errText.trim().split('\n').pop() || 'unknown error').slice(0, 160)}).`)
+    })
+  }
   /** The "Stays on" graphics for the pages: the logo's file as a link, not a path. */
   const publicLayers = () => {
     const { file, ...logo } = show.layers.logo
-    return { ...show.layers, logo: { ...logo, url: file && exists(file) ? `/media/logo?v=${encodeURIComponent(basename(file))}` : '' } }
+    const ok = file && exists(file)
+    return {
+      ...show.layers,
+      logo: { ...logo, url: ok ? `/media/logo?v=${encodeURIComponent(basename(file))}` : '', video: !!ok && LOGO_VIDEO_EXT.includes(extname(file).toLowerCase()), converting: logoJob ? logoJob.name : '', convertError: logoError }
+    }
   }
   const snapshot = () => ({
     type: 'state',
@@ -1070,22 +1129,31 @@ function startServer(opts = {}) {
         }
         return sendFile(req, res, show.layers.logo.file)
       }
-      // A logo picture from the operator's page: kept in the gfx app's folder.
+      // A logo (picture or short video) from the operator's page: kept in the gfx app's folder.
       if (req.method === 'POST' && path === '/api/logo') {
-        const ext = IMAGE_EXT.includes(`.${url.searchParams.get('ext')}`.toLowerCase()) ? `.${url.searchParams.get('ext').toLowerCase()}` : ''
-        if (!ext && !(req.headers['content-type'] ?? '').includes('svg')) return json(res, 400, { error: 'Pick a picture (png, jpg, webp, gif)' })
+        const asked = `.${url.searchParams.get('ext') ?? ''}`.toLowerCase()
+        const isVideo = LOGO_VIDEO_EXT.includes(asked)
+        const ext = IMAGE_EXT.includes(asked) || isVideo || asked === '.svg' ? asked : ''
+        if (!ext) return json(res, 400, { error: 'Pick a picture (png, webp, gif) or a video (webm, mov, mp4)' })
+        const max = isVideo ? 300_000_000 : 15_000_000
         const chunks = []
         let size = 0
         for await (const c of req) {
           size += c.length
-          if (size > 15_000_000) return json(res, 413, { error: 'That picture is too big (15 MB at most)' })
+          if (size > max) return json(res, 413, { error: isVideo ? 'That video is too big (300 MB at most)' : 'That picture is too big (15 MB at most)' })
           chunks.push(c)
         }
-        if (!size) return json(res, 400, { error: 'The picture is empty' })
+        if (!size) return json(res, 400, { error: 'The file is empty' })
         const dir = join(dataDir, 'logos')
         mkdirSync(dir, { recursive: true })
-        const file = join(dir, `logo-${Date.now()}${ext || '.png'}`)
+        const file = join(dir, `logo-${Date.now()}${ext}`)
         writeFileSync(file, Buffer.concat(chunks))
+        if (ext === '.mov') {
+          // Chrome can't play ProRes or most MOVs: make a WebM that keeps the see-through background.
+          convertLogo(file, String(url.searchParams.get('name') ?? basename(file)).slice(0, 80))
+          return json(res, 200, { ok: true, converting: true })
+        }
+        logoError = ''
         show.layers.logo.file = file
         changed()
         return json(res, 200, { ok: true })

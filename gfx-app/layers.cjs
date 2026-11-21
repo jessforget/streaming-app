@@ -26,7 +26,9 @@ const LAYER_DEFAULTS = {
     size: 110,
     opacity: 90,
     live: false,
-    clock: false
+    clock: false,
+    /** A video logo: play over and over (or once each time it comes on, then stay on its last picture). */
+    loop: true
   },
   ticker: {
     on: false,
@@ -92,6 +94,7 @@ function cleanLayer(name, p, was) {
     out.opacity = numOf(p.opacity, 10, 100, was.opacity)
     out.live = boolOf(p.live, was.live)
     out.clock = boolOf(p.clock, was.clock)
+    out.loop = boolOf(p.loop, was.loop)
   }
   if (name === 'ticker') {
     out.label = text(p.label, 40, was.label)

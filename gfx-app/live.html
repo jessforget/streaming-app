@@ -40,7 +40,8 @@
   /* Logo bug: anywhere on the picture (x, y from 0 to 100), inside a 64 px margin. */
   .bug { display: flex; align-items: center; gap: 16px; }
   .bug.on { opacity: var(--op, 1); }
-  .bug img { display: block; height: var(--h, 110px); width: auto; max-width: 600px; object-fit: contain; }
+  .bug [hidden] { display: none !important; }
+  .bug img, .bug video { display: block; height: var(--h, 110px); width: auto; max-width: 600px; object-fit: contain; }
   .bug .livedot { display: flex; align-items: center; gap: 10px; background: rgba(8, 10, 14, 0.75); color: #fff; padding: 6px 16px; border-radius: 8px; font: 700 23px Inter, sans-serif; letter-spacing: 0.1em; }
   .bug .livedot::before { content: ''; width: 15px; height: 15px; border-radius: 50%; background: #ff4b4b; animation: blink 1.6s infinite; }
   .bug .clock { color: #fff; font: 600 29px Inter, sans-serif; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
@@ -110,7 +111,7 @@
 <div class="ltstage" id="stage">
   <div class="media" id="media"></div>
   <div class="layer cdfull" id="cdfull"><div class="eb"></div><div class="t"></div><div class="msg"></div><div class="bar"><i></i></div></div>
-  <div class="layer bug" id="bug"><img alt=""><span class="livedot" hidden>LIVE</span><span class="clock" hidden></span></div>
+  <div class="layer bug" id="bug"><img alt=""><video muted playsinline hidden></video><span class="livedot" hidden>LIVE</span><span class="clock" hidden></span></div>
   <div class="layer" id="score"></div>
   <div class="layer cdc" id="corner"><span></span><b></b></div>
   <div class="place" id="place"></div>
@@ -284,8 +285,28 @@
     const lg = L.logo
     const bug = $id('bug')
     const img = bug.querySelector('img')
-    if (lg.url && img.getAttribute('src') !== lg.url) img.src = lg.url
-    bug.classList.toggle('on', shows('logo') && !!lg.url)
+    const vid = bug.querySelector('video')
+    const want = lg.url && !lg.video ? lg.url : ''
+    if (want && img.getAttribute('src') !== want) img.src = want
+    img.hidden = !want
+    // A moving logo plays in this page (it is small, so it costs little to send). Loops, or plays once each time it comes on.
+    const showLogo = shows('logo') && !!lg.url
+    vid.hidden = !lg.video
+    vid.loop = lg.loop !== false
+    if (lg.video && vid.getAttribute('src') !== lg.url) {
+      vid.src = lg.url
+      if (showLogo) vid.play().catch(() => {})
+    }
+    if (!lg.video && vid.getAttribute('src')) {
+      vid.removeAttribute('src')
+      vid.load()
+    }
+    if (lg.video && showLogo && !bug.classList.contains('on')) {
+      if (!vid.loop) vid.currentTime = 0
+      vid.play().catch(() => {})
+    }
+    if (lg.video && !showLogo && bug.classList.contains('on')) setTimeout(() => !bug.classList.contains('on') && vid.pause(), 600)
+    bug.classList.toggle('on', showLogo)
     bug.style.setProperty('--h', `${lg.size}px`)
     bug.style.setProperty('--op', String(lg.opacity / 100))
     bug.style.left = `calc(64px + (100% - 128px) * ${lg.x / 100})`

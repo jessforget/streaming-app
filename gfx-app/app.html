@@ -1931,7 +1931,7 @@
   }
   function renderLayerSettings(box) {
     const L = S.layers[editing]
-    const key = `layer|${editing}|${L.mode ?? ''}|${editing === 'logo' ? L.url : ''}|${editing === 'ticker' ? L.lines.length : ''}`
+    const key = `layer|${editing}|${L.mode ?? ''}|${editing === 'logo' ? `${L.url}|${L.converting}|${L.convertError}` : ''}|${editing === 'ticker' ? L.lines.length : ''}`
     if (key === builtFor && box.childElementCount) {
       // Just the values that change from elsewhere (a phone, the other buttons).
       for (const i of box.querySelectorAll('[data-l]')) if (document.activeElement !== i) i.value = L[i.dataset.l]
@@ -1959,14 +1959,14 @@
     if (layer === 'logo') {
       const file = document.createElement('input')
       file.type = 'file'
-      file.accept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml'
+      file.accept = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,video/webm,video/mp4,video/quicktime,.webm,.mov,.mp4,.m4v'
       file.onchange = async () => {
         const f = file.files?.[0]
         if (!f) return
         const ext = (f.name.split('.').pop() || 'png').toLowerCase()
-        const r = await fetch(`/api/logo?ext=${encodeURIComponent(ext)}`, { method: 'POST', headers: { 'content-type': f.type || 'image/png' }, body: f })
+        const r = await fetch(`/api/logo?ext=${encodeURIComponent(ext)}&name=${encodeURIComponent(f.name)}`, { method: 'POST', headers: { 'content-type': f.type || 'application/octet-stream' }, body: f })
         const out = await r.json().catch(() => ({}))
-        if (!r.ok) alertBar(out.error || 'That picture didn’t work')
+        if (!r.ok) alertBar(out.error || 'That file didn’t work')
       }
       const corners = div('chips')
       for (const [n, x, y] of [['↖ Top left', 0, 0], ['↗ Top right', 100, 0], ['↙ Bottom left', 0, 100], ['↘ Bottom right', 100, 100]]) {
@@ -1981,8 +1981,16 @@
         corners.append(b)
       }
       box.append(
-        field(L.url ? 'Logo (pick another to change it)' : 'Logo: a PNG with a see-through background works best', file),
-        L.url ? div('hint', 'Picked. It is kept in the gfx app’s folder.') : div('warn', 'No logo picked yet.'),
+        field(L.url ? 'Logo (pick another to change it)' : 'Logo: a PNG, or a short video, with a see-through background', file),
+        div('hint', 'Moving logo: WebM (VP9 with alpha) plays as it is. A MOV (ProRes 4444 with alpha) is changed to WebM here first. MP4 works too, but has no see-through background.'),
+        L.converting
+          ? div('hint', `Changing “${L.converting}” to WebM… The old logo stays until it’s ready.`)
+          : L.convertError
+            ? div('warn', L.convertError)
+            : L.url
+              ? div('hint', `${L.video ? 'Moving logo picked' : 'Picked'}. It is kept in the gfx app’s folder.`)
+              : div('warn', 'No logo picked yet.'),
+        ...(L.video ? [check('Keep looping (off: plays once each time it comes on, then stays on its last picture)', L.loop !== false, (v) => act({ action: 'layer.set', layer, patch: { loop: v } }))] : []),
         field('Start from a corner', corners),
         keyed(slide('Move left ↔ right', L.x, 0, 100, 1, (v) => setLayer(layer, { x: v }), '%'), 'x'),
         keyed(slide('Move up ↕ down', L.y, 0, 100, 1, (v) => setLayer(layer, { y: v }), '%'), 'y'),
