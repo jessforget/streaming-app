@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { cleanGrade, gradePixel, isNeutral, NEUTRAL_GRADE } from '../src/shared/color'
+import { cleanCurve, cleanGrade, curveAt, curveTable, gradePixel, isNeutral, NEUTRAL_GRADE } from '../src/shared/color'
 import { Controller } from '../src/core/controller'
 import { defaultState } from '../src/core/defaults'
 import { MemoryKeyStore, MemoryShowStore } from '../src/core/ports'
@@ -64,5 +64,33 @@ describe('color of the picture that goes out', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('curves: straight leaves colours alone, a raised middle brightens midtones only', () => {
+    expect(isNeutral({ ...NEUTRAL_GRADE, curves: { all: [[0, 0], [1, 1]] } })).toBe(true)
+    const lift: [number, number][] = [[0, 0], [0.5, 0.65], [1, 1]]
+    expect(curveAt(lift, 0.5)).toBeCloseTo(0.65)
+    expect(curveAt(lift, 0)).toBe(0)
+    expect(curveAt(lift, 1)).toBe(1)
+    // Never overshoots between points.
+    for (let x = 0; x <= 1; x += 0.05) expect(curveAt(lift, x)).toBeLessThanOrEqual(1)
+    const t = curveTable({ r: lift })
+    expect(t[128 * 4]).toBeGreaterThan(150) // red raised
+    expect(t[128 * 4 + 1]).toBe(128) // green untouched
+    expect(gradePixel({ ...NEUTRAL_GRADE, curves: { all: lift } }, [0.5, 0.5, 0.5])[0]).toBeCloseTo(0.65, 1)
+    expect(cleanCurve([[0.5, 2], [0.2, 0.1]])).toEqual([[0, 0.1], [1, 1]])
+    expect(cleanCurve('x')).toBeNull()
+  })
+
+  it('curves are set one at a time, kept in the project, and reset', async () => {
+    const c = await setup()
+    await c.run('local', 'color.set', { curves: { all: [[0, 0.05], [0.5, 0.6], [1, 1]] } })
+    await c.run('local', 'color.set', { curves: { r: [[0, 0], [0.5, 0.55], [1, 1]] } })
+    expect(Object.keys(c.state.color?.curves ?? {})).toEqual(['all', 'r'])
+    await c.run('local', 'color.set', { curves: { all: null } })
+    expect(Object.keys(c.state.color?.curves ?? {})).toEqual(['r'])
+    await expect(c.run('local', 'color.set', { curves: { x: [] } as never })).rejects.toThrow()
+    await c.run('local', 'color.set', { curves: { r: null } })
+    expect(c.state.color).toBeUndefined()
   })
 })

@@ -8,7 +8,7 @@
  *
  * See docs/PROTOCOL.md for the human-readable version.
  */
-import type { ColorGrade } from './color'
+import type { ColorGrade, CurveChannel, CurvePoints } from './color'
 import type { AppState, AudioKind, HealthStats, InputDevice, LayerKind, Placement } from './state'
 
 export const PROTOCOL_VERSION = 1
@@ -44,8 +44,8 @@ export interface CommandMap {
   'transition.set': { kind: 'cut' | 'fade'; durationMs?: number }
   /** The manual fader: mix Live into Preview, 0 to 1. At 1, Preview goes on air (what was live goes to Preview). */
   'transition.mix': { level: number }
-  /** Colour of the picture that goes out: only the controls given change. Exposure -2..2 stops, the others -100..100, 0 = as it comes in. */
-  'color.set': Partial<ColorGrade>
+  /** Colour of the picture that goes out: only the controls given change. Exposure -2..2 stops, the others -100..100, 0 = as it comes in. curves: { all?, r?, g?, b? } lists of [in, out] points 0..1 (null = straight again); only the curves given change. */
+  'color.set': Partial<Omit<ColorGrade, 'curves'>> & { curves?: Partial<Record<CurveChannel, CurvePoints | null>> }
   /** Colour back to as it comes in. */
   'color.reset': Record<string, never>
   'layer.setVisible': { sceneId: string; layerId: string; visible: boolean }

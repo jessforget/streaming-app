@@ -20,7 +20,7 @@ import {
 import { BREAK_SOUND, type BreakSound, LAYER_KINDS, PLACEMENTS, ensureOverlay, isOverlay, showScenes, SYNC_OFFSET_RANGE, type InputDevice, type Placement, channelCount, type AppState, type AudioKind, type AudioSource, scenesOnAir, type Health, type HealthStats, type Layer, type LayerKind, type Scene, PHONE_CAM_KEYS, type PhoneCamControl, type PhoneCamValue } from '../shared/state'
 import { MAX_DESTINATIONS, PLATFORMS, presetFor, requiredUploadKbps } from '../shared/presets'
 import { isValidFieldName, renderTemplate, templateFields } from '../shared/template'
-import { GRADE_KEYS, GRADE_LIMITS, cleanGrade, isNeutral } from '../shared/color'
+import { CURVE_CHANNELS, GRADE_KEYS, GRADE_LIMITS, cleanCurve, cleanGrade, isNeutral, type ColorGrade } from '../shared/color'
 import { Emitter } from './emitter'
 import { IDLE_STATS, freshSetup } from './defaults'
 import type { DeviceAdmin, Engine, KeyStore, ShowStore, StreamTarget } from './ports'
@@ -237,6 +237,17 @@ export class Controller extends Emitter<Events> {
           if (P[k] === undefined) continue
           const [lo, hi] = GRADE_LIMITS[k]
           next[k] = num(P, k, lo, hi)
+        }
+        if (P.curves !== undefined) {
+          // Only the curves given change; null or a straight line puts that one back.
+          if (!P.curves || typeof P.curves !== 'object') throw new CommandError('curves must be { all?, r?, g?, b? }')
+          const curves = { ...next.curves } as Record<string, unknown>
+          for (const [ch, pts] of Object.entries(P.curves as Record<string, unknown>)) {
+            if (!(CURVE_CHANNELS as string[]).includes(ch)) throw new CommandError('curves are all, r, g or b')
+            if (pts !== null && !cleanCurve(pts)) throw new CommandError('a curve is a list of [in, out] points from 0 to 1')
+            curves[ch] = pts
+          }
+          next.curves = curves as ColorGrade['curves']
         }
         const g = cleanGrade(next)
         if (isNeutral(g)) delete this.s.color

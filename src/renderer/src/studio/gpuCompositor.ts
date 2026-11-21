@@ -10,7 +10,7 @@
 import { renderTemplate } from '../../../shared/template'
 import { countdownText, overlayOver, placementOf, type AppState, type Layer, type Placement, type Scene } from '../../../shared/state'
 import { barRects } from '../../../shared/bars'
-import { gradeMath, isNeutral } from '../../../shared/color'
+import { curveTable, gradeMath, isNeutral, type Curves } from '../../../shared/color'
 import { boxFor, Compositor } from './compositor'
 import { videoBox, type GraphicsFeed } from './graphics'
 
@@ -27,6 +27,13 @@ type Op = (
 const COMMON = /* wgsl */ `
 struct U { rect: vec4f, size: vec4f, color: vec4f, misc: vec4f, gain: vec4f, look: vec4f };
 @group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var smp: sampler;
+// The tone curves as a 256-step table (red, green, blue), read when look.w = 1.
+@group(0) @binding(3) var lut: texture_2d<f32>;
+fn curve(v: f32, k: i32) -> f32 {
+  let t = textureSampleLevel(lut, smp, vec2f((clamp(v, 0.0, 1.0) * 255.0 + 0.5) / 256.0, 0.5), 0.0);
+  return t[k];
+}
 // Colour controls (exposure x white balance gain, contrast round mid-grey, saturation); look.z = 0 leaves the colour as it is.
 fn grade(c: vec3f) -> vec3f {
   if (u.look.z < 0.5) { return c; }
@@ -34,7 +41,9 @@ fn grade(c: vec3f) -> vec3f {
   g = (g - vec3f(0.5)) * u.look.x + vec3f(0.5);
   let y = dot(g, vec3f(0.2126, 0.7152, 0.0722));
   g = vec3f(y) + (g - vec3f(y)) * u.look.y;
-  return clamp(g, vec3f(0.0), vec3f(1.0));
+  g = clamp(g, vec3f(0.0), vec3f(1.0));
+  if (u.look.w > 0.5) { g = vec3f(curve(g.r, 0), curve(g.g, 1), curve(g.b, 2)); }
+  return g;
 }
 struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> O {
@@ -49,11 +58,9 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 const SOLID = `${COMMON}
 @fragment fn fs(i: O) -> @location(0) vec4f { return vec4f(grade(u.color.rgb), u.color.a * u.misc.x); }`
 const TEX = `${COMMON}
-@group(0) @binding(1) var smp: sampler;
 @group(0) @binding(2) var tex: texture_2d<f32>;
 @fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSample(tex, smp, i.uv); return vec4f(grade(c.rgb), c.a * u.misc.x); }`
 const EXT = `${COMMON}
-@group(0) @binding(1) var smp: sampler;
 @group(0) @binding(2) var ext: texture_external;
 @fragment fn fs(i: O) -> @location(0) vec4f { let c = textureSampleBaseClampToEdge(ext, smp, i.uv); return vec4f(grade(c.rgb), u.misc.x); }`
 
@@ -312,6 +319,7 @@ export class GpuCompositor extends Compositor {
     const texture = 'getCurrentTexture' in target ? target.getCurrentTexture() : target
     const g = this.state?.color
     const look = isNeutral(g) ? null : gradeMath(g!)
+    const curves = look ? this.curveLut(g!.curves) : false
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: texture.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }]
     })
@@ -341,17 +349,38 @@ export class GpuCompositor extends Compositor {
           kind = 'tex'
         }
       } else if (op.kind === 'tex') resource = { binding: 2, resource: op.texture.createView() }
-      const graded = look && !op.plain ? [...look.gain, 0, look.contrast, look.saturation, 1, 0] : NO_GRADE
+      const graded = look && !op.plain ? [...look.gain, 0, look.contrast, look.saturation, 1, curves ? 1 : 0] : NO_GRADE
       const buf = this.uniform([op.rect.x, op.rect.y, op.rect.w, op.rect.h, w, h, 0, 0, ...(op.kind === 'solid' ? op.color : [1, 1, 1, 1]), op.alpha, 0, 0, 0, ...graded])
       const pipe = this.pipes[kind]
-      const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: buf } }]
-      if (resource) entries.push({ binding: 1, resource: this.sampler }, resource)
+      const entries: GPUBindGroupEntry[] = [
+        { binding: 0, resource: { buffer: buf } },
+        { binding: 1, resource: this.sampler },
+        { binding: 3, resource: this.lutView }
+      ]
+      if (resource) entries.push(resource)
       pass.setPipeline(pipe)
       pass.setBindGroup(0, this.device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries }))
       pass.setScissorRect(sx, sy, sw, sh)
       pass.draw(6)
     }
     pass.end()
+  }
+
+  /** The tone curves' 256-step table (made again only when the curves change). */
+  private lut: GPUTexture | null = null
+  private lutKey = ''
+  private get lutView(): GPUTextureView {
+    if (!this.lut) this.curveLut(undefined)
+    return this.lut!.createView()
+  }
+  /** Brings the table up to date; true when there are curves to apply. */
+  private curveLut(c: Curves | undefined): boolean {
+    const key = c ? JSON.stringify(c) : ''
+    if (!this.lut) this.lut = this.device.createTexture({ size: [256, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST })
+    else if (key === this.lutKey) return !!key
+    this.lutKey = key
+    this.device.queue.writeTexture({ texture: this.lut }, curveTable(c), { bytesPerRow: 256 * 4 }, [256, 1])
+    return !!key
   }
 
   /** A small buffer for one draw's numbers; buffers are reused every frame. */

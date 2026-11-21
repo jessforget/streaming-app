@@ -870,3 +870,15 @@ button.menubar-item:hover:not(:disabled), button.menubar-item.open { background:
 .color-val.on { color: var(--accent); }
 .color-ends { display: flex; justify-content: space-between; font-size: 11px; }
 .color-foot { display: flex; justify-content: space-between; gap: 8px; }
+.curves { display: grid; gap: 6px; padding-top: 4px; border-top: 1px solid var(--line); }
+.curves .color-row-head { padding-top: 6px; }
+.curve-tabs { display: flex; gap: 4px; }
+.curve-tabs button { flex: 1; padding-inline: 4px; }
+.curve-tabs button.on { background: var(--line); border-color: transparent; }
+.curve-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); margin-right: 5px; vertical-align: 0; }
+.curve-box { width: 100%; aspect-ratio: 1; touch-action: none; cursor: crosshair; user-select: none; }
+.curve-bg { fill: #0b0e14; stroke: var(--line); }
+.curve-grid line { stroke: #ffffff14; }
+.curve-diag { stroke: #ffffff30; stroke-dasharray: 4 4; }
+.curve-pt { fill: #0b0e14; stroke-width: 2.5; cursor: grab; }
+.curve-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
