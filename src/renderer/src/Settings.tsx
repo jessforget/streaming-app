@@ -6,12 +6,17 @@ import { ROLES, ROLE_LABELS, type Role } from '../../shared/protocol'
 import type { Run } from './useApp'
 import { NET_PREFIX, NETCAMS_CHANGED, type NetCamConfig } from './studio/netcams'
 
-export type SettingsTab = 'golive' | 'inputs' | 'devices'
+/** The pages in the Settings sidebar. 'golive', 'inputs' and 'devices' keep their old names so buttons elsewhere still open them. */
+export type SettingsTab = 'golive' | 'quality' | 'recordings' | 'inputs' | 'phones' | 'netcams' | 'devices'
 
 const TABS: { id: SettingsTab; label: string }[] = [
-  { id: 'golive', label: 'Go Live' },
-  { id: 'inputs', label: 'Video and audio inputs' },
-  { id: 'devices', label: 'Remote and devices' }
+  { id: 'golive', label: 'Platforms' },
+  { id: 'quality', label: 'Quality' },
+  { id: 'recordings', label: 'Recordings' },
+  { id: 'inputs', label: 'Video and audio' },
+  { id: 'phones', label: 'Phone cameras' },
+  { id: 'netcams', label: 'Network cameras' },
+  { id: 'devices', label: 'Tablets' }
 ]
 
 /**
@@ -64,30 +69,37 @@ export function Settings(props: {
     <PendingSaves.Provider value={pending}>
     <TestKey.Provider value={props.testKey ?? (async () => ({ ok: false, message: 'Not available here.' }))}>
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
-        <header className="modal-head">
-          <nav className="tabs">
-            {TABS.map((t) => (
-              <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => onTab(t.id)}>
-                {t.label}
-              </button>
-            ))}
-          </nav>
-          <button className="ghost" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-body">
-          {tab === 'golive' && <GoLive state={state} run={run} />}
-          {tab === 'inputs' && <Inputs state={state} run={run} rescan={props.rescan} />}
-          {tab === 'devices' && <Devices state={state} run={run} />}
-        </div>
-        <footer className="modal-foot">
-          <span className="muted small">Changes are saved as you make them. Done also saves anything typed but not saved yet.</span>
-          <button className="primary" disabled={saving} onClick={() => void done()}>
+      <div className="modal settings-window" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+        <nav className="settings-nav" aria-label="Settings pages">
+          {TABS.map((t) => (
+            <button key={t.id} className={tab === t.id ? 'on' : ''} aria-current={tab === t.id ? 'page' : undefined} onClick={() => onTab(t.id)}>
+              {t.label}
+            </button>
+          ))}
+          <button
+            className="settings-done"
+            disabled={saving}
+            onClick={() => void done()}
+            title="Changes are saved as you make them. Done also saves anything typed but not saved yet."
+          >
             {saving ? 'Saving…' : 'Done'}
           </button>
-        </footer>
+        </nav>
+        <div className="settings-pane" key={tab}>
+          <h2>{TABS.find((t) => t.id === tab)?.label}</h2>
+          <div className="settings-main">
+            {tab === 'golive' && <Platforms state={state} run={run} />}
+            {tab === 'quality' && <Quality state={state} run={run} />}
+            {tab === 'recordings' && <Recordings state={state} run={run} />}
+            {tab === 'inputs' && <Inputs state={state} run={run} rescan={props.rescan} />}
+            {tab === 'phones' && <PhoneCameras state={state} />}
+            {tab === 'netcams' && <NetworkCameras state={state} />}
+            {tab === 'devices' && <Devices state={state} run={run} />}
+          </div>
+          <aside className="settings-help">
+            <PaneHelp tab={tab} state={state} />
+          </aside>
+        </div>
       </div>
     </div>
     </TestKey.Provider>
@@ -119,20 +131,23 @@ function recordNote(state: AppState): string {
   const p = recordPresetFor(state.stream.quality, state.stream.family, rec)
   const size = `${p.height}p ${p.fps} fps at ${(p.videoKbps / 1000).toFixed(p.videoKbps < 10_000 ? 1 : 0)} Mbps, about ${gbPerHour(p).toFixed(1)} GB an hour`
   let text = `Saved as ${state.recording.format.toUpperCase()}, which survives a crash. ${size}.`
-  if (rec !== 'stream') text += ' Same picture size and frame rate as the stream (pick 1080p in Quality above for a 1080p recording), with far less squeezing.'
+  if (rec !== 'stream') text += ' Same picture size and frame rate as the stream (pick 1080p on the Quality page for a 1080p recording), with far less squeezing.'
   if (state.recording.active) text += ' Stop recording to change it.'
   return text
 }
 
-function GoLive({ state, run }: { state: AppState; run: Run }) {
+const uploadMbps = (state: AppState) => {
+  const q = state.stream.quality
+  const enabled = state.stream.destinations.filter((d) => d.enabled).length
+  return { enabled, mbps: ((enabled * (QUALITY_PRESETS[q].videoKbps + QUALITY_PRESETS[q].audioKbps)) / 1000).toFixed(1) }
+}
+
+function Platforms({ state, run }: { state: AppState; run: Run }) {
   const enabled = state.stream.destinations.filter((d) => d.enabled).length
   const locked = state.stream.live
-  const q = state.stream.quality
-  const needMbps = ((enabled * (QUALITY_PRESETS[q].videoKbps + QUALITY_PRESETS[q].audioKbps)) / 1000).toFixed(1)
   return (
     <div className="stack">
       <section>
-        <h3>Where to stream</h3>
         <p className="muted">
           Turn on up to {MAX_DESTINATIONS} platforms. Streaming to more than one is optional.
           {locked && ' Stop the stream to change these.'}
@@ -143,8 +158,18 @@ function GoLive({ state, run }: { state: AppState; run: Run }) {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+function Quality({ state, run }: { state: AppState; run: Run }) {
+  const locked = state.stream.live
+  const q = state.stream.quality
+  const { enabled, mbps } = uploadMbps(state)
+  return (
+    <div className="stack">
       <section>
-        <h3>Quality</h3>
+        <h4>Picture</h4>
         <div className="segmented">
           {(['low', 'medium', 'high'] as const).map((k) => (
             <button key={k} className={q === k ? 'on' : ''} disabled={locked} onClick={() => run('settings.setQuality', { quality: k })}>
@@ -176,12 +201,18 @@ function GoLive({ state, run }: { state: AppState; run: Run }) {
         <p className="muted">{frameRateNote(state)}</p>
         <p className="muted">
           {enabled > 0
-            ? `Needs about ${needMbps} Mbps of upload for ${enabled} platform${enabled > 1 ? 's' : ''}. The app picks the best encoder on this PC.`
-            : 'Turn on a platform above.'}
+            ? `Needs about ${mbps} Mbps of upload for ${enabled} platform${enabled > 1 ? 's' : ''}. The app picks the best encoder on this PC.`
+            : 'Turn on a platform on the Platforms page.'}
         </p>
       </section>
+    </div>
+  )
+}
+
+function Recordings({ state, run }: { state: AppState; run: Run }) {
+  return (
+    <div className="stack">
       <section>
-        <h3>Recordings</h3>
         <FolderField value={state.recording.folder} onSave={(folder) => run('settings.setRecordFolder', { folder })} />
         <h4>Recording quality</h4>
         <div className="segmented">
@@ -201,6 +232,88 @@ function GoLive({ state, run }: { state: AppState; run: Run }) {
       </section>
     </div>
   )
+}
+
+/** The right-hand column of each page: where things stand, and a short how-to. */
+function PaneHelp({ tab, state }: { tab: SettingsTab; state: AppState }) {
+  const status = (label: string, tone: 'good' | 'live' | 'off' = 'off') => (
+    <p className="settings-status">
+      Status: <strong className={tone}>{label}</strong>
+    </p>
+  )
+  const { enabled, mbps } = uploadMbps(state)
+  switch (tab) {
+    case 'golive':
+      return (
+        <>
+          {state.stream.live ? status('live', 'live') : status(enabled ? `${enabled} platform${enabled > 1 ? 's' : ''} ready` : 'no platform on', enabled ? 'good' : 'off')}
+          <p>Paste the stream key from each platform's live dashboard (YouTube Studio, Facebook Live Producer, Twitch Creator Dashboard). Keys stay on this PC only.</p>
+          <p>The switches in the top bar turn the same platforms on and off.</p>
+        </>
+      )
+    case 'quality':
+      return (
+        <>
+          {status(presetFor(state.stream.quality, state.stream.family).summary, 'good')}
+          {enabled > 0 && <p>About {mbps} Mbps of upload needed. Keep it under half of what a speed test shows.</p>}
+          <p>Picture and frame rate can't change while the stream is live.</p>
+        </>
+      )
+    case 'recordings':
+      return (
+        <>
+          {state.recording.active ? status('recording', 'live') : status('not recording')}
+          <p>The Record button in the top bar saves the same picture and sound as the stream into this folder.</p>
+        </>
+      )
+    case 'inputs':
+      return (
+        <>
+          {status(`${count(state.inputs.video.length, 'video input')}, ${count(state.inputs.audio.length, 'audio input')}`, state.inputs.video.length || state.inputs.audio.length ? 'good' : 'off')}
+          <p>Like OBS, this app does not switch cameras. Your ATEM does that. The app takes in what the ATEM or HyperDeck sends and adds scenes, graphics and audio on top.</p>
+          <p>
+            <strong>ATEM Mini:</strong> plug its USB-C port into this PC. Its picture shows up as a webcam and its sound as a USB audio input.
+          </p>
+          <p>
+            <strong>USB audio interface (Zoom LiveTrak L-12, Focusrite Scarlett):</strong> install the maker's driver, then plug it in. It shows up by its own name.
+            Each input or pair the driver offers can have its own fader.
+          </p>
+          <p>
+            <strong>HyperDeck or a larger ATEM:</strong> connect its HDMI or SDI out to a capture card (DeckLink, UltraStudio or a USB HDMI capture). The sound comes in with the picture.
+          </p>
+        </>
+      )
+    case 'phones': {
+      const n = state.inputs.video.filter((d) => d.id.startsWith('phone:')).length
+      return (
+        <>
+          {status(n ? `${count(n, 'phone')} connected` : 'no phone connected', n ? 'good' : 'off')}
+          <p>The phone must be on the same Wi-Fi as this PC. Keep the camera page open on the phone and the screen on.</p>
+        </>
+      )
+    }
+    case 'netcams': {
+      const n = state.inputs.video.filter((d) => d.id.startsWith(NET_PREFIX)).length
+      return (
+        <>
+          {status(n ? `${count(n, 'camera')} connected` : 'no camera connected', n ? 'good' : 'off')}
+          <p>The picture arrives up to 1 to 2 seconds later than over HDMI or USB, so for tight cuts use a cable when you can.</p>
+        </>
+      )
+    }
+    case 'devices': {
+      const on = state.devices.list.filter((d) => d.connected).length
+      return (
+        <>
+          {status(`${count(state.devices.list.length, 'device')} paired, ${on} connected`, on ? 'good' : 'off')}
+          <p>A tablet on the same network can run scenes, sound and the stream. Pick what each one may do next to its name.</p>
+          <p>
+            Companion app developers: the test page is at <code>{state.devices.controlUrl ? `${state.devices.controlUrl}/test` : '/test'}</code>.
+          </p>
+        </>
+      )
+    }
+  }
 }
 
 function DestinationCard({ d, run, locked, full }: { d: Destination; run: Run; locked: boolean; full: boolean }) {
@@ -344,32 +457,9 @@ function Inputs({ state, run, rescan }: { state: AppState; run: Run; rescan?: ()
   const scan = useScan(run, rescan)
   return (
     <div className="stack">
-      <PhoneCameras state={state} />
-      <NetworkCameras state={state} />
-      <section>
-        <h3>Video and audio coming into this PC</h3>
-        <p className="muted">
-          Like OBS, this app does not switch cameras. Your ATEM does that. The app takes in what the ATEM or HyperDeck sends and
-          adds scenes, graphics and audio on top.
-        </p>
-        <ul className="muted small">
-          <li>
-            <strong>ATEM Mini:</strong> plug its USB-C port into this PC. Its picture shows up as a webcam and its sound as a USB
-            audio input.
-          </li>
-          <li>
-            <strong>USB audio interface (Zoom LiveTrak L-12, Focusrite Scarlett):</strong> install the maker's driver, then plug
-            it in. It shows up here by its own name. Each input or pair the driver offers can have its own fader (in the web version, often just the main pair; every input separately comes with the desktop version).
-          </li>
-          <li>
-            <strong>HyperDeck or a larger ATEM:</strong> connect its HDMI or SDI out to a capture card (Blackmagic DeckLink or
-            UltraStudio, or a USB HDMI capture). The sound comes in with the picture.
-          </li>
-        </ul>
-      </section>
       <section>
         <div className="panel-head">
-          <h3>Devices this PC can see</h3>
+          <h4>Devices this PC can see</h4>
           <button className="small" onClick={() => void scan.start()} disabled={scan.busy}>
             {scan.busy ? 'Looking…' : 'Look again'}
           </button>
@@ -448,7 +538,6 @@ function PhoneCameras({ state }: { state: AppState }) {
     <section className="pairing">
       <div className="qr" aria-label="QR code for a phone camera" dangerouslySetInnerHTML={{ __html: qr }} />
       <div>
-        <h3>Phone cameras</h3>
         <p className="muted">
           Use an Android phone or an iPhone on the same Wi-Fi as a camera. Scan this code with the phone's camera, then press
           Start camera on the phone. It shows up below and in "+ Add source", like a webcam.
@@ -551,11 +640,7 @@ function NetworkCameras({ state }: { state: AppState }) {
   const ip = ips[0] ?? 'this-pc'
   return (
     <section>
-      <h3>Network cameras</h3>
-      <p className="muted">
-        Cameras on the same router or Wi-Fi as this PC. They show up in "+ Add source", like a webcam. The picture arrives later
-        than over HDMI or USB (up to 1 to 2 seconds), so for tight cuts use a cable when you can.
-      </p>
+      <p className="muted">Cameras on the same router or Wi-Fi as this PC. They show up in "+ Add source", like a webcam.</p>
 
       <h4>Any camera that can live stream (GoPro, Sony, DJI, Insta360, a phone app, OBS)</h4>
       {rtmpPort ? (
@@ -632,7 +717,7 @@ function Devices({ state, run }: { state: AppState; run: Run }) {
       <section className="pairing">
         <div className="qr" aria-label="QR code to pair a tablet" dangerouslySetInnerHTML={{ __html: qr }} />
         <div>
-          <h3>Pair a tablet or device</h3>
+          <h4>Pair a tablet or device</h4>
           {d.pairingOpen ? (
             <>
               <p className="muted">Scan with the tablet's camera, or open the address below and type the code.</p>
@@ -653,13 +738,10 @@ function Devices({ state, run }: { state: AppState; run: Run }) {
               <button onClick={() => run('devices.setPairingOpen', { open: true })}>Allow new devices</button>
             </>
           )}
-          <p className="muted small">
-            Companion app developers: the test page is at <code>{d.controlUrl ? `${d.controlUrl}/test` : '/test'}</code>.
-          </p>
         </div>
       </section>
       <section>
-        <h3>Paired devices</h3>
+        <h4>Paired devices</h4>
         {d.list.length === 0 && <p className="muted">None yet.</p>}
         <ul className="device-list">
           {d.list.map((dev) => (
